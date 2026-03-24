@@ -74,31 +74,15 @@ Collect manifests to run:
 4. **Always skip** manifests with `deprecated: true`
 5. **Regressions among matched tests always run first**
 
-## Parallel Execution
+## Execution Strategy
 
-When the execution list contains **3 or more tests**, dispatch them as parallel agents using the Agent tool. Each agent gets its own browser session via `--session`:
+**Browser tests run sequentially** in a single browser session. One login, one browser, no session conflicts. This is reliable and avoids agent-browser daemon collisions.
 
-```
-Agent 1 (--session e2e-1): auth tests + regressions
-Agent 2 (--session e2e-2): upload/pipeline tests
-Agent 3 (--session e2e-3): chat/tool tests
-Agent 4 (--session e2e-4): navigation/dashboard tests
-...
-```
+**API tests run in parallel** when possible. Tests with `action: api-call` or manifests tagged `api-only` are dispatched as background agents since they don't need a browser.
 
-**Grouping strategy:**
-1. Group tests by their top-level directory (e.g., all `auth/*` together, all `chat/*` together)
-2. Each group becomes one parallel agent
-3. Regressions are distributed into the group of their original test
-4. Each agent runs its tests sequentially within the group
-5. All agents run in background (`run_in_background: true`)
-6. Wait for all agents to complete, then merge results into a single report
+**Why not parallel browser agents?** agent-browser shares a single daemon. Multiple agents opening/closing pages, logging in, and navigating simultaneously causes "browser has been closed" errors. Sequential execution with a single auth is faster in practice than N parallel agents each re-authenticating.
 
-**Session isolation:** Each agent uses `agent-browser --session e2e-N` so browser state (cookies, tabs) doesn't leak between parallel agents.
-
-**When to run sequentially:** If there are fewer than 3 tests, run them sequentially in a single browser session — the overhead of parallel dispatch isn't worth it.
-
-## Execution Loop (per agent)
+## Execution Loop
 
 For each manifest assigned to this agent:
 
