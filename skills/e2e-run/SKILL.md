@@ -15,6 +15,26 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 | `/e2e-run <path>` | Run one test: `/e2e-run notaire-chat/upload-pdf` |
 | `/e2e-run --tag <tag>` | Run tests matching tag |
 | `/e2e-run --regressions` | Run only known regression tests |
+| `/e2e-run --filter <file>` | Run only tests matching scope lines in the file |
+
+### Scope Filter (`--filter`)
+
+A plain text file where each line describes a scope to test. The LLM matches each line against the existing test manifests (by name, description, path, and tags). Only matching tests run.
+
+Example `scope.txt`:
+```
+notaire-chat upload
+dashboard file-hub
+login
+```
+
+**Matching logic:**
+1. Read all manifest YAML files (name, description, path, tags)
+2. For each scope line, find manifests whose name/description/path/tags contain the keywords
+3. Build the union of all matched manifests
+4. Run only those (regressions among them still run first)
+
+This lets you focus tests on a specific page or category without remembering exact manifest paths.
 
 ## Pre-flight
 
@@ -32,7 +52,8 @@ Collect manifests to run:
 2. **Then all manifests** — glob `e2e-tests/**/*.yaml`, excluding `_config.yaml`, `_regressions.yaml`, `_shared/*`
 3. **Sort by priority**: `high` → `medium` → `low`
 4. **Skip** manifests with `deprecated: true`
-5. **Filter** by path or tag argument if provided
+5. **Filter** by path, tag, or scope filter file if provided
+6. **If `--filter <file>`**: read the scope file, match each line's keywords against manifest name/description/path/tags, keep only matching manifests (regressions among matched still run first)
 
 ## Execution Loop
 
@@ -124,6 +145,38 @@ Compare with `expected`. If mismatch: FAIL.
 ```bash
 agent-browser screenshot {screenshots_dir}/<filename>
 ```
+Then **MANDATORY**: read the screenshot with the Read tool and visually validate it. See Screenshot Validation below.
+
+#### Screenshot Validation (MANDATORY — NEVER SKIP)
+
+**Every single screenshot taken during a test run MUST be validated.** This is non-negotiable.
+
+After every `agent-browser screenshot <path>`:
+
+1. **Read the image** using the Read tool: `Read(file_path=<screenshot_path>)`
+2. **Visually inspect** the screenshot for:
+   - Error messages (toasts, alerts, modals with "error", "failed", "impossible", HTTP error codes)
+   - Blank/white screens
+   - Loading spinners that should have resolved
+   - Broken layouts (overlapping elements, missing content)
+   - Any state that does not match the expected outcome of the step
+3. **If ANY error or anomaly is detected:**
+   - Mark the step as **FAIL** immediately
+   - Record the exact error visible in the screenshot
+   - Do NOT continue the test as if nothing happened
+   - Do NOT mark the test as PASS
+4. **If the screenshot looks correct:**
+   - Explicitly state what you see and why it matches expectations
+   - Then proceed to the next step
+
+**This applies to ALL screenshots** — whether from explicit `screenshot` actions, `llm-check` screenshots, `llm-wait` screenshots, or any other screenshot taken during execution.
+
+**Anti-patterns (FORBIDDEN):**
+- Taking a screenshot and continuing without reading it
+- Reading a screenshot that shows an error and marking the test as PASS
+- Saying "screenshot taken" without describing what's in it
+- Skipping validation because "it's probably fine"
+- Treating an error in a screenshot as "partial pass" or "acceptable"
 
 #### Hybrid Actions
 
@@ -148,11 +201,13 @@ Single-shot LLM evaluation:
 
 ```
 1. agent-browser snapshot (get accessibility tree text)
-2. agent-browser screenshot (capture visual state)
-3. LLM evaluates snapshot against `criteria`
-4. LLM responds: PASS (criteria met) or FAIL (criteria not met, with reason)
-5. If severity=critical and FAIL → test fails, move to next test
-6. If severity=warning and FAIL → log warning, continue
+2. agent-browser screenshot {screenshots_dir}/<filename>
+3. Read the screenshot with Read tool — MANDATORY, see Screenshot Validation
+4. LLM evaluates BOTH the snapshot text AND the visual screenshot against `criteria`
+5. If the screenshot shows ANY error → FAIL regardless of criteria
+6. LLM responds: PASS (criteria met, no errors visible) or FAIL (with reason)
+7. If severity=critical and FAIL → test fails, move to next test
+8. If severity=warning and FAIL → log warning, continue
 ```
 
 ### Step 3: Record Result
