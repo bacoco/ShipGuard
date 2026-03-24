@@ -76,11 +76,11 @@ Collect manifests to run:
 
 ## Execution Strategy
 
-**Browser tests run sequentially** in a single browser session. One login, one browser, no session conflicts. This is reliable and avoids agent-browser daemon collisions.
+**All browser tests run sequentially** in a single browser session. One login, one browser, one agent.
 
-**API tests run in parallel** when possible. Tests with `action: api-call` or manifests tagged `api-only` are dispatched as background agents since they don't need a browser.
+agent-browser uses a single Playwright daemon. Multiple agents trying to control the browser simultaneously causes "Target page, context or browser has been closed" errors — even with `--session` flags. This is not a fixable configuration issue; it's how the daemon works.
 
-**Why not parallel browser agents?** agent-browser shares a single daemon. Multiple agents opening/closing pages, logging in, and navigating simultaneously causes "browser has been closed" errors. Sequential execution with a single auth is faster in practice than N parallel agents each re-authenticating.
+Sequential execution with a single auth is also faster in practice: no re-login overhead, no session conflicts, no retries.
 
 ## Execution Loop
 

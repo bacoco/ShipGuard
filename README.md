@@ -16,7 +16,7 @@ You already use [agent-browser](https://github.com/vercel/agent-browser) to auto
 | **Auto-generation** | Describe a feature with no test — the plugin creates one, saves it, runs it |
 | **Self-repair** | UI changed? The plugin detects stale selectors and updates them |
 | **Visual validation** | Every screenshot is read by the AI — visible errors are never ignored |
-| **Smart execution** | Browser tests run sequentially (one login, no conflicts); API tests run in parallel |
+| **Sequential execution** | One browser, one session, no conflicts — agent-browser's daemon doesn't support parallel agents |
 
 ---
 
