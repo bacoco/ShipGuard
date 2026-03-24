@@ -13,7 +13,7 @@ Manual E2E testing with agent-browser is slow, inconsistent, and forgets past fa
 | Skill | Command | Mission |
 |-------|---------|---------|
 | **e2e-discover** | `/e2e-discover` | Explore codebase, detect routes/pages/forms/features, generate YAML test manifests mirroring the UI navigation tree |
-| **e2e-run** | `/e2e-run [path] [--tag X] [--filter file] [--regressions]` | Execute manifests, hybrid assertions, mandatory screenshot validation, regression tracking, report generation |
+| **e2e-run** | `/e2e-run [natural language] [--regressions]` | Describe what to test in plain language, or run all. Finds tests, generates missing ones, executes with hybrid assertions, mandatory screenshot validation, regression tracking |
 
 ## Key Features
 
@@ -23,7 +23,8 @@ Manual E2E testing with agent-browser is slow, inconsistent, and forgets past fa
 | **Hybrid execution** | Mechanical steps (click, fill, upload) run directly; qualitative checks ("are the right entities extracted?") are evaluated by the LLM |
 | **Mandatory screenshot validation** | Every screenshot is read and visually inspected. Any visible error = immediate FAIL. Never skipped. |
 | **Regression tracking** | Failed tests are replayed first, removed after 3 consecutive passes |
-| **Scope filtering** | `--filter scope.txt` to target specific pages or categories |
+| **Natural language input** | Describe what to test in plain text — the skill finds, generates, and runs the right tests |
+| **Dynamic test management** | Tests are auto-created, updated when UI changes, retired when features are removed |
 | **Crash recovery** | Restarts browser on Playwright crash, aborts after 3 consecutive errors |
 | **Test isolation** | Each test starts from base URL, no state carries over |
 | **Generic** | Works on any web project (Next.js, React, Vue, Angular, etc.) |
@@ -64,21 +65,27 @@ cp -r e2e-agent-browser/plugins/e2e-agent-browser/skills/e2e-run ~/.claude/skill
 # 1. Discover routes and generate test manifests
 /e2e-discover
 
-# 2. Customize the generated manifests (add real test data, assertions)
-#    Edit e2e-tests/ YAML files
-
-# 3. Run all tests
+# 2. Run all tests
 /e2e-run
 
-# 4. Run only regressions (fast feedback after a fix)
+# 3. Run only regressions (fast feedback after a fix)
 /e2e-run --regressions
 
-# 5. Run a specific test
-/e2e-run notaire-chat/upload-pdf
-
-# 6. Run tests matching a scope file
-/e2e-run --filter scope.txt
+# 4. Describe what to test in natural language
+/e2e-run teste l'upload de PDF et le pipeline
+/e2e-run j'ai modifie le sidebar de Harmonia, verifie que ca marche
+/e2e-run est-ce que le chat fonctionne avec un document ?
 ```
+
+### Natural Language Mode
+
+When you pass free text, the skill:
+1. **Understands your intent** — parses what you changed or want to test
+2. **Finds matching tests** — searches existing manifests by name, description, tags
+3. **Checks git diff** — if you mention "j'ai modifie/change", maps changed files to impacted tests
+4. **Generates missing tests** — if no test covers the described scope, creates one on the fly
+5. **Cleans up stale tests** — if the UI changed and a test is broken, updates or replaces it
+6. **Executes** — regressions first among matched tests, then the rest
 
 ## How It Works
 
@@ -135,18 +142,18 @@ Executes YAML manifests with hybrid intelligence:
 
 **Selector resolution:** Uses visible text, placeholder, and aria-labels — never DOM refs (which break on re-render).
 
-### Scope Filter (`--filter`)
+### Dynamic Test Management
 
-A plain text file where each line describes what to test:
+Tests are **living artifacts** — they are created, updated, and retired automatically:
 
-```
-# scope.txt
-notaire-chat upload
-dashboard file-hub
-login
-```
+| Situation | What happens |
+|-----------|-------------|
+| You describe something with no existing test | A new manifest is **generated** with real steps and assertions, saved to the tree |
+| A test fails because the UI changed (STALE) | The test is **updated** with new selectors, or replaced if the feature was redesigned |
+| A feature is removed | The manifest is marked `deprecated: true` and skipped |
+| A test passes 3 times after failing | Removed from the regression list |
 
-The LLM matches each line's keywords against manifest name, description, path, and tags. Only matching tests run.
+You never need to manually write or maintain YAML. The system handles it.
 
 ### Screenshot Validation (Mandatory)
 

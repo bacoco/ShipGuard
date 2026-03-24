@@ -1,40 +1,60 @@
 ---
 name: e2e-run
-description: Execute E2E test manifests using agent-browser with hybrid scripted+LLM assertions. Runs regression tests first, generates reports with screenshots, auto-maintains a regression list. Use when running E2E tests, checking for regressions, validating a build, or testing specific user journeys. Trigger on "e2e run", "run e2e tests", "test regressions", "run tests", "e2e-run", "check if the app works".
+description: Execute E2E test manifests using agent-browser with hybrid scripted+LLM assertions. Accepts natural language to describe what to test or what changed — the skill finds and runs the right tests, generating missing ones if needed. Trigger on "e2e run", "run e2e tests", "test regressions", "run tests", "e2e-run", "check if the app works", "teste le chat", "j'ai modifie X verifie que ca marche".
 ---
 
 # /e2e-run — Execute E2E Tests
 
 Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid execution: mechanical steps run directly, complex assertions delegate to LLM evaluation.
 
-## Arguments
+## Invocations
 
-| Invocation | Behavior |
-|------------|----------|
-| `/e2e-run` | Run all tests (regressions first, then by priority) |
-| `/e2e-run <path>` | Run one test: `/e2e-run notaire-chat/upload-pdf` |
-| `/e2e-run --tag <tag>` | Run tests matching tag |
+| Command | Behavior |
+|---------|----------|
+| `/e2e-run` | Run ALL tests (regressions first, then by priority) |
 | `/e2e-run --regressions` | Run only known regression tests |
-| `/e2e-run --filter <file>` | Run only tests matching scope lines in the file |
+| `/e2e-run <natural language>` | Describe what to test — the skill figures out the rest |
 
-### Scope Filter (`--filter`)
+### Natural Language Mode (default when text is provided)
 
-A plain text file where each line describes a scope to test. The LLM matches each line against the existing test manifests (by name, description, path, and tags). Only matching tests run.
+When you pass free text, the skill operates in **impact analysis mode**:
 
-Example `scope.txt`:
+```bash
+/e2e-run teste l'upload de PDF et le pipeline
+/e2e-run j'ai modifie le sidebar de Harmonia, verifie que tout marche
+/e2e-run est-ce que le chat fonctionne avec un document attache ?
+/e2e-run j'ai change ArticleModal.tsx et notaire-chat-view.tsx
 ```
-notaire-chat upload
-dashboard file-hub
-login
-```
 
-**Matching logic:**
-1. Read all manifest YAML files (name, description, path, tags)
-2. For each scope line, find manifests whose name/description/path/tags contain the keywords
-3. Build the union of all matched manifests
-4. Run only those (regressions among them still run first)
+**Flow:**
 
-This lets you focus tests on a specific page or category without remembering exact manifest paths.
+1. **Understand intent** — Parse the natural language to identify:
+   - Pages/features/components mentioned
+   - Whether it references recent code changes (check `git diff` if the user says "j'ai modifie", "je viens de changer", etc.)
+   - The scope: a specific feature, a page, a whole section
+
+2. **Find impacted tests** — Read all manifest YAML files (name, description, tags) and match against the user's intent:
+   - Text mentions "upload" → match manifests about upload
+   - Text mentions "Harmonia" → match all harmonia/ manifests
+   - Text mentions a file like "ArticleModal.tsx" → find which routes/components use it → match those manifests
+
+3. **Generate missing tests** — If the described scope has no existing test:
+   - Run a targeted mini-discover on that area (read the component, understand what it does)
+   - Generate a new manifest with real steps and assertions
+   - Save it to the test tree
+   - Then execute it
+
+4. **Execute** — Run matched + generated tests (regressions among them first)
+
+**Examples:**
+
+| Input | What happens |
+|-------|-------------|
+| `teste l'upload de PDF` | Finds upload-pdf.yaml, runs it |
+| `j'ai modifie le pipeline d'ingestion` | git diff → finds changed files → maps to ingestion tests → runs them |
+| `verifie que le dashboard charge` | Finds dashboard/home.yaml, runs it |
+| `j'ai ajoute un bouton dans le header du chat` | Finds notaire-chat tests, plus generates a new test for the header button if none exists |
+| `est-ce que la veille juridique fonctionne ?` | Finds JorfWatch/legal tests, runs them |
 
 ## Pre-flight
 
@@ -48,12 +68,11 @@ This lets you focus tests on a specific page or category without remembering exa
 
 Collect manifests to run:
 
-1. **Regressions first** — from `_regressions.yaml`, ordered by `last_failed` descending
-2. **Then all manifests** — glob `e2e-tests/**/*.yaml`, excluding `_config.yaml`, `_regressions.yaml`, `_shared/*`
-3. **Sort by priority**: `high` → `medium` → `low`
-4. **Skip** manifests with `deprecated: true`
-5. **Filter** by path, tag, or scope filter file if provided
-6. **If `--filter <file>`**: read the scope file, match each line's keywords against manifest name/description/path/tags, keep only matching manifests (regressions among matched still run first)
+1. **If natural language provided**: analyze intent, match manifests, generate missing ones
+2. **If `--regressions`**: only from `_regressions.yaml`, ordered by `last_failed` descending
+3. **If no arguments**: all manifests, regressions first, then by priority `high` → `medium` → `low`
+4. **Always skip** manifests with `deprecated: true`
+5. **Regressions among matched tests always run first**
 
 ## Execution Loop
 
@@ -214,11 +233,11 @@ Single-shot LLM evaluation:
 
 For each test: `PASS` / `FAIL` / `STALE` / `ERROR` / `SKIP`
 
-- **PASS**: All steps completed, all assertions passed
-- **FAIL**: A `severity: critical` assertion failed
+- **PASS**: All steps completed, all assertions passed, all screenshots clean
+- **FAIL**: A `severity: critical` assertion failed or screenshot showed an error
 - **STALE**: An element selector could not be resolved (UI changed)
 - **ERROR**: agent-browser crashed or unrecoverable error
-- **SKIP**: Manifest is `deprecated: true` or filtered out
+- **SKIP**: Manifest is `deprecated: true`
 
 ## Browser Crash Recovery
 
@@ -272,6 +291,7 @@ Write to `{report_path}` (default: `e2e-tests/_results/report.md`):
 - Duration: {total_time}
 - Regressions fixed: {count} (removed after 3 consecutive passes)
 - New failures: {count}
+- Generated tests: {count} (new manifests created during this run)
 
 ## Failures
 ### {test_path} — FAIL
@@ -285,8 +305,8 @@ Write to `{report_path}` (default: `e2e-tests/_results/report.md`):
 - Step {n}: {action} target "{target}" — element not found
 - Action: Run `/e2e-discover` to update selectors
 
-## Deprecated (skipped)
-- {test_path}: route no longer exists
+## Generated Tests
+- {test_path}: created to cover "{user_description}"
 
 ## Regressions Status
 | Test | First failed | Last failed | Consecutive passes | Status |
@@ -313,6 +333,11 @@ Failures:
 
 {if stale}
 Stale tests (UI changed — run /e2e-discover):
+- {test_path}
+{/if}
+
+{if generated}
+New tests generated:
 - {test_path}
 {/if}
 ```
