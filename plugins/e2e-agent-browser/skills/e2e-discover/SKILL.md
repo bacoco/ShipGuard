@@ -238,7 +238,8 @@ Run `/e2e-run --regressions` to run only known failures.
 | `upload <sel> <files>` | Upload file to input | `agent-browser upload "#file-input" ./test.md` |
 | `eval <js>` | Run JavaScript in page | `agent-browser eval 'document.querySelector("input").id'` |
 | `screenshot <path>` | Take screenshot | `agent-browser screenshot /tmp/capture.png` |
-| `close` | Close browser | `agent-browser close` |
+| get url | Get current URL | agent-browser get url |
+| close | Close browser | agent-browser close |
 
 ## Key Rules
 
