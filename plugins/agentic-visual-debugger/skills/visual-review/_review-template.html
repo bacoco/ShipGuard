@@ -517,31 +517,36 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       else label.textContent = 'Click a tool to annotate';
     }
 
+    // Convert screen mouse coords to canvas pixel coords (handles zoom/scaling)
+    function canvasCoords(e) {
+      var r = canvas.getBoundingClientRect();
+      var scaleX = canvas.width / r.width;
+      var scaleY = canvas.height / r.height;
+      return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
+    }
+
     // Mouse events
     canvas.addEventListener('mousedown', function(e) {
       if (!penMode) return;
       isDrawing = true;
-      var r = canvas.getBoundingClientRect();
-      var x = e.clientX - r.left, y = e.clientY - r.top;
-      drawStart = {x:x, y:y};
-      currentPath = [{x:x/canvas.width, y:y/canvas.height}];
+      var p = canvasCoords(e);
+      drawStart = {x:p.x, y:p.y};
+      currentPath = [{x:p.x/canvas.width, y:p.y/canvas.height}];
     });
 
     canvas.addEventListener('mousemove', function(e) {
       if (!isDrawing) return;
-      var r = canvas.getBoundingClientRect();
-      var x = e.clientX - r.left, y = e.clientY - r.top;
+      var p = canvasCoords(e);
       if (penMode === 'freehand') {
-        currentPath.push({x:x/canvas.width, y:y/canvas.height});
+        currentPath.push({x:p.x/canvas.width, y:p.y/canvas.height});
         redraw();
-        // Draw current stroke
         ctx.strokeStyle = 'rgba(255,107,107,0.9)';
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.beginPath();
-        currentPath.forEach(function(p,i) {
-          var px=p.x*canvas.width, py=p.y*canvas.height;
+        currentPath.forEach(function(pt,i) {
+          var px=pt.x*canvas.width, py=pt.y*canvas.height;
           if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
         });
         ctx.stroke();
@@ -550,7 +555,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
         ctx.strokeStyle = 'rgba(255,107,107,0.8)';
         ctx.lineWidth = 3;
         ctx.setLineDash([6,3]);
-        ctx.strokeRect(drawStart.x, drawStart.y, x-drawStart.x, y-drawStart.y);
+        ctx.strokeRect(drawStart.x, drawStart.y, p.x-drawStart.x, p.y-drawStart.y);
         ctx.setLineDash([]);
       }
     });
@@ -558,13 +563,12 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     canvas.addEventListener('mouseup', function(e) {
       if (!isDrawing) return;
       isDrawing = false;
-      var r = canvas.getBoundingClientRect();
-      var x = e.clientX - r.left, y = e.clientY - r.top;
+      var p = canvasCoords(e);
       var annot = null;
       if (penMode === 'freehand' && currentPath.length > 2) {
         annot = {type:'freehand', points:currentPath.slice(), note:''};
-      } else if (penMode === 'rect' && Math.abs(x-drawStart.x) > 5 && Math.abs(y-drawStart.y) > 5) {
-        annot = {type:'rect', x1:drawStart.x/canvas.width, y1:drawStart.y/canvas.height, x2:x/canvas.width, y2:y/canvas.height, note:''};
+      } else if (penMode === 'rect' && Math.abs(p.x-drawStart.x) > 5 && Math.abs(p.y-drawStart.y) > 5) {
+        annot = {type:'rect', x1:drawStart.x/canvas.width, y1:drawStart.y/canvas.height, x2:p.x/canvas.width, y2:p.y/canvas.height, note:''};
       }
       currentPath = [];
       if (annot) {
