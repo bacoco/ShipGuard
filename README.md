@@ -249,6 +249,10 @@ Tell Claude:
 
 ---
 
+## Product Roadmap
+
+Want the concrete execution plan to make this project production-grade? Read the **[Product Readiness PRD](docs/PRD-product-readiness.md)**.
+
 ## Contributors
 
 Built by [Loic Baconnier](https://github.com/bacoco) with:
