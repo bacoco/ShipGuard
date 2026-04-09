@@ -44,15 +44,30 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .cat-count{font-size:11px;opacity:.7}
 #grid{flex:1;padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;align-content:start}
 
-/* Cards */
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:.2s;position:relative}
-.card:hover{border-color:var(--primary);transform:translateY(-1px)}
-.card.selected{border-color:var(--fail);box-shadow:0 0 0 2px #ff6b6b44}
-.card .thumb{width:100%;aspect-ratio:16/10;object-fit:cover;background:var(--secondary);display:block}
+/* Cards — 3D perspective */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;position:relative;
+  transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease;
+  transform-style:preserve-3d;perspective:800px}
+.card:hover{border-color:var(--primary);transform:translateY(-4px) rotateX(2deg);box-shadow:0 12px 32px rgba(0,0,0,.4),0 0 0 1px var(--primary)33}
+.card.selected{border-color:var(--fail);box-shadow:0 0 0 2px #ff6b6b44,0 8px 24px rgba(255,107,107,.15)}
+.card .thumb{width:100%;aspect-ratio:16/10;object-fit:cover;background:var(--secondary);display:block;transition:transform .3s ease}
+.card:hover .thumb{transform:scale(1.02)}
 .card .thumb-placeholder{width:100%;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:var(--secondary);color:var(--muted);font-size:12px}
 .card-body{padding:10px 12px}
 .card-name{font-size:13px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+/* Updated badge for recently changed screenshots */
+.badge-updated{background:#059669;color:white;animation:pulse-updated 2s infinite}
+@keyframes pulse-updated{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* Entrance animation for cards */
+@keyframes card-in{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+.card{animation:card-in .4s ease backwards}
+.card:nth-child(1){animation-delay:.02s}.card:nth-child(2){animation-delay:.06s}
+.card:nth-child(3){animation-delay:.10s}.card:nth-child(4){animation-delay:.14s}
+.card:nth-child(5){animation-delay:.18s}.card:nth-child(6){animation-delay:.22s}
+.card:nth-child(7){animation-delay:.26s}
 .badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
 .badge-pass{background:#1a7e4033;color:#4ade80}
 .badge-fail{background:#ff6b6b22;color:var(--fail)}
@@ -288,14 +303,21 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     document.getElementById('meta').textContent = 'Last run: ' + s.lastRun;
   }
 
+  // ── Detect updated screenshots (changed after last fix-manifest) ──
+  var lastFixTs = D.lastFixTimestamp || 0;
+  function isUpdated(t) { return t.screenshotMtime && lastFixTs && t.screenshotMtime > lastFixTs; }
+
   // ── Filters ──
   function renderFilters() {
     var el = document.getElementById('filters');
     el.textContent = '';
-    ['ALL','PASS','FAIL','STALE'].forEach(function(s) {
+    var updatedCount = D.tests.filter(isUpdated).length;
+    var filters = ['ALL','PASS','FAIL','STALE'];
+    if (updatedCount > 0) filters.splice(1, 0, 'UPDATED');
+    filters.forEach(function(s) {
       var btn = document.createElement('button');
       btn.className = 'filter-btn' + (s === activeStatus ? ' active' : '');
-      btn.textContent = s;
+      btn.textContent = s === 'UPDATED' ? 'UPDATED (' + updatedCount + ')' : s;
       btn.addEventListener('click', function() { activeStatus = s; renderFilters(); renderGrid(); });
       el.appendChild(btn);
     });
@@ -322,13 +344,21 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   // ── Grid ──
   function getFiltered() {
-    return D.tests.filter(function(t) {
+    var results = D.tests.filter(function(t) {
       if (lastRunOnly && !t.screenshot) return false;
       if (activeCat !== 'all' && t.category !== activeCat) return false;
-      if (activeStatus !== 'ALL' && t.status !== activeStatus) return false;
+      if (activeStatus === 'UPDATED') { if (!isUpdated(t)) return false; }
+      else if (activeStatus !== 'ALL' && t.status !== activeStatus) return false;
       if (query && t.name.toLowerCase().indexOf(query)===-1 && t.id.toLowerCase().indexOf(query)===-1) return false;
       return true;
     });
+    // Sort: updated screenshots first, then by name
+    results.sort(function(a, b) {
+      var ua = isUpdated(a) ? 1 : 0, ub = isUpdated(b) ? 1 : 0;
+      if (ua !== ub) return ub - ua;
+      return a.name.localeCompare(b.name);
+    });
+    return results;
   }
 
   function renderGrid() {
@@ -368,6 +398,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var meta = document.createElement('div'); meta.className='card-meta';
       var b = document.createElement('span'); b.className='badge badge-'+t.status.toLowerCase(); b.textContent=t.status;
       meta.appendChild(b);
+      if (isUpdated(t)) {
+        var ub = document.createElement('span'); ub.className='badge badge-updated'; ub.textContent='UPDATED';
+        meta.appendChild(ub);
+      }
       var p = document.createElement('span'); p.className='badge badge-priority'; p.textContent=t.priority;
       meta.appendChild(p);
       body.appendChild(meta);

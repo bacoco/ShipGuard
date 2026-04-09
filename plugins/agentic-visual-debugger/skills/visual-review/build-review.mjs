@@ -205,6 +205,7 @@ function buildEntry(id, category, manifest) {
       screenshot: sanitize(s.screenshot || ''),
     })),
     screenshot: findScreenshot(id, slug, manifest.steps || []),
+    screenshotMtime: getScreenshotMtime(id, slug, manifest.steps || []),
     status: 'STALE',
     failureReason: null,
   };
@@ -214,6 +215,16 @@ function extractUrl(steps) {
   const openStep = steps.find(s => s.action === 'open' && s.url);
   if (!openStep) return '';
   return sanitize(openStep.url.replace('{base_url}', config.base_url || 'http://localhost:6969'));
+}
+
+function getScreenshotMtime(id, slug, steps) {
+  const candidates = [`${slug}.png`, id.replace(/\//g, '-') + '.png'];
+  for (const s of steps) { if (s.screenshot) candidates.push(s.screenshot); }
+  for (const c of candidates) {
+    const p = join(SCREENSHOTS_DIR, c);
+    if (existsSync(p)) return statSync(p).mtimeMs;
+  }
+  return 0;
 }
 
 function findScreenshot(id, slug, steps) {
@@ -282,6 +293,9 @@ const data = {
   },
   categories: CATEGORIES.filter(c => tests.some(t => t.category === c)),
   tests,
+  // Track last fix-manifest timestamp to detect "updated" screenshots
+  lastFixTimestamp: existsSync(join(RESULTS_DIR, 'fix-manifest.json'))
+    ? statSync(join(RESULTS_DIR, 'fix-manifest.json')).mtimeMs : 0,
 };
 
 console.log(`  Status: ${passCount} pass, ${failCount} fail, ${staleCount} stale`);
