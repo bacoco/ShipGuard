@@ -1,0 +1,26 @@
+name: "Login"
+description: "Authenticate with dev credentials"
+
+steps:
+  - action: open
+    url: "{base_url}"
+
+  - action: click
+    target: "Sign in"
+
+  - action: fill
+    target: "Email"
+    value: "{credentials.username}"
+
+  - action: fill
+    target: "Password"
+    value: "{credentials.password}"
+
+  - action: click
+    target: "Submit"
+
+  - action: wait
+    duration: 3s
+
+  - action: assert_url
+    expected: "/dashboard"

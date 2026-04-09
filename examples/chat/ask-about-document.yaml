@@ -1,0 +1,34 @@
+name: "Chat about uploaded document"
+description: "Ask a question about a previously uploaded document and verify the response is grounded"
+priority: high
+requires_auth: true
+timeout: 60s
+tags: [chat, rag, critical]
+
+data:
+  question: "What are the key terms and parties in this document?"
+
+steps:
+  - action: open
+    url: "{base_url}/chat"
+
+  - action: llm-check
+    description: "Chat page loads with document context"
+    criteria: "Chat interface is visible, document attachment or context indicator is present"
+    severity: critical
+
+  - action: fill
+    target: "message"
+    value: "{data.question}"
+
+  - action: press
+    key: Enter
+
+  - action: wait
+    duration: 15s
+
+  - action: llm-check
+    description: "Response is grounded in the document, not generic"
+    criteria: "The assistant response references specific information from the uploaded document (names, dates, amounts, clauses) rather than giving a generic answer"
+    severity: critical
+    screenshot: chat-response.png

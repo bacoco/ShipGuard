@@ -1,0 +1,39 @@
+name: "Login flow"
+description: "Verify login with valid credentials redirects to dashboard"
+priority: high
+requires_auth: false
+timeout: 30s
+tags: [auth, critical]
+
+steps:
+  - action: open
+    url: "{base_url}"
+
+  - action: screenshot
+    filename: auth-landing.png
+
+  - action: click
+    target: "Sign in"
+
+  - action: fill
+    target: "Email"
+    value: "{credentials.username}"
+
+  - action: fill
+    target: "Password"
+    value: "{credentials.password}"
+
+  - action: click
+    target: "Submit"
+
+  - action: wait
+    duration: 3s
+
+  - action: assert_url
+    expected: "/dashboard"
+
+  - action: llm-check
+    description: "Dashboard loads with user content"
+    criteria: "Dashboard is visible with navigation, user is logged in, no error messages"
+    severity: critical
+    screenshot: auth-dashboard.png

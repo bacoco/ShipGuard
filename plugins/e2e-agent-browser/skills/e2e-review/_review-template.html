@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E2E Screenshot Review — ExcenIA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f1b2e;--card:#16253b;--fg:#e5e0dc;--primary:#c59b75;
+  --secondary:#1f2e47;--border:#283853;--muted:#a8a097;
+  --fail:#ff6b6b;--pass:#1a7e40;--stale:#b45309;--info:#5b9aff;
+  --radius:8px;
+}
+body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-serif;min-height:100vh}
+
+/* Header */
+#header{display:flex;align-items:center;gap:20px;padding:16px 24px;background:var(--secondary);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.header-brand{font-size:18px;font-weight:700;color:var(--primary)}
+.header-stats{display:flex;gap:12px;flex-wrap:wrap}
+.stat{padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600}
+.stat-total{background:var(--border);color:var(--fg)}
+.stat-pass{background:#1a7e4033;color:#4ade80}
+.stat-fail{background:#ff6b6b22;color:var(--fail)}
+.stat-rate{background:var(--primary)22;color:var(--primary)}
+.header-meta{margin-left:auto;font-size:12px;color:var(--muted)}
+
+/* Toolbar */
+#toolbar{display:flex;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap}
+.filter-group{display:flex;gap:4px}
+.filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:.2s}
+.filter-btn:hover{border-color:var(--primary);color:var(--fg)}
+.filter-btn.active{background:var(--primary);color:var(--bg);border-color:var(--primary)}
+#search{flex:1;min-width:200px;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:13px;outline:none}
+#search:focus{border-color:var(--primary)}
+
+/* Layout */
+#layout{display:flex;min-height:calc(100vh - 120px)}
+#sidebar{width:200px;padding:16px 12px;border-right:1px solid var(--border);flex-shrink:0}
+#sidebar ul{list-style:none}
+.cat-item{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;justify-content:space-between;transition:.15s}
+.cat-item:hover{background:var(--card);color:var(--fg)}
+.cat-item.active{background:var(--primary)22;color:var(--primary);font-weight:600}
+.cat-count{font-size:11px;opacity:.7}
+#grid{flex:1;padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;align-content:start}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:.2s;position:relative}
+.card:hover{border-color:var(--primary);transform:translateY(-1px)}
+.card.selected{border-color:var(--fail);box-shadow:0 0 0 2px #ff6b6b44}
+.card .thumb{width:100%;aspect-ratio:16/10;object-fit:cover;background:var(--secondary);display:block}
+.card .thumb-placeholder{width:100%;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:var(--secondary);color:var(--muted);font-size:12px}
+.card-body{padding:10px 12px}
+.card-name{font-size:13px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.badge-pass{background:#1a7e4033;color:#4ade80}
+.badge-fail{background:#ff6b6b22;color:var(--fail)}
+.badge-stale{background:#b4530922;color:#fbbf24}
+.badge-priority{background:var(--border);color:var(--muted);font-size:9px}
+.card-desc{font-size:11px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Checkbox overlay */
+.card-check{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:4px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.4);cursor:pointer;opacity:0;transition:.15s;display:flex;align-items:center;justify-content:center;z-index:2}
+.card:hover .card-check,.card.selected .card-check{opacity:1}
+.card.selected .card-check{background:var(--fail);border-color:var(--fail)}
+.card-check-mark{display:none;color:white;font-size:14px;font-weight:700}
+.card.selected .card-check-mark{display:block}
+
+/* Action bar */
+#action-bar{position:fixed;bottom:0;left:0;right:0;background:var(--secondary);border-top:2px solid var(--fail);padding:12px 24px;display:flex;align-items:center;gap:16px;transform:translateY(100%);transition:.3s;z-index:100}
+#action-bar.visible{transform:translateY(0)}
+#selection-count{font-size:14px;font-weight:600;color:var(--fail)}
+.action-btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.15s}
+.action-btn-rerun{background:var(--primary);color:var(--bg)}
+.action-btn-copy{background:var(--info);color:white}
+.action-btn-clear{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.action-btn:hover{opacity:.85}
+
+/* Lightbox */
+#lightbox{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center}
+#lightbox.visible{display:flex}
+.lb-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.85);cursor:pointer}
+.lb-content{position:relative;background:var(--card);border-radius:12px;max-width:90vw;max-height:90vh;overflow:auto;display:flex;flex-direction:column;z-index:1;border:1px solid var(--border)}
+.lb-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--fg);font-size:28px;cursor:pointer;z-index:3}
+.lb-img{max-width:100%;max-height:50vh;object-fit:contain;background:var(--secondary);cursor:pointer}
+
+/* Fullscreen image mode */
+#lightbox.fullscreen .lb-content{max-width:98vw;max-height:98vh;border-radius:4px}
+#lightbox.fullscreen .lb-img{max-height:92vh}
+#lightbox.fullscreen .lb-detail{display:none}
+/* pen + canvas work in fullscreen too */
+.lb-fullscreen-btn{position:absolute;top:12px;right:52px;width:32px;height:32px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.5);color:white;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;transition:.15s}
+.lb-fullscreen-btn:hover{background:rgba(0,0,0,.7);border-color:var(--primary)}
+.lb-detail{padding:20px}
+.lb-name{font-size:18px;font-weight:700;margin-bottom:8px}
+.lb-desc{font-size:13px;color:var(--muted);margin-bottom:16px}
+.lb-section{margin-bottom:16px}
+.lb-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--primary);margin-bottom:8px}
+.lb-step{padding:8px 12px;background:var(--secondary);border-radius:6px;margin-bottom:4px;font-size:12px;display:flex;gap:8px}
+.lb-step-action{color:var(--primary);font-weight:600;min-width:70px}
+.lb-step-detail{color:var(--fg)}
+.lb-failure{padding:12px;background:#ff6b6b15;border:1px solid #ff6b6b33;border-radius:6px;color:var(--fail);font-size:13px;margin-bottom:16px}
+.lb-url{font-size:12px;color:var(--info);margin-bottom:12px;word-break:break-all}
+
+/* Toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--primary);color:var(--bg);padding:8px 20px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:300;pointer-events:none}
+.toast.show{opacity:1}
+
+/* Annotation canvas */
+.lb-img-container{position:relative;display:inline-block;width:100%}
+.lb-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;cursor:default;z-index:2}
+.lb-canvas.drawing{pointer-events:auto;cursor:crosshair}
+.lb-pen-toolbar{position:absolute;top:8px;left:8px;display:flex;gap:6px;align-items:center;z-index:3}
+.pen-btn{width:32px;height:32px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.5);color:white;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.pen-btn:hover{background:rgba(0,0,0,.7);border-color:var(--primary)}
+.pen-btn.active{background:var(--fail);border-color:var(--fail)}
+.pen-hint{font-size:11px;color:rgba(255,255,255,.6);background:rgba(0,0,0,.4);padding:2px 8px;border-radius:4px}
+.card.selected.annotated{box-shadow:0 0 0 2px var(--fail),0 0 8px var(--fail)44}
+
+/* Empty state */
+.empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
+
+/* Responsive */
+@media(max-width:768px){
+  #sidebar{display:none}
+  #grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));padding:12px}
+  .lb-content{max-width:95vw}
+}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="header-brand">ExcenIA E2E Review</div>
+  <div class="header-stats" id="stats"></div>
+  <div class="header-meta" id="meta"></div>
+</div>
+
+<div id="toolbar">
+  <div class="filter-group" id="filters"></div>
+  <button class="filter-btn" id="btn-last-run" title="Show only tests from the last run (with screenshots)">Last run only</button>
+  <input type="search" id="search" placeholder="Rechercher un test...">
+</div>
+
+<div id="layout">
+  <nav id="sidebar"><ul id="cat-list"></ul></nav>
+  <main id="grid"></main>
+</div>
+
+<div id="action-bar">
+  <span id="selection-count"></span>
+  <button class="action-btn action-btn-validate" id="btn-validate" style="background:#ef4444;color:white">Validate &amp; Generate Report</button>
+  <button class="action-btn action-btn-rerun" id="btn-rerun">Re-run selected</button>
+  <button class="action-btn action-btn-copy" id="btn-copy">Copy IDs</button>
+  <button class="action-btn action-btn-clear" id="btn-clear">Clear</button>
+</div>
+
+<div id="lightbox">
+  <div class="lb-backdrop" id="lb-backdrop"></div>
+  <div class="lb-content">
+    <button class="lb-fullscreen-btn" id="lb-fullscreen" title="Toggle fullscreen view">&#128065;</button>
+    <button class="lb-close" id="lb-close">&times;</button>
+    <div class="lb-img-container" id="lb-img-container">
+      <img class="lb-img" id="lb-img" alt="">
+      <canvas class="lb-canvas" id="lb-canvas"></canvas>
+      <div class="lb-pen-toolbar" id="lb-pen-toolbar">
+        <button class="pen-btn" id="pen-toggle" title="Annotation pen">&#9998;</button>
+        <button class="pen-btn" id="pen-clear" title="Clear annotations">&#10005;</button>
+        <span class="pen-hint" id="pen-hint">Click pen to annotate</span>
+      </div>
+    </div>
+    <div class="lb-detail">
+      <h2 class="lb-name" id="lb-name"></h2>
+      <div id="lb-badge"></div>
+      <div class="lb-url" id="lb-url"></div>
+      <p class="lb-desc" id="lb-desc"></p>
+      <div id="lb-failure"></div>
+      <div class="lb-section" id="lb-steps-section">
+        <div class="lb-section-title">Steps to reproduce</div>
+        <div id="lb-steps"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// Data injected at build time from trusted YAML manifests (no user input)
+var __E2E_DATA__ = "__PLACEHOLDER_E2E_DATA__";
+
+(function(D) {
+  'use strict';
+  var selected = {};
+  var selectedCount = 0;
+  var activeCat = 'all';
+  var activeStatus = 'ALL';
+  var query = '';
+  var lastRunOnly = true; // default: show only tests that have screenshots (= were run)
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.textContent;
+  }
+
+  // ── Stats ──
+  function renderStats() {
+    var s = D.summary;
+    var el = document.getElementById('stats');
+    el.textContent = '';
+    var items = [
+      ['stat-total', s.total + ' tests'],
+      ['stat-pass', s.pass + ' pass'],
+      ['stat-fail', s.fail + ' fail'],
+      ['stat-rate', s.passRate.toFixed(1) + '%'],
+    ];
+    items.forEach(function(item) {
+      var span = document.createElement('span');
+      span.className = 'stat ' + item[0];
+      span.textContent = item[1];
+      el.appendChild(span);
+    });
+    document.getElementById('meta').textContent = 'Last run: ' + s.lastRun;
+  }
+
+  // ── Filters ──
+  function renderFilters() {
+    var el = document.getElementById('filters');
+    el.textContent = '';
+    ['ALL', 'PASS', 'FAIL', 'STALE'].forEach(function(s) {
+      var btn = document.createElement('button');
+      btn.className = 'filter-btn' + (s === activeStatus ? ' active' : '');
+      btn.textContent = s;
+      btn.addEventListener('click', function() { activeStatus = s; renderFilters(); renderGrid(); });
+      el.appendChild(btn);
+    });
+  }
+
+  // ── Sidebar ──
+  function renderSidebar() {
+    var visible = lastRunOnly ? D.tests.filter(function(t) { return t.screenshot; }) : D.tests;
+    var counts = { all: visible.length };
+    visible.forEach(function(t) { counts[t.category] = (counts[t.category] || 0) + 1; });
+    var cats = [{ id: 'all', label: 'All' }].concat(D.categories.map(function(c) { return { id: c, label: c }; }));
+    var ul = document.getElementById('cat-list');
+    ul.textContent = '';
+    cats.forEach(function(c) {
+      var li = document.createElement('li');
+      li.className = 'cat-item' + (c.id === activeCat ? ' active' : '');
+      var nameSpan = document.createElement('span');
+      nameSpan.textContent = c.label;
+      var countSpan = document.createElement('span');
+      countSpan.className = 'cat-count';
+      countSpan.textContent = counts[c.id] || 0;
+      li.appendChild(nameSpan);
+      li.appendChild(countSpan);
+      li.addEventListener('click', function() { activeCat = c.id; renderSidebar(); renderGrid(); });
+      ul.appendChild(li);
+    });
+  }
+
+  // ── Grid ──
+  function getFiltered() {
+    return D.tests.filter(function(t) {
+      if (lastRunOnly && !t.screenshot) return false;
+      if (activeCat !== 'all' && t.category !== activeCat) return false;
+      if (activeStatus !== 'ALL' && t.status !== activeStatus) return false;
+      if (query && t.name.toLowerCase().indexOf(query) === -1 && t.id.toLowerCase().indexOf(query) === -1) return false;
+      return true;
+    });
+  }
+
+  function renderGrid() {
+    var grid = document.getElementById('grid');
+    grid.textContent = '';
+    var tests = getFiltered();
+    if (!tests.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'Aucun test ne correspond aux filtres.';
+      grid.appendChild(empty);
+      return;
+    }
+    tests.forEach(function(t) {
+      var card = document.createElement('div');
+      card.className = 'card' + (selected[t.id] ? ' selected' : '');
+      card.setAttribute('data-id', t.id);
+
+      // Checkbox
+      var check = document.createElement('div');
+      check.className = 'card-check';
+      var checkMark = document.createElement('span');
+      checkMark.className = 'card-check-mark';
+      checkMark.textContent = '\u2713';
+      check.appendChild(checkMark);
+      check.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleSelect(t.id);
+      });
+      card.appendChild(check);
+
+      // Thumbnail — use thumbs/ for fast grid load, full image in lightbox
+      if (t.screenshot) {
+        var img = document.createElement('img');
+        img.className = 'thumb';
+        img.src = t.screenshot.replace('screenshots/', 'thumbs/');
+        img.alt = t.name;
+        img.loading = 'lazy';
+        img.onerror = function() { this.src = t.screenshot; }; // fallback to full if no thumb
+        card.appendChild(img);
+      } else {
+        var ph = document.createElement('div');
+        ph.className = 'thumb-placeholder';
+        ph.textContent = 'No screenshot';
+        card.appendChild(ph);
+      }
+
+      // Body
+      var body = document.createElement('div');
+      body.className = 'card-body';
+
+      var name = document.createElement('div');
+      name.className = 'card-name';
+      name.textContent = t.name;
+      body.appendChild(name);
+
+      var meta = document.createElement('div');
+      meta.className = 'card-meta';
+      var badge = document.createElement('span');
+      badge.className = 'badge badge-' + t.status.toLowerCase();
+      badge.textContent = t.status;
+      meta.appendChild(badge);
+      var prio = document.createElement('span');
+      prio.className = 'badge badge-priority';
+      prio.textContent = t.priority;
+      meta.appendChild(prio);
+      body.appendChild(meta);
+
+      var desc = document.createElement('div');
+      desc.className = 'card-desc';
+      desc.textContent = t.description;
+      body.appendChild(desc);
+
+      card.appendChild(body);
+
+      card.addEventListener('click', function() { openLightbox(t.id); });
+      grid.appendChild(card);
+    });
+  }
+
+  // ── Selection ──
+  function toggleSelect(id) {
+    if (selected[id]) {
+      delete selected[id];
+      selectedCount--;
+    } else {
+      selected[id] = true;
+      selectedCount++;
+    }
+    renderGrid();
+    updateBar();
+  }
+
+  function updateBar() {
+    var bar = document.getElementById('action-bar');
+    if (selectedCount > 0) {
+      bar.classList.add('visible');
+      document.getElementById('selection-count').textContent = selectedCount + ' selected';
+    } else {
+      bar.classList.remove('visible');
+    }
+  }
+
+  document.getElementById('btn-rerun').addEventListener('click', function() {
+    var ids = Object.keys(selected);
+    var json = JSON.stringify({ action: 'rerun', timestamp: new Date().toISOString(), tests: ids }, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'rerun-' + Date.now() + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Downloaded rerun manifest');
+  });
+
+  document.getElementById('btn-copy').addEventListener('click', function() {
+    var ids = Object.keys(selected).join('\n');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(ids).then(function() { showToast('Copied ' + selectedCount + ' IDs'); });
+    } else {
+      window.prompt('Copy these test IDs:', ids);
+    }
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', function() {
+    selected = {};
+    selectedCount = 0;
+    renderGrid();
+    updateBar();
+  });
+
+  // ── Lightbox ──
+  function openLightbox(id) {
+    var t = D.tests.find(function(x) { return x.id === id; });
+    if (!t) return;
+    var lb = document.getElementById('lightbox');
+    var img = document.getElementById('lb-img');
+    if (t.screenshot) { img.src = t.screenshot; img.style.display = 'block'; }
+    else { img.style.display = 'none'; }
+    document.getElementById('lb-name').textContent = t.name;
+
+    var badgeEl = document.getElementById('lb-badge');
+    badgeEl.textContent = '';
+    var b1 = document.createElement('span');
+    b1.className = 'badge badge-' + t.status.toLowerCase();
+    b1.textContent = t.status;
+    badgeEl.appendChild(b1);
+    badgeEl.appendChild(document.createTextNode(' '));
+    var b2 = document.createElement('span');
+    b2.className = 'badge badge-priority';
+    b2.textContent = t.priority;
+    badgeEl.appendChild(b2);
+    badgeEl.appendChild(document.createTextNode(' '));
+    var idSpan = document.createElement('span');
+    idSpan.style.fontSize = '11px';
+    idSpan.style.color = 'var(--muted)';
+    idSpan.textContent = t.id;
+    badgeEl.appendChild(idSpan);
+
+    document.getElementById('lb-url').textContent = t.url || '';
+    document.getElementById('lb-desc').textContent = t.description;
+
+    var failEl = document.getElementById('lb-failure');
+    failEl.textContent = '';
+    if (t.failureReason) {
+      var failDiv = document.createElement('div');
+      failDiv.className = 'lb-failure';
+      failDiv.textContent = t.failureReason;
+      failEl.appendChild(failDiv);
+    }
+
+    var stepsEl = document.getElementById('lb-steps');
+    stepsEl.textContent = '';
+    t.steps.filter(function(s) { return s.action; }).forEach(function(s) {
+      var step = document.createElement('div');
+      step.className = 'lb-step';
+      var actionSpan = document.createElement('span');
+      actionSpan.className = 'lb-step-action';
+      actionSpan.textContent = s.action;
+      step.appendChild(actionSpan);
+      var detailSpan = document.createElement('span');
+      detailSpan.className = 'lb-step-detail';
+      detailSpan.textContent = s.description || s.criteria || s.target || s.url || s.value || '';
+      step.appendChild(detailSpan);
+      stepsEl.appendChild(step);
+    });
+
+    lb.classList.add('visible');
+    if (window._annotSetup) window._annotSetup(id);
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('visible');
+  }
+
+  document.getElementById('lb-backdrop').addEventListener('click', function() {
+    var lb = document.getElementById('lightbox');
+    if (lb.classList.contains('fullscreen')) {
+      lb.classList.remove('fullscreen');
+    } else {
+      closeLightbox();
+    }
+  });
+  document.getElementById('lb-close').addEventListener('click', closeLightbox);
+
+  // Fullscreen toggle — eye button or click on image (only if pen not active)
+  document.getElementById('lb-fullscreen').addEventListener('click', function() {
+    document.getElementById('lightbox').classList.toggle('fullscreen');
+    // Resize canvas to match new image size after transition
+    setTimeout(function() { if (window._annotSetup) window._annotSetup(currentTestId); }, 300);
+  });
+  document.getElementById('lb-img').addEventListener('click', function() {
+    if (penActive) return; // don't toggle fullscreen while drawing
+    document.getElementById('lightbox').classList.toggle('fullscreen');
+    setTimeout(function() { if (window._annotSetup) window._annotSetup(currentTestId); }, 300);
+  });
+
+  // ── Last Run Only toggle ──
+  var lrBtn = document.getElementById('btn-last-run');
+  function updateLastRunBtn() {
+    lrBtn.classList.toggle('active', lastRunOnly);
+    lrBtn.textContent = lastRunOnly ? 'Last run only' : 'All tests';
+  }
+  updateLastRunBtn();
+  lrBtn.addEventListener('click', function() {
+    lastRunOnly = !lastRunOnly;
+    updateLastRunBtn();
+    renderSidebar();
+    renderGrid();
+  });
+
+  // ── Search ──
+  document.getElementById('search').addEventListener('input', function(e) {
+    query = e.target.value.toLowerCase();
+    renderGrid();
+  });
+
+  // ── Keyboard ──
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      if (document.getElementById('lightbox').classList.contains('visible')) closeLightbox();
+      else if (selectedCount > 0) { selected = {}; selectedCount = 0; renderGrid(); updateBar(); }
+    }
+  });
+
+  // ── Toast ──
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, 2000);
+  }
+
+  // ── Annotation State ──
+  var penActive = false;
+  var isDrawing = false;
+  var annotationData = {};
+  var currentTestId = null;
+  var drawStart = null;
+
+  function initAnnotation() {
+    var canvas = document.getElementById('lb-canvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+
+    document.getElementById('pen-toggle').addEventListener('click', function() {
+      penActive = !penActive;
+      this.classList.toggle('active', penActive);
+      canvas.classList.toggle('drawing', penActive);
+      document.getElementById('pen-hint').textContent = penActive ? 'Draw rectangles on problems' : 'Click pen to annotate';
+    });
+
+    document.getElementById('pen-clear').addEventListener('click', function() {
+      if (currentTestId) { delete annotationData[currentTestId]; redraw(); }
+    });
+
+    canvas.addEventListener('mousedown', function(e) {
+      if (!penActive) return;
+      isDrawing = true;
+      var r = canvas.getBoundingClientRect();
+      drawStart = { x: e.clientX - r.left, y: e.clientY - r.top };
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+      if (!isDrawing) return;
+      var r = canvas.getBoundingClientRect();
+      redraw();
+      ctx.strokeStyle = 'rgba(255,107,107,0.8)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6,3]);
+      ctx.strokeRect(drawStart.x, drawStart.y, (e.clientX-r.left)-drawStart.x, (e.clientY-r.top)-drawStart.y);
+      ctx.setLineDash([]);
+    });
+
+    canvas.addEventListener('mouseup', function(e) {
+      if (!isDrawing) return;
+      isDrawing = false;
+      var r = canvas.getBoundingClientRect();
+      var x = e.clientX - r.left, y = e.clientY - r.top;
+      if (Math.abs(x-drawStart.x) > 5 && Math.abs(y-drawStart.y) > 5) {
+        if (!annotationData[currentTestId]) annotationData[currentTestId] = [];
+        annotationData[currentTestId].push({
+          x1: drawStart.x/canvas.width, y1: drawStart.y/canvas.height,
+          x2: x/canvas.width, y2: y/canvas.height
+        });
+        if (!selected[currentTestId]) { selected[currentTestId] = true; selectedCount++; updateBar(); }
+      }
+      redraw();
+    });
+
+    function redraw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      (annotationData[currentTestId] || []).forEach(function(a) {
+        var x1=a.x1*canvas.width, y1=a.y1*canvas.height, x2=a.x2*canvas.width, y2=a.y2*canvas.height;
+        ctx.strokeStyle = 'rgba(255,107,107,0.9)'; ctx.lineWidth = 3;
+        ctx.strokeRect(x1, y1, x2-x1, y2-y1);
+        ctx.fillStyle = 'rgba(255,107,107,0.1)';
+        ctx.fillRect(x1, y1, x2-x1, y2-y1);
+      });
+    }
+
+    // Expose for lightbox setup
+    window._annotSetup = function(testId) {
+      currentTestId = testId;
+      penActive = false;
+      var toggle = document.getElementById('pen-toggle');
+      if (toggle) { toggle.classList.remove('active'); }
+      canvas.classList.remove('drawing');
+      var hint = document.getElementById('pen-hint');
+      if (hint) hint.textContent = 'Click pen to annotate';
+      var img = document.getElementById('lb-img');
+      function sizeCanvas() {
+        canvas.width = img.clientWidth || 800;
+        canvas.height = img.clientHeight || 500;
+        redraw();
+      }
+      if (img.complete && img.naturalWidth) sizeCanvas();
+      else img.addEventListener('load', sizeCanvas, { once: true });
+    };
+  }
+
+  // Validate button — generates full analysis document
+  document.getElementById('btn-validate').addEventListener('click', function() {
+    var ids = Object.keys(selected);
+    if (!ids.length) { showToast('Select tests first'); return; }
+    var report = '# E2E Review — Human Validation Report\n\n';
+    report += '**Date:** ' + new Date().toISOString().split('T')[0] + '\n';
+    report += '**Selected issues:** ' + ids.length + '\n\n---\n\n';
+    ids.forEach(function(id, i) {
+      var t = D.tests.find(function(x) { return x.id === id; });
+      if (!t) return;
+      report += '## ' + (i+1) + '. ' + t.name + '\n\n';
+      report += '- **Test ID:** `' + t.id + '`\n';
+      report += '- **Status:** ' + t.status + '\n';
+      report += '- **URL:** ' + (t.url || 'N/A') + '\n';
+      report += '- **Priority:** ' + t.priority + '\n';
+      if (t.screenshot) report += '- **Screenshot:** `' + t.screenshot + '`\n';
+      if (t.failureReason) report += '- **Failure:** ' + t.failureReason + '\n';
+      if (annotationData[id] && annotationData[id].length) {
+        report += '- **Annotations:** ' + annotationData[id].length + ' problem area(s) marked\n';
+        annotationData[id].forEach(function(a, j) {
+          report += '  - Region ' + (j+1) + ': x=' + (a.x1*100).toFixed(0) + '-' + (a.x2*100).toFixed(0) + '%, y=' + (a.y1*100).toFixed(0) + '-' + (a.y2*100).toFixed(0) + '%\n';
+        });
+      }
+      report += '\n### Steps to reproduce\n\n';
+      t.steps.filter(function(s) { return s.action; }).forEach(function(s) {
+        var detail = s.description || s.criteria || s.target || s.url || '';
+        report += '1. **' + s.action + '** ' + detail + '\n';
+      });
+      report += '\n---\n\n';
+    });
+    // Download as markdown
+    var blob = new Blob([report], { type: 'text/markdown' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'e2e-validation-report-' + new Date().toISOString().split('T')[0] + '.md';
+    a.click();
+    // Also download JSON for the fix skill
+    var json = JSON.stringify({
+      action: 'validate-and-fix',
+      timestamp: new Date().toISOString(),
+      tests: ids.map(function(id) {
+        var e = { test: id };
+        if (annotationData[id]) e.annotations = annotationData[id];
+        var t = D.tests.find(function(x) { return x.id === id; });
+        if (t) { e.url = t.url; e.screenshot = t.screenshot; e.steps = t.steps; }
+        return e;
+      })
+    }, null, 2);
+    var blob2 = new Blob([json], { type: 'application/json' });
+    var a2 = document.createElement('a');
+    a2.href = URL.createObjectURL(blob2);
+    a2.download = 'e2e-fix-manifest-' + Date.now() + '.json';
+    setTimeout(function() { a2.click(); }, 500);
+    showToast('Downloaded report + fix manifest');
+  });
+
+  // Patch rerun to include annotations
+  document.getElementById('btn-rerun').addEventListener('click', function() {
+    var ids = Object.keys(selected);
+    var tests = ids.map(function(id) {
+      var e = { test: id };
+      if (annotationData[id]) e.annotations = annotationData[id];
+      return e;
+    });
+    var json = JSON.stringify({ action:'rerun', timestamp:new Date().toISOString(), tests:tests }, null, 2);
+    var blob = new Blob([json], {type:'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'rerun-'+Date.now()+'.json';
+    a.click();
+    showToast('Downloaded rerun manifest with annotations');
+  });
+
+  // ── Init ──
+  renderStats();
+  renderFilters();
+  renderSidebar();
+  renderGrid();
+  initAnnotation();
+})(__E2E_DATA__);
+</script>
+</body>
+</html>

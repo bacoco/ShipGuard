@@ -1,0 +1,41 @@
+name: "Upload document and verify processing"
+description: "Upload a PDF, wait for processing pipeline, verify extraction results"
+priority: high
+requires_auth: true
+timeout: 120s
+tags: [pipeline, upload, critical]
+
+data:
+  pdf_file: "data-sample/sample-contract.pdf"
+  expected_entities: [party_a, party_b, date, amount]
+
+steps:
+  - action: open
+    url: "{base_url}/documents"
+
+  - action: click
+    target: "Upload"
+
+  - action: upload
+    target: "file-input"
+    file: "{data.pdf_file}"
+
+  - action: llm-wait
+    description: "Wait for document processing pipeline to complete"
+    timeout: 90s
+    checkpoints:
+      - "Upload confirmed (file name visible)"
+      - "Processing started (progress indicator visible)"
+      - "Processing completed (success message or status indicator)"
+    screenshot: pipeline-complete.png
+
+  - action: llm-check
+    description: "Document appears in the list with correct status"
+    criteria: "Document is listed with 'completed' or 'ready' status, filename matches uploaded file"
+    severity: critical
+
+  - action: llm-check
+    description: "Extracted entities are relevant to the document type"
+    criteria: "Entities include types matching: {data.expected_entities}"
+    severity: critical
+    screenshot: entities-extracted.png
