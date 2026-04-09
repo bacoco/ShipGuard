@@ -85,28 +85,39 @@ Regressions run first. Fixed after 3 consecutive passes? Removed automatically.
 
 ![Review Page](docs/review-page.png)
 
-- **Grid** — every test as a card with thumbnail, pass/fail badge, priority
-- **Filters** — by status (pass/fail/stale), by category, by name
-- **Lightbox** — click any card for the full screenshot + steps to reproduce
-- **Annotation pen** — draw red rectangles directly on problems. Each annotation auto-selects the test.
+Browse every test as a card with thumbnail, pass/fail badge, and priority. Filter by status, category, or name. Click any card to open the lightbox with the full screenshot and steps to reproduce.
+
+**See a problem? Mark it.**
+
+Click the pen icon and draw red rectangles directly on the screenshot to circle exactly what's wrong. Each annotation auto-selects the test for fixing.
 
 ![Annotating a problem area](docs/review-annotation.png)
 
-- **Multi-select** — check multiple tests, then export a re-run manifest or a fix manifest with annotation coordinates
+You can also select multiple tests by checking the cards — whether you annotate them or not. The floating action bar lets you:
+
+- **"Validate & Generate Report"** — exports a fix manifest (JSON) with your annotations + a markdown report. This is what `/visual-fix` reads.
+- **"Re-run selected"** — exports a re-run manifest to test only those specific tests again.
+- **"Copy IDs"** — copies test paths to clipboard.
 
 ![Lightbox with annotation pen](docs/review-lightbox.png)
 
 ### Fix
 
-`/visual-fix` processes your annotations. For each problem you circled:
+Once you've annotated and exported, run `/visual-fix`. It picks up the fix manifest automatically.
 
-1. AI reads the screenshot, focuses on your marked region
-2. Traces the visual bug to the exact component and line
-3. Implements the fix, rebuilds, recaptures the screenshot
+For each test you selected:
 
-The review page regenerates with **before/after comparison**. Still see problems? Annotate, fix again.
+1. Reads the screenshot and focuses on your marked regions
+2. Traces the visual bug to the exact source component and line
+3. Implements the fix
+4. Rebuilds the app
+5. Re-runs that specific test to capture a new "after" screenshot
+
+When all fixes are done, the review page regenerates with a **before/after comparison tab** — the same grid, but now each fixed test shows the old and new screenshot side by side.
 
 ![Before and after](docs/fix-before-after.png)
+
+**Still see problems?** Open the comparison tab, annotate again, export, run `/visual-fix` again. The loop continues until you stop finding issues.
 
 ---
 
