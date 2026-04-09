@@ -1,4 +1,97 @@
-# E2E Testing Skill for Agent-Browser
+# Agentic Visual Debugger — Architecture & Design
+
+## Why This Approach
+
+Traditional browser testing tools (Playwright, Cypress, Selenium) require developers to write test code that targets DOM elements by CSS selectors or XPath. This creates a fundamental coupling: when the UI structure changes — a class is renamed, a wrapper div is added, a component library is swapped — tests break even though the user-facing behavior is identical.
+
+**agentic-visual-debugger takes a different path.** Tests are YAML manifests that describe what the user sees in plain language:
+
+```yaml
+- action: click
+  target: "Nouvelle conversation"    # visible button text, not .btn-primary-v2
+- action: llm-check
+  criteria: "Entities include: seller, buyer, notary, price"
+```
+
+The system resolves targets by searching the accessibility tree for matching visible text, labels, or placeholders. When a button's CSS class changes from `.btn-primary` to `.btn-action`, the test still works — because it never knew about the class.
+
+For assertions, `llm-check` takes a screenshot and asks the LLM to evaluate it against natural language criteria. No brittle string matching, no hardcoded pixel positions. The LLM evaluates what a human would evaluate: "does this page show the entities I expected?"
+
+**Zero test code written by the developer.** The `/visual-discover` skill scans the codebase (routes, navigation, forms, feature flags), generates YAML manifests for every discoverable user journey, and organizes them in a directory tree mirroring the app's navigation structure.
+
+## Tradeoffs vs Traditional Testing
+
+This approach has real strengths and real weaknesses. Here's an honest comparison:
+
+| Dimension | Playwright / Cypress | agentic-visual-debugger |
+|---|---|---|
+| **Test authoring** | Developer writes code | AI generates YAML from codebase scan |
+| **Selector model** | CSS/XPath (structural) | Visible text (semantic) |
+| **Assertion model** | Programmatic expects | LLM evaluates screenshots |
+| **Maintenance** | Tests break on refactor | Tests adapt via text matching |
+| **Failure diagnosis** | Stack trace + logs | Visual annotation + AI trace to source |
+| **Determinism** | High (no LLM involved) | Lower — mitigated by severity levels + retry |
+| **Speed** | Fast (headless, parallel) | Slower (sequential, LLM inference per check) |
+| **CI suitability** | Native | Requires agent-browser + LLM access |
+| **Cost** | Free after setup | LLM API costs per assertion |
+
+**When to use this tool:** Rapid full-app coverage, catching visual regressions humans miss, testing LLM-generated content, teams without dedicated QA engineers.
+
+**When NOT to use this tool:** Performance benchmarks, unit-level logic testing, environments without LLM access, tests requiring sub-second deterministic assertions.
+
+## Architecture
+
+### The 4-Skill Loop
+
+```
+Codebase ──► /visual-discover ──► YAML Manifests
+                                       │
+                                       ▼
+                                /visual-run (agent-browser)
+                                       │
+                                       ▼
+                                Screenshots + Report
+                                       │
+                                       ▼
+                                /visual-review (HTML page)
+                                       │
+                                Human annotates ✏️
+                                       │
+                                       ▼
+                                /visual-fix
+                                       │
+                                AI fixes source code
+                                       │
+                                       ▼
+                                Loop until clean
+```
+
+- **/visual-discover** runs rarely — after structural UI changes (new routes, removed pages). It reads the codebase, detects framework (Next.js, React, Vue, Angular), finds routes, navigation, forms, feature flags, and generates YAML manifests.
+- **/visual-run** runs often — after every code change. It executes manifests via agent-browser, captures screenshots, runs LLM assertions, updates the regression list, and generates a report.
+- **/visual-review** builds an interactive HTML page from the results. Grid view with thumbnails, filters, lightbox, and an annotation pen to circle problems directly on screenshots.
+- **/visual-fix** processes annotations. For each marked region, the AI reads the screenshot, identifies the visual bug, traces it to the source component, implements the fix, rebuilds, and recaptures a before/after comparison.
+
+### Data Flow
+
+```
+manifest.yaml
+     │
+     ▼
+agent-browser commands (open, click, fill, screenshot)
+     │
+     ▼
+visual-tests/_results/screenshots/
+     │
+     ├──► _regressions.yaml (auto-maintained: add on fail, remove after 3 passes)
+     │
+     ├──► report.md (summary: pass/fail/stale counts, failure details)
+     │
+     └──► build-review.mjs → review.html (self-contained interactive page)
+```
+
+---
+
+# Technical Specification
 
 **Date:** 2026-03-24
 **Status:** Approved
@@ -10,7 +103,7 @@ Two Claude Code skills that automate end-to-end testing of any web application u
 
 ## Problem
 
-Manual E2E testing via agent-browser is slow, inconsistent, and forgets past failures. The LLM re-discovers the DOM at every run, misses critical test paths (e.g., uploading real notarial PDFs instead of asking empty questions), and has no memory of what broke before.
+Manual Visual Testing via agent-browser is slow, inconsistent, and forgets past failures. The LLM re-discovers the DOM at every run, misses critical test paths (e.g., uploading real notarial PDFs instead of asking empty questions), and has no memory of what broke before.
 
 ## Solution
 
@@ -18,8 +111,8 @@ Manual E2E testing via agent-browser is slow, inconsistent, and forgets past fai
 
 | Skill | Command | Mission |
 |-------|---------|---------|
-| **e2e-discover** | `/e2e-discover` | Explore the codebase, detect routes/pages/forms/features, generate YAML test manifests mirroring the UI navigation tree |
-| **e2e-run** | `/e2e-run [path] [--tag X] [--regressions]` | Execute manifests using agent-browser, run hybrid assertions, update regressions, generate report |
+| **visual-discover** | `/visual-discover` | Explore the codebase, detect routes/pages/forms/features, generate YAML test manifests mirroring the UI navigation tree |
+| **visual-run** | `/visual-run [path] [--tag X] [--regressions]` | Execute manifests using agent-browser, run hybrid assertions, update regressions, generate report |
 
 ### Separation of Concerns
 
@@ -32,9 +125,9 @@ Manual E2E testing via agent-browser is slow, inconsistent, and forgets past fai
 ### Directory Structure (mirrors UI navigation)
 
 ```
-e2e-tests/
+visual-tests/
   _config.yaml              # base_url, credentials, screenshot paths
-  _regressions.yaml         # auto-maintained by /e2e-run
+  _regressions.yaml         # auto-maintained by /visual-run
   _shared/
     login.yaml              # reusable login brick
     llm-wait.yaml      # reusable pipeline wait
@@ -49,18 +142,18 @@ e2e-tests/
       <journey>.yaml
 ```
 
-The tree mirrors the app's navigation hierarchy. `/e2e-discover` generates this structure by reading the project's route definitions, navigation components, and feature flags.
+The tree mirrors the app's navigation hierarchy. `/visual-discover` generates this structure by reading the project's route definitions, navigation components, and feature flags.
 
 ### Config File
 
 ```yaml
-# e2e-tests/_config.yaml
+# visual-tests/_config.yaml
 base_url: "http://localhost:6969"
 credentials:
   username: "vlad"
   password: "loic"
-screenshots_dir: "e2e-tests/_results/screenshots"
-report_path: "e2e-tests/_results/report.md"
+screenshots_dir: "visual-tests/_results/screenshots"
+report_path: "visual-tests/_results/report.md"
 agent_browser_path: "agent-browser"    # or full path
 ```
 
@@ -157,7 +250,7 @@ Selectors use **visible text**, never refs (which change on every DOM mutation).
 - `{data.xxx}` → from manifest `data:` section
 - `{credentials.username}` → from `_config.yaml`
 
-## Skill 1: `/e2e-discover`
+## Skill 1: `/visual-discover`
 
 ### Flow
 
@@ -206,16 +299,16 @@ steps:
 - **Pre-fill test data** when fixtures/samples found in project
 - **Detect auth** from login components, auth middleware, or documented credentials
 
-## Skill 2: `/e2e-run`
+## Skill 2: `/visual-run`
 
 ### Invocations
 
 | Command | Behavior |
 |---------|----------|
-| `/e2e-run` | Run all (regressions first, then by priority) |
-| `/e2e-run notaire-chat/upload-pdf` | Run one specific test |
-| `/e2e-run --tag pipeline` | Run all tests with tag |
-| `/e2e-run --regressions` | Run only regression tests |
+| `/visual-run` | Run all (regressions first, then by priority) |
+| `/visual-run notaire-chat/upload-pdf` | Run one specific test |
+| `/visual-run --tag pipeline` | Run all tests with tag |
+| `/visual-run --regressions` | Run only regression tests |
 
 ### Execution Flow
 
@@ -234,7 +327,7 @@ steps:
       - llm-check → snapshot, LLM evaluates criteria, PASS/FAIL/WARN
       - On FAIL (severity=critical) → screenshot, mark test FAIL, next test
       - On FAIL (severity=warning) → log, continue
-      - On STALE (element not found) → screenshot, suggest /e2e-discover
+      - On STALE (element not found) → screenshot, suggest /visual-discover
    c. Record result: PASS / FAIL / STALE / SKIP
 5. Update _regressions.yaml
 6. Generate _results/report.md
@@ -250,7 +343,7 @@ Login is executed once. If the session is still valid (check by navigating to a 
 ### `_regressions.yaml`
 
 ```yaml
-# Auto-maintained by /e2e-run — do not edit manually
+# Auto-maintained by /visual-run — do not edit manually
 regressions:
   - test: harmonia/modules
     first_failed: "2026-03-24"
@@ -270,19 +363,19 @@ regressions:
 
 ## Adaptation to UI Changes
 
-| Scenario | During `/e2e-run` | During `/e2e-discover` |
+| Scenario | During `/visual-run` | During `/visual-discover` |
 |----------|-------------------|----------------------|
 | Element not found | Mark `STALE`, suggest discover | Update target in manifest (with confirmation) |
 | New route added | Not detected | Create skeleton manifest |
 | Route removed | Test may fail | Mark manifest `deprecated: true` |
 | DOM restructured | Tests may go STALE | Propose target updates |
 
-Key principle: `/e2e-run` never modifies manifests. `/e2e-discover` proposes changes but doesn't overwrite without confirmation.
+Key principle: `/visual-run` never modifies manifests. `/visual-discover` proposes changes but doesn't overwrite without confirmation.
 
 ## Report Format
 
 ```markdown
-# E2E Report — 2026-03-24 10:30
+# Visual Test Report — 2026-03-24 10:30
 
 ## Summary
 - Tests: 12 run, 10 pass, 1 fail, 1 stale
@@ -300,7 +393,7 @@ Key principle: `/e2e-run` never modifies manifests. `/e2e-discover` proposes cha
 ## Stale Tests
 ### dashboard/erp-diagnostic.yaml — STALE
 - Step 3: click "Generer diagnostic" — element not found
-- Action: Run /e2e-discover to update selectors
+- Action: Run /visual-discover to update selectors
 
 ## Regressions Status
 | Test | First failed | Consecutive passes | Status |
@@ -345,14 +438,14 @@ The `include` action has a max depth of 3 to prevent infinite recursion. If mani
 ## Deprecated Manifests
 
 Manifests with `deprecated: true` in their frontmatter:
-- Are **skipped** during `/e2e-run` (reported as SKIP with reason "deprecated")
+- Are **skipped** during `/visual-run` (reported as SKIP with reason "deprecated")
 - Are listed in the report under a "Deprecated" section
 - Can be manually removed or un-deprecated by the user
-- `/e2e-discover` sets this flag when a route no longer exists in the codebase
+- `/visual-discover` sets this flag when a route no longer exists in the codebase
 
 ## Generic Design (any project)
 
-The skills are project-agnostic. `/e2e-discover` adapts to the project:
+The skills are project-agnostic. `/visual-discover` adapts to the project:
 
 | Framework | Route detection | Navigation detection |
 |-----------|----------------|---------------------|
@@ -375,8 +468,8 @@ The discover skill uses heuristics: it searches for common patterns and adapts. 
 
 **Repo name:** `agentic-visual-debugger`
 **Contents:**
-- `skills/e2e-discover/SKILL.md` — discover skill
-- `skills/e2e-run/SKILL.md` — run skill
+- `skills/visual-discover/SKILL.md` — discover skill
+- `skills/visual-run/SKILL.md` — run skill
 - `README.md` — installation, usage, examples
 - `examples/` — sample manifests for a demo app
 - `LICENSE` — MIT
