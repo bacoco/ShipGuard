@@ -13,10 +13,22 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync } from 'fs';
-import { join, relative, basename, dirname } from 'path';
+import { join, relative, basename, dirname, resolve } from 'path';
 
-// Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
-// No external dependency needed.
+/**
+ * Minimal YAML parser — handles the subset used by visual test manifests:
+ * - Flat key: value pairs
+ * - Simple arrays (tags: [a, b])
+ * - steps: array with nested action objects
+ * - Nested objects one level deep
+ *
+ * Known limitations (by design — avoids js-yaml dependency):
+ * - No multiline strings (| or > blocks return empty objects)
+ * - No YAML anchors or aliases (&anchor, *alias)
+ * - Colons in unquoted values may break parsing — quote them
+ * - No flow mappings ({key: value})
+ * - No nested arrays beyond steps
+ */
 function yamlParse(text) {
   const result = {};
   let currentKey = null;
@@ -101,10 +113,9 @@ const REGRESSIONS_PATH = join(ROOT, '_regressions.yaml');
 const CONFIG_PATH = join(ROOT, '_config.yaml');
 const OUTPUT_PATH = join(RESULTS_DIR, 'review.html');
 
-const CATEGORIES = [
-  'auth', 'principal', 'standalone', 'outils', 'intelligence',
-  'dashboard-only', 'hub', 'docs', 'admin', 'legal',
-];
+const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
+  .filter(e => e.isDirectory() && !e.name.startsWith('_') && e.name !== 'node_modules')
+  .map(e => e.name);
 
 // ── 1. Parse config ──
 const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
@@ -116,7 +127,7 @@ function parseReport() {
   const statusMap = {};
   for (const line of md.split('\n')) {
     // Format 1: | test-slug | PASS |
-    let m = line.match(/^\|\s*([a-z0-9_-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL)(?:\*\*)?\s*\|/i);
+    let m = line.match(/^\|\s*([a-z0-9_/-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL)(?:\*\*)?\s*\|/i);
     if (m) { statusMap[m[1]] = m[2].toUpperCase(); continue; }
     // Format 2: - category/test-slug: PASS
     m = line.match(/^-\s+([a-z0-9_/-]+):\s*(PASS|FAIL|STALE)/i);
@@ -266,6 +277,26 @@ console.log(`  Found ${tests.length} test manifests`);
 
 mergeStatus(tests, report, regressions);
 
+// ── Comparison pairs (--with-comparisons) ──
+if (process.argv.includes('--with-comparisons')) {
+  let compCount = 0;
+  for (const t of tests) {
+    const slug = t.id.replace(/\//g, '-');
+    const beforePath = join(SCREENSHOTS_DIR, slug + '-before.png');
+    const afterPath = join(SCREENSHOTS_DIR, slug + '-after.png');
+    if (existsSync(beforePath) && existsSync(afterPath)) {
+      t.comparison = {
+        before: 'screenshots/' + slug + '-before.png',
+        after: 'screenshots/' + slug + '-after.png',
+      };
+      compCount++;
+    }
+  }
+  if (compCount > 0) {
+    console.log(`  Comparisons: ${compCount} before/after pairs found`);
+  }
+}
+
 const passCount = tests.filter(t => t.status === 'PASS').length;
 const failCount = tests.filter(t => t.status === 'FAIL').length;
 const staleCount = tests.filter(t => t.status === 'STALE').length;
@@ -281,6 +312,7 @@ const data = {
     lastRun: report.lastRun || new Date().toISOString().split('T')[0],
   },
   categories: CATEGORIES.filter(c => tests.some(t => t.category === c)),
+  hasComparisons: process.argv.includes('--with-comparisons') && tests.some(t => t.comparison),
   tests,
 };
 
@@ -331,9 +363,13 @@ const PID_FILE = join(RESULTS_DIR, '.server.pid');
 if (process.argv.includes('--stop')) {
   if (existsSync(PID_FILE)) {
     const pid = parseInt(readFileSync(PID_FILE, 'utf8').trim());
-    try { process.kill(pid); } catch { /* already dead */ }
+    if (!Number.isInteger(pid) || pid <= 0) {
+      console.log('Invalid PID in .server.pid — ignoring.');
+    } else {
+      try { process.kill(pid); } catch { /* already dead */ }
+      console.log(`Server stopped (PID ${pid}).`);
+    }
     writeFileSync(PID_FILE, '', 'utf8');
-    console.log(`Server stopped (PID ${pid}).`);
   } else {
     console.log('No server running.');
   }
@@ -343,8 +379,12 @@ if (process.argv.includes('--stop')) {
 // --serve: start HTTP server with PID file
 if (process.argv.includes('--serve')) {
   if (existsSync(PID_FILE)) {
-    const oldPid = readFileSync(PID_FILE, 'utf8').trim();
-    if (oldPid) try { process.kill(parseInt(oldPid)); } catch { /* already dead */ }
+    const oldPid = parseInt(readFileSync(PID_FILE, 'utf8').trim());
+    if (!Number.isInteger(oldPid) || oldPid <= 0) {
+      console.log('Invalid PID in .server.pid — ignoring.');
+    } else {
+      try { process.kill(oldPid); } catch { /* already dead */ }
+    }
   }
 
   const http = await import('http');
@@ -356,7 +396,9 @@ if (process.argv.includes('--serve')) {
 
   const server = http.createServer((req, res) => {
     const url = req.url === '/' ? '/review.html' : req.url;
-    const filePath = join(RESULTS_DIR, url.replace(/^\//, ''));
+    const filePath = join(RESULTS_DIR, decodeURIComponent(url).replace(/^\//, ''));
+    const resolved = resolve(filePath);
+    if (!resolved.startsWith(resolve(RESULTS_DIR))) { res.writeHead(403); res.end('Forbidden'); return; }
     if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
     const ext = extname(filePath);
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });

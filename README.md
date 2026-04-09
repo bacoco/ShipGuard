@@ -144,12 +144,30 @@ For the full architecture and design decisions, read the **[Design Spec](docs/de
 
 ---
 
-## Development
+### Installation
 
-```bash
-git clone https://github.com/bacoco/agentic-visual-debugger.git
-cp -r plugins/e2e-agent-browser ~/.claude/plugins/
-```
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/bacoco/agentic-visual-debugger.git
+   ```
+
+2. Copy the skills to your project's Claude skills directory:
+   ```bash
+   # From the cloned repo
+   cp -r plugins/e2e-agent-browser/skills/* /path/to/your-project/.claude/skills/
+   ```
+
+3. Copy the build script and template to your project:
+   ```bash
+   mkdir -p /path/to/your-project/visual-tests
+   cp plugins/e2e-agent-browser/skills/visual-review/build-review.mjs /path/to/your-project/visual-tests/
+   cp plugins/e2e-agent-browser/skills/visual-review/_review-template.html /path/to/your-project/visual-tests/
+   ```
+
+4. (Optional) For global access, create symlinks:
+   ```bash
+   ln -s $(pwd)/plugins/e2e-agent-browser/skills/* ~/.claude/skills/
+   ```
 
 ## Contributors
 

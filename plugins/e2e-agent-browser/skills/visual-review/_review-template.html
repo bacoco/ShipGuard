@@ -118,6 +118,49 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .pen-hint{font-size:11px;color:rgba(255,255,255,.6);background:rgba(0,0,0,.4);padding:2px 8px;border-radius:4px}
 .card.selected.annotated{box-shadow:0 0 0 2px var(--fail),0 0 8px var(--fail)44}
 
+/* Annotation comment popup */
+.annot-comment-popup {
+  position: absolute;
+  z-index: 10;
+  background: var(--card);
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--fg);
+  font-size: 12px;
+  width: 240px;
+  outline: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,.5);
+}
+
+/* Before/After comparison bar */
+.lb-comparison-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  justify-content: center;
+  background: var(--secondary);
+  border-bottom: 1px solid var(--border);
+}
+.lb-comp-btn {
+  padding: 4px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: .15s;
+}
+.lb-comp-btn.active {
+  background: var(--primary);
+  color: var(--bg);
+  border-color: var(--primary);
+}
+
+/* AI review badge on card */
+.badge-ai{background:#a855f722;color:#a855f7;font-size:9px;font-weight:700;margin-left:4px}
+
 /* Empty state */
 .empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
 
@@ -153,6 +196,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
   <button class="action-btn action-btn-validate" id="btn-validate" style="background:#ef4444;color:white">Validate &amp; Generate Report</button>
   <button class="action-btn action-btn-rerun" id="btn-rerun">Re-run selected</button>
   <button class="action-btn action-btn-copy" id="btn-copy">Copy IDs</button>
+  <button class="action-btn" id="btn-ai-review" style="background:#a855f7;color:white">AI Review selected</button>
   <button class="action-btn action-btn-clear" id="btn-clear">Clear</button>
 </div>
 
@@ -161,12 +205,17 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
   <div class="lb-content">
     <button class="lb-fullscreen-btn" id="lb-fullscreen" title="Toggle fullscreen view">&#128065;</button>
     <button class="lb-close" id="lb-close">&times;</button>
+    <div class="lb-comparison-bar" id="lb-comparison-bar" style="display:none">
+      <button class="lb-comp-btn" id="lb-comp-before">Before</button>
+      <button class="lb-comp-btn active" id="lb-comp-after">After</button>
+    </div>
     <div class="lb-img-container" id="lb-img-container">
       <img class="lb-img" id="lb-img" alt="">
       <canvas class="lb-canvas" id="lb-canvas"></canvas>
       <div class="lb-pen-toolbar" id="lb-pen-toolbar">
         <button class="pen-btn" id="pen-toggle" title="Annotation pen">&#9998;</button>
         <button class="pen-btn" id="pen-clear" title="Clear annotations">&#10005;</button>
+        <button class="pen-btn" id="ai-review-btn" title="Request AI improvement suggestions">&#9733;</button>
         <span class="pen-hint" id="pen-hint">Click pen to annotate</span>
       </div>
     </div>
@@ -336,6 +385,12 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       prio.className = 'badge badge-priority';
       prio.textContent = t.priority;
       meta.appendChild(prio);
+      if (aiReviewedTests[t.id]) {
+        var aiBadge = document.createElement('span');
+        aiBadge.className = 'badge badge-ai';
+        aiBadge.textContent = 'AI';
+        meta.appendChild(aiBadge);
+      }
       body.appendChild(meta);
 
       var desc = document.createElement('div');
@@ -372,19 +427,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       bar.classList.remove('visible');
     }
   }
-
-  document.getElementById('btn-rerun').addEventListener('click', function() {
-    var ids = Object.keys(selected);
-    var json = JSON.stringify({ action: 'rerun', timestamp: new Date().toISOString(), tests: ids }, null, 2);
-    var blob = new Blob([json], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'rerun-' + Date.now() + '.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Downloaded rerun manifest');
-  });
 
   document.getElementById('btn-copy').addEventListener('click', function() {
     var ids = Object.keys(selected).join('\n');
@@ -458,6 +500,22 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       stepsEl.appendChild(step);
     });
 
+    // ── Before/After comparison toggle ──
+    var compBar = document.getElementById('lb-comparison-bar');
+    var compBefore = document.getElementById('lb-comp-before');
+    var compAfter = document.getElementById('lb-comp-after');
+    if (t.comparison) {
+      compBar.style.display = 'flex';
+      compAfter.classList.add('active');
+      compBefore.classList.remove('active');
+      // Store comparison data on the lightbox for toggle handlers
+      compBar._compData = t.comparison;
+      compBar._testScreenshot = t.screenshot;
+    } else {
+      compBar.style.display = 'none';
+      compBar._compData = null;
+    }
+
     lb.classList.add('visible');
     if (window._annotSetup) window._annotSetup(id);
   }
@@ -486,6 +544,58 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     if (penActive) return; // don't toggle fullscreen while drawing
     document.getElementById('lightbox').classList.toggle('fullscreen');
     setTimeout(function() { if (window._annotSetup) window._annotSetup(currentTestId); }, 300);
+  });
+
+  // ── Before/After comparison toggle handlers ──
+  document.getElementById('lb-comp-before').addEventListener('click', function() {
+    var compBar = document.getElementById('lb-comparison-bar');
+    if (!compBar._compData || !compBar._compData.before) return;
+    document.getElementById('lb-img').src = compBar._compData.before;
+    this.classList.add('active');
+    document.getElementById('lb-comp-after').classList.remove('active');
+    setTimeout(function() { if (window._annotSetup) window._annotSetup(currentTestId); }, 100);
+  });
+  document.getElementById('lb-comp-after').addEventListener('click', function() {
+    var compBar = document.getElementById('lb-comparison-bar');
+    var src = compBar._testScreenshot || (compBar._compData && compBar._compData.after);
+    if (!src) return;
+    document.getElementById('lb-img').src = src;
+    this.classList.add('active');
+    document.getElementById('lb-comp-before').classList.remove('active');
+    setTimeout(function() { if (window._annotSetup) window._annotSetup(currentTestId); }, 100);
+  });
+
+  // ── AI Review All Selected button ──
+  document.getElementById('btn-ai-review').addEventListener('click', function() {
+    var ids = Object.keys(selected);
+    if (!ids.length) { showToast('Select tests first'); return; }
+    var tests = ids.map(function(id) {
+      var t = D.tests.find(function(x) { return x.id === id; });
+      if (!t) return null;
+      return {
+        id: t.id,
+        name: t.name,
+        url: t.url || '',
+        screenshot: t.screenshot || '',
+        description: t.description || '',
+        steps: t.steps || []
+      };
+    }).filter(Boolean);
+    var manifest = {
+      action: 'ai-review',
+      timestamp: new Date().toISOString(),
+      tests: tests
+    };
+    var json = JSON.stringify(manifest, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ai-review-batch-' + Date.now() + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    ids.forEach(function(id) { aiReviewedTests[id] = true; });
+    renderGrid();
+    showToast('AI Review manifest downloaded for ' + tests.length + ' tests');
   });
 
   // ── Last Run Only toggle ──
@@ -529,73 +639,237 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   var isDrawing = false;
   var annotationData = {};
   var currentTestId = null;
-  var drawStart = null;
+  var currentPath = [];
+  var aiReviewedTests = {};
+  var commentPopup = null;
 
   function initAnnotation() {
     var canvas = document.getElementById('lb-canvas');
     if (!canvas) return;
     var ctx = canvas.getContext('2d');
+    var container = document.getElementById('lb-img-container');
 
     document.getElementById('pen-toggle').addEventListener('click', function() {
       penActive = !penActive;
       this.classList.toggle('active', penActive);
       canvas.classList.toggle('drawing', penActive);
-      document.getElementById('pen-hint').textContent = penActive ? 'Draw rectangles on problems' : 'Click pen to annotate';
+      document.getElementById('pen-hint').textContent = penActive ? 'Draw freehand on problems' : 'Click pen to annotate';
     });
 
     document.getElementById('pen-clear').addEventListener('click', function() {
       if (currentTestId) { delete annotationData[currentTestId]; redraw(); }
     });
 
+    // ── AI Review single test button ──
+    document.getElementById('ai-review-btn').addEventListener('click', function() {
+      if (!currentTestId) return;
+      var t = D.tests.find(function(x) { return x.id === currentTestId; });
+      if (!t) return;
+      var manifest = {
+        action: 'ai-review',
+        timestamp: new Date().toISOString(),
+        test: {
+          id: t.id,
+          name: t.name,
+          url: t.url || '',
+          screenshot: t.screenshot || '',
+          description: t.description || '',
+          steps: t.steps || []
+        }
+      };
+      var json = JSON.stringify(manifest, null, 2);
+      var blob = new Blob([json], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'ai-review-' + t.id + '-' + Date.now() + '.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      aiReviewedTests[t.id] = true;
+      renderGrid();
+      showToast('AI Review manifest downloaded');
+    });
+
+    // ── Freehand drawing ──
     canvas.addEventListener('mousedown', function(e) {
       if (!penActive) return;
+      dismissCommentPopup(true); // dismiss any open popup, saving current
       isDrawing = true;
       var r = canvas.getBoundingClientRect();
-      drawStart = { x: e.clientX - r.left, y: e.clientY - r.top };
+      currentPath = [{ x: (e.clientX - r.left) / canvas.width, y: (e.clientY - r.top) / canvas.height }];
     });
 
     canvas.addEventListener('mousemove', function(e) {
       if (!isDrawing) return;
       var r = canvas.getBoundingClientRect();
+      var pt = { x: (e.clientX - r.left) / canvas.width, y: (e.clientY - r.top) / canvas.height };
+      currentPath.push(pt);
       redraw();
-      ctx.strokeStyle = 'rgba(255,107,107,0.8)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([6,3]);
-      ctx.strokeRect(drawStart.x, drawStart.y, (e.clientX-r.left)-drawStart.x, (e.clientY-r.top)-drawStart.y);
-      ctx.setLineDash([]);
+      // Draw current in-progress stroke
+      drawStroke(ctx, currentPath, canvas.width, canvas.height, true);
     });
 
     canvas.addEventListener('mouseup', function(e) {
       if (!isDrawing) return;
       isDrawing = false;
-      var r = canvas.getBoundingClientRect();
-      var x = e.clientX - r.left, y = e.clientY - r.top;
-      if (Math.abs(x-drawStart.x) > 5 && Math.abs(y-drawStart.y) > 5) {
-        if (!annotationData[currentTestId]) annotationData[currentTestId] = [];
-        annotationData[currentTestId].push({
-          x1: drawStart.x/canvas.width, y1: drawStart.y/canvas.height,
-          x2: x/canvas.width, y2: y/canvas.height
-        });
-        if (!selected[currentTestId]) { selected[currentTestId] = true; selectedCount++; updateBar(); }
-      }
+      if (currentPath.length < 2) { currentPath = []; redraw(); return; }
+      // Add annotation with empty comment (will be filled by popup)
+      if (!annotationData[currentTestId]) annotationData[currentTestId] = [];
+      var newAnnot = { points: currentPath.slice(), comment: '' };
+      annotationData[currentTestId].push(newAnnot);
+      if (!selected[currentTestId]) { selected[currentTestId] = true; selectedCount++; updateBar(); }
       redraw();
+      // Show comment popup near last point
+      var lastPt = currentPath[currentPath.length - 1];
+      showCommentPopup(lastPt, annotationData[currentTestId].length - 1);
+      currentPath = [];
     });
+
+    function drawStroke(c, points, w, h, isDashed) {
+      if (points.length < 2) return;
+      c.save();
+      c.strokeStyle = 'rgba(255, 50, 50, 0.95)';
+      c.lineWidth = 5;
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      c.shadowBlur = 8;
+      c.shadowColor = 'rgba(255, 0, 0, 0.6)';
+      if (isDashed) c.setLineDash([8, 4]);
+      c.beginPath();
+      c.moveTo(points[0].x * w, points[0].y * h);
+      for (var i = 1; i < points.length; i++) {
+        c.lineTo(points[i].x * w, points[i].y * h);
+      }
+      c.stroke();
+      if (isDashed) c.setLineDash([]);
+      c.restore();
+    }
+
+    function drawAnnotationLabel(c, annot, index, w, h) {
+      if (!annot.points || !annot.points.length) return;
+      var px = annot.points[0].x * w;
+      var py = annot.points[0].y * h;
+      var r = 10;
+      // Filled red circle
+      c.save();
+      c.fillStyle = 'rgba(255, 50, 50, 0.95)';
+      c.shadowBlur = 4;
+      c.shadowColor = 'rgba(0,0,0,0.5)';
+      c.beginPath();
+      c.arc(px, py, r, 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+      // White number
+      c.save();
+      c.fillStyle = '#ffffff';
+      c.font = 'bold 11px system-ui, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(String(index + 1), px, py);
+      c.restore();
+      // Truncated comment next to number
+      if (annot.comment) {
+        var label = annot.comment.length > 20 ? annot.comment.substring(0, 20) + '...' : annot.comment;
+        c.save();
+        c.font = '11px system-ui, sans-serif';
+        var tw = c.measureText(label).width;
+        c.fillStyle = 'rgba(0,0,0,0.7)';
+        c.fillRect(px + r + 4, py - 8, tw + 8, 16);
+        c.fillStyle = '#ffffff';
+        c.textAlign = 'left';
+        c.textBaseline = 'middle';
+        c.fillText(label, px + r + 8, py);
+        c.restore();
+      }
+    }
 
     function redraw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      (annotationData[currentTestId] || []).forEach(function(a) {
-        var x1=a.x1*canvas.width, y1=a.y1*canvas.height, x2=a.x2*canvas.width, y2=a.y2*canvas.height;
-        ctx.strokeStyle = 'rgba(255,107,107,0.9)'; ctx.lineWidth = 3;
-        ctx.strokeRect(x1, y1, x2-x1, y2-y1);
-        ctx.fillStyle = 'rgba(255,107,107,0.1)';
-        ctx.fillRect(x1, y1, x2-x1, y2-y1);
+      var annots = annotationData[currentTestId] || [];
+      annots.forEach(function(a, i) {
+        if (a.points && a.points.length >= 2) {
+          drawStroke(ctx, a.points, canvas.width, canvas.height, false);
+          drawAnnotationLabel(ctx, a, i, canvas.width, canvas.height);
+        }
       });
+    }
+
+    // ── Comment popup ──
+    function showCommentPopup(relPt, annotIndex) {
+      dismissCommentPopup(true);
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'annot-comment-popup';
+      input.placeholder = 'Describe the issue (optional)...';
+      // Position near the last point of the stroke
+      var left = Math.min(relPt.x * 100, 70); // % - keep within bounds
+      var top = relPt.y * 100 + 2;
+      input.style.left = left + '%';
+      input.style.top = top + '%';
+      container.appendChild(input);
+      input.focus();
+      commentPopup = { el: input, index: annotIndex };
+
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveComment(input.value, annotIndex);
+          removePopup();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelAnnotation(annotIndex);
+          removePopup();
+        }
+      });
+
+      input.addEventListener('blur', function() {
+        // Small delay to allow keydown to fire first
+        setTimeout(function() {
+          if (commentPopup && commentPopup.el === input) {
+            saveComment(input.value, annotIndex);
+            removePopup();
+          }
+        }, 100);
+      });
+
+      function removePopup() {
+        if (input.parentNode) input.parentNode.removeChild(input);
+        commentPopup = null;
+      }
+    }
+
+    function dismissCommentPopup(save) {
+      if (!commentPopup) return;
+      var el = commentPopup.el;
+      var idx = commentPopup.index;
+      if (save) {
+        saveComment(el.value, idx);
+      }
+      if (el.parentNode) el.parentNode.removeChild(el);
+      commentPopup = null;
+    }
+
+    function saveComment(text, annotIndex) {
+      var annots = annotationData[currentTestId];
+      if (annots && annots[annotIndex]) {
+        annots[annotIndex].comment = text || '';
+        redraw();
+      }
+    }
+
+    function cancelAnnotation(annotIndex) {
+      var annots = annotationData[currentTestId];
+      if (annots && annotIndex >= 0 && annotIndex < annots.length) {
+        annots.splice(annotIndex, 1);
+        if (annots.length === 0) delete annotationData[currentTestId];
+        redraw();
+      }
     }
 
     // Expose for lightbox setup
     window._annotSetup = function(testId) {
       currentTestId = testId;
       penActive = false;
+      dismissCommentPopup(true);
       var toggle = document.getElementById('pen-toggle');
       if (toggle) { toggle.classList.remove('active'); }
       canvas.classList.remove('drawing');
@@ -632,7 +906,9 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       if (annotationData[id] && annotationData[id].length) {
         report += '- **Annotations:** ' + annotationData[id].length + ' problem area(s) marked\n';
         annotationData[id].forEach(function(a, j) {
-          report += '  - Region ' + (j+1) + ': x=' + (a.x1*100).toFixed(0) + '-' + (a.x2*100).toFixed(0) + '%, y=' + (a.y1*100).toFixed(0) + '-' + (a.y2*100).toFixed(0) + '%\n';
+          report += '  - Stroke ' + (j+1) + ': ' + (a.points ? a.points.length + ' points' : 'N/A');
+          if (a.comment) report += ' — "' + a.comment + '"';
+          report += '\n';
         });
       }
       report += '\n### Steps to reproduce\n\n';

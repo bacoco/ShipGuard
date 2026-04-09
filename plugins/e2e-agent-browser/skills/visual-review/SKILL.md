@@ -21,7 +21,7 @@ Generate and open a self-contained HTML page to visually review all Visual test 
 
 - `/visual-discover` has been run (manifests exist in `visual-tests/`)
 - `/visual-run` has been run at least once (screenshots + report exist in `visual-tests/_results/`)
-- `js-yaml` available via npm/pnpm
+- No external npm dependencies — the build script uses a built-in YAML parser
 
 ## What It Does
 

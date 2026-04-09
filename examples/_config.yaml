@@ -6,3 +6,9 @@ credentials:
 screenshots_dir: "visual-tests/_results/screenshots"
 report_path: "visual-tests/_results/report.md"
 agent_browser_path: "agent-browser"
+
+# Build command to rebuild the app after code changes (used by /visual-fix)
+# Set to null or omit if no rebuild is needed
+build_command: null
+# Optional: secondary build command (e.g., for API server)
+build_command_api: null

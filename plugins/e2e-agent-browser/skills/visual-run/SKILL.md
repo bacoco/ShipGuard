@@ -186,6 +186,8 @@ agent-browser press <key>
 sleep <duration_seconds>
 ```
 
+> **Note:** Recommended maximum duration: 120 seconds. Longer waits risk blocking the agent. If you need to wait for an async process, prefer `llm-wait` with explicit checkpoints and a timeout instead.
+
 **`assert_url`:**
 ```bash
 agent-browser get url

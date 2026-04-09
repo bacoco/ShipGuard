@@ -90,18 +90,24 @@ Apply the minimal fix. Follow project rules:
 
 #### 2d. Rebuild and capture "after" screenshot
 
-```bash
-# If frontend change:
-docker compose -f infra/docker-compose.mac-studio.yml up -d --build uranus
-# Wait for healthy
+Read `build_command` from `visual-tests/_config.yaml`:
 
-# If backend change:
-docker compose -f infra/docker-compose.mac-studio.yml up -d --build api-synthesia
+- If `build_command` is set: execute it
+- If `build_command_api` is set: execute it too
+- If neither is set: ask the user how to rebuild, then proceed
+
+```bash
+# Example with Docker:
+# build_command: "docker compose -f infra/docker-compose.mac-studio.yml up -d --build uranus"
+# Example with static server:
+# build_command: "python3 -m http.server 8080"
+# Example with no rebuild needed:
+# build_command: null
 
 # Re-run the specific test steps
-npx agent-browser open {test_url}
+agent-browser open {test_url}
 # ... execute test steps from manifest
-npx agent-browser screenshot --full visual-tests/_results/screenshots/{test-id}-after.png
+agent-browser screenshot --full visual-tests/_results/screenshots/{test-id}-after.png
 ```
 
 #### 2e. Save before/after pair
@@ -140,6 +146,38 @@ Visual Review Fix Complete:
 - Before/after comparison: visual-tests/_results/review.html (Comparison tab)
 - Rebuilt: uranus / api-synthesia
 ```
+
+## AI Review Mode
+
+When the fix manifest has `"action": "ai-review"` instead of `"validate-and-fix"`:
+
+### What It Does
+
+For each test in the manifest:
+
+1. **Read the screenshot** with the Read tool
+2. **Analyze the UI** across these axes:
+   - Layout & spacing (alignment, whitespace, overflow)
+   - Typography (hierarchy, readability, contrast)
+   - Color & theming (consistency, accessibility, contrast ratios)
+   - UX patterns (discoverability, feedback, affordances)
+   - Responsive design (mobile/tablet breakpoints)
+   - Accessibility (labels, keyboard navigation, ARIA)
+3. **Propose improvements** — concrete, actionable suggestions ranked by impact
+4. **Present to the user** — list the suggestions and ask which ones to implement
+5. **Implement approved changes** — apply the fixes, rebuild, capture "after" screenshots
+
+### Output
+
+Present improvements as a numbered list:
+```
+AI Review — {test_name}:
+1. [HIGH] Button text "Valider" has insufficient contrast (2.8:1) — needs 4.5:1 minimum
+2. [MED] Sidebar items lack hover state — add background transition
+3. [LOW] Card grid has uneven spacing at 768px breakpoint — use gap instead of margin
+```
+
+Wait for user to approve specific items before implementing.
 
 ## Important Rules
 

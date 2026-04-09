@@ -1,0 +1,8 @@
+# Visual test results (screenshots, reports, review page)
+visual-tests/_results/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
