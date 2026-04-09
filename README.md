@@ -38,7 +38,7 @@ claude plugin marketplace add bacoco/agentic-visual-debugger
 claude plugin install agentic-visual-debugger
 ```
 
-Then type `/reload-plugins` to activate the skills in your current session.
+Then restart Claude Code so the `/visual-*` commands appear in autocomplete.
 
 **Step 2** — Scan your app:
 
