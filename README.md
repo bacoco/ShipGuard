@@ -33,7 +33,12 @@ One command. Every page in your app gets tested, screenshotted, and inspected by
 
 **Step 1** — Install the plugin in [Claude Code](https://claude.ai/code):
 
-> Install the skills from github.com/bacoco/agentic-visual-debugger
+```bash
+claude plugin marketplace add bacoco/agentic-visual-debugger
+claude plugin install agentic-visual-debugger
+```
+
+Then restart Claude Code (or `/clear`) to load the new skills.
 
 **Step 2** — Scan your app:
 
@@ -148,7 +153,9 @@ For the full architecture and design decisions, read the **[Design Spec](docs/de
 
 ```bash
 git clone https://github.com/bacoco/agentic-visual-debugger.git
-cp -r plugins/e2e-agent-browser ~/.claude/plugins/
+cd agentic-visual-debugger
+claude plugin marketplace add .
+claude plugin install agentic-visual-debugger
 ```
 
 ## Contributors

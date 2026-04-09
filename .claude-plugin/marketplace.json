@@ -1,0 +1,16 @@
+{
+  "name": "agentic-visual-debugger",
+  "owner": {
+    "name": "Loic Baconnier",
+    "url": "https://github.com/bacoco"
+  },
+  "plugins": [
+    {
+      "name": "agentic-visual-debugger",
+      "description": "AI-powered visual E2E testing — discover routes, screenshot every page, annotate bugs, auto-fix",
+      "source": "./plugins/agentic-visual-debugger",
+      "category": "testing",
+      "homepage": "https://github.com/bacoco/agentic-visual-debugger"
+    }
+  ]
+}

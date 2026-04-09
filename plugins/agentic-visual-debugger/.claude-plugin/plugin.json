@@ -1,0 +1,8 @@
+{
+  "name": "agentic-visual-debugger",
+  "description": "Agentic visual debugger — AI-powered visual E2E testing with agent-browser. Discover routes, screenshot every page, annotate bugs, auto-fix.",
+  "version": "1.0.0",
+  "author": {
+    "name": "bacoco"
+  }
+}
