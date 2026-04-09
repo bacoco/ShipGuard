@@ -355,6 +355,29 @@ if (process.argv.includes('--serve')) {
   const PORT = parseInt(process.argv.find(a => a.startsWith('--port='))?.split('=')[1] || '8888');
 
   const server = http.createServer((req, res) => {
+    // POST /save-manifest — save fix manifest from review page
+    if (req.method === 'POST' && req.url === '/save-manifest') {
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const manifestPath = join(RESULTS_DIR, 'fix-manifest.json');
+          writeFileSync(manifestPath, JSON.stringify(data, null, 2), 'utf8');
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, path: manifestPath }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+      res.end();
+      return;
+    }
     const url = req.url === '/' ? '/review.html' : req.url;
     const filePath = join(RESULTS_DIR, url.replace(/^\//, ''));
     if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
