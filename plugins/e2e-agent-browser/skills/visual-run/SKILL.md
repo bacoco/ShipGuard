@@ -1,11 +1,11 @@
 ---
-name: e2e-run
-description: Execute E2E test manifests using agent-browser with hybrid scripted+LLM assertions. Accepts natural language to describe what to test or what changed — the skill finds and runs the right tests, generating missing ones if needed. Trigger on "e2e run", "run e2e tests", "test regressions", "run tests", "e2e-run", "check if the app works", "teste le chat", "j'ai modifie X verifie que ca marche".
+name: visual-run
+description: Execute Visual test manifests using agent-browser with hybrid scripted+LLM assertions. Accepts natural language to describe what to test or what changed — the skill finds and runs the right tests, generating missing ones if needed. Trigger on "visual run", "run visual tests", "test regressions", "run tests", "visual-run", "check if the app works", "teste le chat", "j'ai modifie X verifie que ca marche".
 context: conversation
 argument-hint: "[tests to run or natural language description]"
 ---
 
-# /e2e-run — Execute E2E Tests
+# /visual-run — Execute Visual Tests
 
 Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid execution: mechanical steps run directly, complex assertions delegate to LLM evaluation.
 
@@ -13,8 +13,8 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 
 | Command | Behavior |
 |---------|----------|
-| `/e2e-run` | **Interactive** — asks user what to do |
-| `/e2e-run <natural language>` | Describe what to test — the skill figures out the rest |
+| `/visual-run` | **Interactive** — asks user what to do |
+| `/visual-run <natural language>` | Describe what to test — the skill figures out the rest |
 
 ### Interactive Mode (no arguments)
 
@@ -34,17 +34,17 @@ If the user picks "Only regressions", read `_regressions.yaml` and run those tes
 
 If the user picks "Full suite", run everything.
 
-**This question is only asked when no argument is provided.** If the user types `/e2e-run I fixed the chat`, skip the question and go straight to impact analysis.
+**This question is only asked when no argument is provided.** If the user types `/visual-run I fixed the chat`, skip the question and go straight to impact analysis.
 
 ### Natural Language Mode (when text is provided)
 
 When you pass free text, the skill operates in **impact analysis mode**:
 
 ```bash
-/e2e-run teste l'upload de PDF et le pipeline
-/e2e-run j'ai modifie le sidebar de Harmonia, verifie que tout marche
-/e2e-run est-ce que le chat fonctionne avec un document attache ?
-/e2e-run j'ai change ArticleModal.tsx et notaire-chat-view.tsx
+/visual-run teste l'upload de PDF et le pipeline
+/visual-run j'ai modifie le sidebar de Harmonia, verifie que tout marche
+/visual-run est-ce que le chat fonctionne avec un document attache ?
+/visual-run j'ai change ArticleModal.tsx et notaire-chat-view.tsx
 ```
 
 **Flow:**
@@ -60,9 +60,9 @@ When you pass free text, the skill operates in **impact analysis mode**:
    - Text mentions a file like "ArticleModal.tsx" → find which routes/components use it → match those manifests
 
 3. **Generate missing tests** — If the described scope has no existing test:
-   - Invoke `/e2e-discover` with a narrow scope on that area (e.g., `/e2e-discover --scope=<component-or-route> --depth=1`) to read the component, understand what it does, and produce a manifest skeleton
+   - Invoke `/visual-discover` with a narrow scope on that area (e.g., `/visual-discover --scope=<component-or-route> --depth=1`) to read the component, understand what it does, and produce a manifest skeleton
    - Generate a new manifest with real steps and assertions
-   - **Tag the manifest** with `auto_generated: true`, `generated_by: e2e-run`, `generated_date: "{date}"` in the frontmatter
+   - **Tag the manifest** with `auto_generated: true`, `generated_by: visual-run`, `generated_date: "{date}"` in the frontmatter
    - Save it to the test tree
    - Then execute it
    - Auto-generated manifests are reported separately. After 3 consecutive passes, they are **automatically removed** (same rule as regressions in `_regressions.yaml`)
@@ -82,10 +82,10 @@ When you pass free text, the skill operates in **impact analysis mode**:
 ## Pre-flight
 
 1. Verify `agent-browser --version` is available
-2. Read `e2e-tests/_config.yaml` — fail if missing (tell user to run `/e2e-discover`)
+2. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/visual-discover`)
 3. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error
 4. Create `{screenshots_dir}` if missing
-5. Read `e2e-tests/_regressions.yaml` (create empty if missing)
+5. Read `visual-tests/_regressions.yaml` (create empty if missing)
 
 ## Build Execution List
 
@@ -143,7 +143,7 @@ Before executing, replace variables in all string fields:
 #### Include Resolution
 
 For `action: include`:
-- Read the referenced file (relative to `e2e-tests/`)
+- Read the referenced file (relative to `visual-tests/`)
 - Inline its steps at the current position
 - Max depth: 3 levels. Circular references: detect and reject with error.
 
@@ -289,7 +289,7 @@ If any `agent-browser` command returns non-zero exit code or times out:
 
 ## Update Regressions
 
-After all tests complete, update `e2e-tests/_regressions.yaml`:
+After all tests complete, update `visual-tests/_regressions.yaml`:
 
 ### Add/Update Failures
 
@@ -306,7 +306,7 @@ For each test that PASSED and is in regressions:
 ### Regressions File Format
 
 ```yaml
-# Auto-maintained by /e2e-run — do not edit manually
+# Auto-maintained by /visual-run — do not edit manually
 regressions:
   - test: notaire-chat/upload-pdf
     first_failed: "2026-03-22"
@@ -318,13 +318,13 @@ regressions:
 
 ## Generate Report
 
-Write to `{report_path}` (default: `e2e-tests/_results/report.md`):
+Write to `{report_path}` (default: `visual-tests/_results/report.md`):
 
 ```markdown
-# E2E Report — {date} {time}
+# Visual Report — {date} {time}
 
 > **Note:** These tests verify visual page loading and surface UI interactions.
-> They do not replace unit tests, integration tests, or deterministic E2E tests (pytest, Playwright).
+> They do not replace unit tests, integration tests, or deterministic visual tests (pytest, Playwright).
 > llm-check assertions are evaluated by the LLM with no external observer.
 
 ## Summary
@@ -344,7 +344,7 @@ Write to `{report_path}` (default: `e2e-tests/_results/report.md`):
 ## Stale Tests
 ### {test_path} — STALE
 - Step {n}: {action} target "{target}" — element not found
-- Action: Run `/e2e-discover` to update selectors
+- Action: Run `/visual-discover` to update selectors
 
 ## Generated Tests
 - {test_path}: created to cover "{user_description}"
@@ -363,9 +363,9 @@ Write to `{report_path}` (default: `e2e-tests/_results/report.md`):
 After the report is written, display a concise summary to the user:
 
 ```
-E2E run complete: {pass}/{total} passed, {fail} failed, {stale} stale
-Report: e2e-tests/_results/report.md
-Screenshots: e2e-tests/_results/screenshots/
+Visual run complete: {pass}/{total} passed, {fail} failed, {stale} stale
+Report: visual-tests/_results/report.md
+Screenshots: visual-tests/_results/screenshots/
 
 {if failures}
 Failures:
@@ -373,7 +373,7 @@ Failures:
 {/if}
 
 {if stale}
-Stale tests (UI changed — run /e2e-discover):
+Stale tests (UI changed — run /visual-discover):
 - {test_path}
 {/if}
 

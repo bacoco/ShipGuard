@@ -1,17 +1,17 @@
 ---
-name: e2e-review-stop
-description: Stop the E2E review HTTP server. Trigger on "e2e-review-stop", "stop review server", "arrete le serveur review", "stop html server".
+name: visual-review-stop
+description: Stop the Visual review HTTP server. Trigger on "visual-review-stop", "stop review server", "arrete le serveur review", "stop html server".
 context: conversation
 ---
 
-# /e2e-review-stop
+# /visual-review-stop
 
 Stop the review page HTTP server.
 
 ## Instructions
 
 ```bash
-node e2e-tests/build-review.mjs --stop
+node visual-tests/build-review.mjs --stop
 ```
 
 If no PID file exists, report "No server running."

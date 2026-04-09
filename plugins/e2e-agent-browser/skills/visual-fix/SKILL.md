@@ -1,13 +1,13 @@
 ---
-name: e2e-review-fix
-description: Process human-annotated E2E screenshots — analyze marked problem areas, trace to source code, implement fixes, capture before/after screenshots, and regenerate the review page with a comparison tab. Trigger on "fix annotated tests", "process review annotations", "e2e fix", "fix les annotations", "traite la review".
+name: visual-fix
+description: Process human-annotated Visual screenshots — analyze marked problem areas, trace to source code, implement fixes, capture before/after screenshots, and regenerate the review page with a comparison tab. Trigger on "fix annotated tests", "process review annotations", "visual fix", "fix les annotations", "traite la review".
 context: conversation
 argument-hint: "[path to fix manifest JSON, or 'latest' to use most recent]"
 ---
 
-# /e2e-review-fix — Fix Annotated Screenshots
+# /visual-fix — Fix Annotated Screenshots
 
-Take human-annotated screenshots from `/e2e-review`, analyze the marked problems, fix the code, and produce before/after comparison.
+Take human-annotated screenshots from `/visual-review`, analyze the marked problems, fix the code, and produce before/after comparison.
 
 ## Flow
 
@@ -15,7 +15,7 @@ Take human-annotated screenshots from `/e2e-review`, analyze the marked problems
 Human annotates screenshots in review.html
   → clicks "Validate & Generate Report"
   → downloads fix-manifest.json + validation-report.md
-  → runs /e2e-review-fix
+  → runs /visual-fix
     → AI reads each annotated screenshot
     → AI reads the annotation coordinates (problem region)
     → AI identifies the visual bug in that region
@@ -30,8 +30,8 @@ Human annotates screenshots in review.html
 
 | Command | Behavior |
 |---------|----------|
-| `/e2e-review-fix` | Process the most recent fix manifest in `e2e-tests/_results/` |
-| `/e2e-review-fix <path>` | Process a specific fix manifest JSON file |
+| `/visual-fix` | Process the most recent fix manifest in `visual-tests/_results/` |
+| `/visual-fix <path>` | Process a specific fix manifest JSON file |
 
 ## Instructions
 
@@ -39,7 +39,7 @@ Human annotates screenshots in review.html
 
 Find the manifest file:
 - If argument provided: use that path
-- Otherwise: find the most recent `e2e-fix-manifest-*.json` in the current directory or Downloads
+- Otherwise: find the most recent `visual-fix-manifest-*.json` in the current directory or Downloads
 
 The manifest contains:
 ```json
@@ -65,7 +65,7 @@ The manifest contains:
 
 ```bash
 # Read the screenshot file
-Read(e2e-tests/_results/{screenshot_path})
+Read(visual-tests/_results/{screenshot_path})
 ```
 
 Focus on the annotated regions (x1/y1 to x2/y2 as percentages of image dimensions). Describe what you see in each marked region:
@@ -101,14 +101,14 @@ docker compose -f infra/docker-compose.mac-studio.yml up -d --build api-synthesi
 # Re-run the specific test steps
 npx agent-browser open {test_url}
 # ... execute test steps from manifest
-npx agent-browser screenshot --full e2e-tests/_results/screenshots/{test-id}-after.png
+npx agent-browser screenshot --full visual-tests/_results/screenshots/{test-id}-after.png
 ```
 
 #### 2e. Save before/after pair
 
 Copy the original screenshot:
 ```bash
-cp e2e-tests/_results/screenshots/{original}.png e2e-tests/_results/screenshots/{test-id}-before.png
+cp visual-tests/_results/screenshots/{original}.png visual-tests/_results/screenshots/{test-id}-before.png
 ```
 
 ### Step 3: Generate Before/After Comparison
@@ -116,7 +116,7 @@ cp e2e-tests/_results/screenshots/{original}.png e2e-tests/_results/screenshots/
 Regenerate the review page with a "Comparison" tab:
 
 ```bash
-node e2e-tests/build-review.mjs --with-comparisons
+node visual-tests/build-review.mjs --with-comparisons
 ```
 
 The comparison tab shows side-by-side before/after for each fixed test:
@@ -128,16 +128,16 @@ The comparison tab shows side-by-side before/after for each fixed test:
 ### Step 4: Commit and Report
 
 ```bash
-git add <fixed files> e2e-tests/_results/screenshots/*-after.png
+git add <fixed files> visual-tests/_results/screenshots/*-after.png
 git commit -m "fix(e2e): fix N annotated issues from human review"
 ```
 
 Report to user:
 ```
-E2E Review Fix Complete:
+Visual Review Fix Complete:
 - {N} annotated issues processed
 - {M} fixed, {K} need further investigation
-- Before/after comparison: e2e-tests/_results/review.html (Comparison tab)
+- Before/after comparison: visual-tests/_results/review.html (Comparison tab)
 - Rebuilt: uranus / api-synthesia
 ```
 
