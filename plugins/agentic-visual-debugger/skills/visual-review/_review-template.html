@@ -157,6 +157,27 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .annot-item-edit:hover{color:var(--fg);border-color:var(--primary)}
 .annot-item-del{background:none;border:none;color:var(--fail);font-size:14px;cursor:pointer;padding:0 4px}
 
+/* Before/After slider */
+.lb-ba{display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:8px 12px;background:var(--secondary);border-radius:8px}
+.lb-ba-btn{padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
+.lb-ba-btn:hover{border-color:var(--primary);color:var(--fg)}
+.lb-ba-btn.active{background:var(--primary);color:var(--bg);border-color:var(--primary)}
+.lb-ba-btn-revert{background:transparent;border:1px solid var(--fail);color:var(--fail);margin-left:auto}
+.lb-ba-btn-revert:hover{background:var(--fail);color:white}
+.lb-ba-btn-revert.active{background:var(--fail);color:white}
+.lb-ba-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+/* Scoring badge on cards */
+.card-score{position:absolute;bottom:46px;right:8px;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;z-index:2}
+.card-score-stable{background:#1a7e4033;color:#4ade80}
+.card-score-fragile{background:#b4530933;color:#fbbf24}
+.card-score-critical{background:#ff6b6b22;color:var(--fail)}
+
+/* Session resume banner */
+.session-banner{display:none;padding:8px 24px;background:#059669;color:white;font-size:13px;font-weight:600;text-align:center;cursor:pointer}
+.session-banner:hover{background:#047857}
+.session-banner.visible{display:block}
+
 /* Note input modal */
 .note-overlay{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6)}
 .note-overlay.visible{display:flex}
@@ -193,6 +214,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
   <div class="header-meta" id="meta"></div>
 </div>
 
+<div class="session-banner" id="session-banner">Previous session found — click to restore your annotations</div>
 <div id="toolbar">
   <div class="filter-group" id="filters"></div>
   <button class="filter-btn" id="btn-last-run" title="Show only tests from the last run (with screenshots)">Last run only</button>
@@ -238,6 +260,12 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
       </div>
     </div>
     <div class="lb-detail" id="lb-detail">
+      <div class="lb-ba" id="lb-ba" style="display:none">
+        <span class="lb-ba-label">View:</span>
+        <button class="lb-ba-btn active" id="lb-ba-after">After</button>
+        <button class="lb-ba-btn" id="lb-ba-before">Before</button>
+        <button class="lb-ba-btn lb-ba-btn-revert" id="lb-ba-revert">Revert</button>
+      </div>
       <div class="lb-url" id="lb-url"></div>
       <p class="lb-desc" id="lb-desc"></p>
       <div id="lb-failure"></div>
@@ -408,6 +436,13 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var desc = document.createElement('div'); desc.className='card-desc'; desc.textContent=t.description;
       body.appendChild(desc);
       card.appendChild(body);
+      // Scoring badge
+      if (t.fixCycles > 0) {
+        var sc = document.createElement('span'); sc.className='card-score ';
+        if (t.fixCycles >= 3) { sc.className+='card-score-critical'; sc.textContent=t.fixCycles+'x fixed'; }
+        else if (t.fixCycles >= 1) { sc.className+='card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
+        card.appendChild(sc);
+      }
       card.addEventListener('click', function(){openLightbox(t.id);});
       grid.appendChild(card);
     });
@@ -426,6 +461,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     renderGrid(); updateBar();
   }
   var redoFlags = {}; // {testId: true} — "redo this page entirely"
+  var revertFlags = {}; // {testId: true} — "revert to before screenshot"
   function updateBar() {
     var bar = document.getElementById('action-bar');
     if(selectedCount>0){bar.classList.add('visible');document.getElementById('selection-count').textContent=selectedCount+' selected';}
@@ -710,9 +746,40 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var d=document.createElement('span');d.className='lb-step-detail';d.textContent=s.description||s.criteria||s.target||s.url||s.value||'';step.appendChild(d);
       stepsEl.appendChild(step);
     });
+    // Before/After toggle
+    var baSection = document.getElementById('lb-ba');
+    if (t.screenshotBefore) {
+      baSection.style.display = 'flex';
+      document.getElementById('lb-ba-after').classList.add('active');
+      document.getElementById('lb-ba-before').classList.remove('active');
+      document.getElementById('lb-ba-revert').classList.toggle('active', !!revertFlags[t.id]);
+    } else {
+      baSection.style.display = 'none';
+    }
+
     lb.classList.add('visible');
     if (window._annotSetup) window._annotSetup(id);
   }
+
+  // Before/After buttons
+  document.getElementById('lb-ba-after').addEventListener('click', function() {
+    var list = getLbList(); var t = list[currentLbIndex]; if(!t) return;
+    document.getElementById('lb-img').src = t.screenshot;
+    this.classList.add('active'); document.getElementById('lb-ba-before').classList.remove('active');
+  });
+  document.getElementById('lb-ba-before').addEventListener('click', function() {
+    var list = getLbList(); var t = list[currentLbIndex]; if(!t||!t.screenshotBefore) return;
+    document.getElementById('lb-img').src = t.screenshotBefore;
+    this.classList.add('active'); document.getElementById('lb-ba-after').classList.remove('active');
+  });
+  document.getElementById('lb-ba-revert').addEventListener('click', function() {
+    var list = getLbList(); var t = list[currentLbIndex]; if(!t) return;
+    if (revertFlags[t.id]) { delete revertFlags[t.id]; }
+    else { revertFlags[t.id] = true; if(!selected[t.id]){selected[t.id]=true;selectedCount++;updateBar();} }
+    this.classList.toggle('active', !!revertFlags[t.id]);
+    showToast(revertFlags[t.id] ? 'Flagged for revert to previous version' : 'Revert flag removed');
+    renderGrid();
+  });
 
   function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); }
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
@@ -755,6 +822,9 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
         var e = {test: id};
         if (annotationData[id]) e.annotations = annotationData[id];
         if (redoFlags[id]) e.redo_entirely = true;
+        if (revertFlags[id]) e.revert_to_before = true;
+        // Default: if selected with no annotation and no redo/revert, flag as "improve UI"
+        if (!annotationData[id] && !redoFlags[id] && !revertFlags[id]) e.improve_ui = true;
         var t = D.tests.find(function(x){return x.id===id;});
         if (t) { e.name=t.name; e.url=t.url; e.screenshot=t.screenshot; e.steps=t.steps; }
         return e;
@@ -767,7 +837,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       body: JSON.stringify(manifest)
     }).then(function(r){ return r.json(); }).then(function(d) {
       if (d.ok) {
-        // Show success overlay with next step instructions
+        clearSession(); // Clear localStorage after successful save
         document.getElementById('success-overlay').classList.add('visible');
         // Auto-dismiss on click
         document.getElementById('success-overlay').addEventListener('click', function(){this.classList.remove('visible');});
@@ -817,6 +887,52 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     if (e.key === 'ArrowLeft') { e.preventDefault(); navLightbox(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); navLightbox(1); }
   });
+
+  // ── localStorage persistence ──
+  var STORAGE_KEY = 'visual-review-session';
+  function saveSession() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        selected: selected, selectedCount: selectedCount,
+        annotationData: annotationData, redoFlags: redoFlags, revertFlags: revertFlags,
+        savedAt: Date.now()
+      }));
+    } catch(e) {}
+  }
+  function loadSession() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      var s = JSON.parse(raw);
+      // Expire after 24h
+      if (Date.now() - s.savedAt > 86400000) { localStorage.removeItem(STORAGE_KEY); return false; }
+      selected = s.selected || {};
+      selectedCount = Object.keys(selected).length;
+      annotationData = s.annotationData || {};
+      redoFlags = s.redoFlags || {};
+      revertFlags = s.revertFlags || {};
+      return true;
+    } catch(e) { return false; }
+  }
+  function clearSession() { try { localStorage.removeItem(STORAGE_KEY); } catch(e) {} }
+  // Auto-save on changes
+  var _origUpdateBar = updateBar;
+  updateBar = function() { _origUpdateBar(); saveSession(); };
+  // Show restore banner if session exists
+  if (loadSession() && selectedCount > 0) {
+    // Session restored silently — re-render
+    renderGrid(); updateBar();
+    showToast('Session restored (' + selectedCount + ' selections)');
+  }
+  // Also show banner for explicit restore on fresh page
+  document.getElementById('session-banner').addEventListener('click', function() {
+    if (loadSession()) { renderGrid(); updateBar(); }
+    this.classList.remove('visible');
+  });
+  // Save before unload
+  window.addEventListener('beforeunload', saveSession);
+  // Clear session after successful validate
+  var _origValidateSuccess = null; // handled in validate click
 
   // ── Init ──
   renderStats(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation();

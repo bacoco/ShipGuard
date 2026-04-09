@@ -205,9 +205,11 @@ function buildEntry(id, category, manifest) {
       screenshot: sanitize(s.screenshot || ''),
     })),
     screenshot: findScreenshot(id, slug, manifest.steps || []),
+    screenshotBefore: findBeforeScreenshot(id, slug, manifest.steps || []),
     screenshotMtime: getScreenshotMtime(id, slug, manifest.steps || []),
     status: 'STALE',
     failureReason: null,
+    fixCycles: 0, // will be set from regressions history
   };
 }
 
@@ -225,6 +227,17 @@ function getScreenshotMtime(id, slug, steps) {
     if (existsSync(p)) return statSync(p).mtimeMs;
   }
   return 0;
+}
+
+function findBeforeScreenshot(id, slug, steps) {
+  const candidates = [`${slug}-before.png`, id.replace(/\//g, '-') + '-before.png'];
+  for (const s of steps) {
+    if (s.screenshot) candidates.push(s.screenshot.replace('.png', '-before.png'));
+  }
+  for (const c of candidates) {
+    if (existsSync(join(SCREENSHOTS_DIR, c))) return `screenshots/${c}`;
+  }
+  return null;
 }
 
 function findScreenshot(id, slug, steps) {
