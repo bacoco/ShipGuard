@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>E2E Screenshot Review — ExcenIA</title>
+<title>Visual Screenshot Review — ExcenIA</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -132,7 +132,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 <body>
 
 <div id="header">
-  <div class="header-brand">ExcenIA E2E Review</div>
+  <div class="header-brand">ExcenIA Visual Review</div>
   <div class="header-stats" id="stats"></div>
   <div class="header-meta" id="meta"></div>
 </div>
@@ -188,7 +188,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 
 <script>
 // Data injected at build time from trusted YAML manifests (no user input)
-var __E2E_DATA__ = "__PLACEHOLDER_E2E_DATA__";
+var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
 (function(D) {
   'use strict';
@@ -616,7 +616,7 @@ var __E2E_DATA__ = "__PLACEHOLDER_E2E_DATA__";
   document.getElementById('btn-validate').addEventListener('click', function() {
     var ids = Object.keys(selected);
     if (!ids.length) { showToast('Select tests first'); return; }
-    var report = '# E2E Review — Human Validation Report\n\n';
+    var report = '# Visual Review — Human Validation Report\n\n';
     report += '**Date:** ' + new Date().toISOString().split('T')[0] + '\n';
     report += '**Selected issues:** ' + ids.length + '\n\n---\n\n';
     ids.forEach(function(id, i) {
@@ -646,7 +646,7 @@ var __E2E_DATA__ = "__PLACEHOLDER_E2E_DATA__";
     var blob = new Blob([report], { type: 'text/markdown' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'e2e-validation-report-' + new Date().toISOString().split('T')[0] + '.md';
+    a.download = 'visual-validation-report-' + new Date().toISOString().split('T')[0] + '.md';
     a.click();
     // Also download JSON for the fix skill
     var json = JSON.stringify({
@@ -663,7 +663,7 @@ var __E2E_DATA__ = "__PLACEHOLDER_E2E_DATA__";
     var blob2 = new Blob([json], { type: 'application/json' });
     var a2 = document.createElement('a');
     a2.href = URL.createObjectURL(blob2);
-    a2.download = 'e2e-fix-manifest-' + Date.now() + '.json';
+    a2.download = 'visual-fix-manifest-' + Date.now() + '.json';
     setTimeout(function() { a2.click(); }, 500);
     showToast('Downloaded report + fix manifest');
   });
@@ -691,7 +691,7 @@ var __E2E_DATA__ = "__PLACEHOLDER_E2E_DATA__";
   renderSidebar();
   renderGrid();
   initAnnotation();
-})(__E2E_DATA__);
+})(__VISUAL_DATA__);
 </script>
 </body>
 </html>

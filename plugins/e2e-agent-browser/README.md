@@ -1,17 +1,20 @@
 # agentic-visual-debugger
 
-Automated E2E testing for any web app using agent-browser (Playwright CLI).
+Automated visual testing for any web app using agent-browser.
 
 **Skills:**
-- `/e2e-discover` — Explore codebase, detect routes/forms/features, generate YAML test manifests mirroring UI navigation
-- `/e2e-run` — Describe what to test in natural language. Finds matching tests, generates missing ones, executes with hybrid assertions, tracks regressions.
+- `/visual-discover` — Explore codebase, detect routes/forms/features, generate YAML test manifests mirroring UI navigation
+- `/visual-run` — Describe what to test in natural language. Finds matching tests, generates missing ones, executes with hybrid assertions, tracks regressions.
+- `/visual-review` — Build an interactive HTML review page with screenshots, annotations, and export tools
+- `/visual-fix` — AI reads annotated screenshots, traces to source code, implements fixes, captures before/after
+- `/visual-review-stop` — Stop the review page HTTP server
 
 **Natural language interface:**
 ```bash
-/e2e-run                                    # run all tests
-/e2e-run --regressions                      # run known failures first
-/e2e-run teste l'upload de PDF              # finds/creates upload test, runs it
-/e2e-run j'ai modifie le chat, verifie      # git diff → impacted tests → run
+/visual-run                                    # run all tests
+/visual-run --regressions                      # run known failures first
+/visual-run teste l'upload de PDF              # finds/creates upload test, runs it
+/visual-run j'ai modifie le chat, verifie      # git diff → impacted tests → run
 ```
 
 **Key features:**

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * build-review.mjs — Generate a self-contained HTML review page
- * from E2E test manifests, report, and screenshots.
+ * from Visual test manifests, report, and screenshots.
  *
- * Usage: node e2e-tests/build-review.mjs
- * Output: e2e-tests/_results/review.html
+ * Usage: node visual-tests/build-review.mjs
+ * Output: visual-tests/_results/review.html
  *
  * Security note: All data is generated at build time from trusted local
  * YAML files and report.md. The HTML is a static artifact with no user
@@ -123,7 +123,7 @@ function parseReport() {
     if (m) { statusMap[m[1]] = m[2].toUpperCase(); continue; }
   }
   const summaryMatch = md.match(/Tests:\s*(\d+)\s*run,\s*(\d+)\s*pass,\s*(\d+)\s*fail/);
-  const dateMatch = md.match(/# E2E Report — (\S+ \S+)/);
+  const dateMatch = md.match(/# Visual Report — (\S+ \S+)/);
   return {
     statusMap,
     total: summaryMatch ? parseInt(summaryMatch[1]) : 0,
@@ -254,7 +254,7 @@ function getHtmlTemplate() {
 }
 
 // ── Main ──
-console.log('Building E2E review page...');
+console.log('Building Visual review page...');
 
 mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
@@ -288,7 +288,7 @@ console.log(`  Status: ${passCount} pass, ${failCount} fail, ${staleCount} stale
 console.log(`  Screenshots matched: ${tests.filter(t => t.screenshot).length}/${tests.length}`);
 
 const template = getHtmlTemplate();
-const html = template.replace('"__PLACEHOLDER_E2E_DATA__"', JSON.stringify(data));
+const html = template.replace('"__PLACEHOLDER_VISUAL_DATA__"', JSON.stringify(data));
 writeFileSync(OUTPUT_PATH, html, 'utf8');
 
 console.log(`  Output: ${OUTPUT_PATH}`);
@@ -366,7 +366,7 @@ if (process.argv.includes('--serve')) {
   server.listen(PORT, () => {
     writeFileSync(PID_FILE, String(process.pid), 'utf8');
     console.log(`  Server: http://localhost:${PORT} (PID ${process.pid})`);
-    console.log('  Stop: node e2e-tests/build-review.mjs --stop');
+    console.log('  Stop: node visual-tests/build-review.mjs --stop');
   });
 } else {
   console.log('  Tip: --serve to start, --stop to stop');

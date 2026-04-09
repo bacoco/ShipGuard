@@ -1,8 +1,8 @@
-# e2e-tests/_config.yaml — Example configuration
+# visual-tests/_config.yaml — Example configuration
 base_url: "http://localhost:3000"
 credentials:
   username: "testuser"
   password: "testpass"
-screenshots_dir: "e2e-tests/_results/screenshots"
-report_path: "e2e-tests/_results/report.md"
+screenshots_dir: "visual-tests/_results/screenshots"
+report_path: "visual-tests/_results/report.md"
 agent_browser_path: "agent-browser"
