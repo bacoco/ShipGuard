@@ -371,6 +371,19 @@ const passCount = tests.filter(t => t.status === 'PASS').length;
 const failCount = tests.filter(t => t.status === 'FAIL').length;
 const staleCount = tests.filter(t => t.status === 'STALE').length;
 
+// ── Load audit results if present ──
+const auditResultsPath = join(RESULTS_DIR, 'audit-results.json');
+let auditData = null;
+if (existsSync(auditResultsPath)) {
+  try {
+    auditData = JSON.parse(readFileSync(auditResultsPath, 'utf8'));
+    const bugCount = Array.isArray(auditData.bugs) ? auditData.bugs.length : 0;
+    console.log(`  Audit results: ${bugCount} bug(s) loaded from audit-results.json`);
+  } catch (e) {
+    console.warn(`  WARN: Failed to parse audit-results.json: ${e.message}`);
+  }
+}
+
 const data = {
   generated: new Date().toISOString(),
   summary: {
@@ -383,6 +396,7 @@ const data = {
   },
   categories: CATEGORIES.filter(c => tests.some(t => t.category === c)),
   tests,
+  audit: auditData,
   // Track last fix-manifest timestamp to detect "updated" screenshots
   lastFixTimestamp: existsSync(join(RESULTS_DIR, 'fix-manifest.json'))
     ? statSync(join(RESULTS_DIR, 'fix-manifest.json')).mtimeMs : 0,
