@@ -166,7 +166,9 @@ For the full architecture and design decisions, read the **[Design Spec](docs/de
 
 4. (Optional) For global access, create symlinks:
    ```bash
-   ln -s $(pwd)/plugins/e2e-agent-browser/skills/* ~/.claude/skills/
+   REPO_DIR="/path/to/agentic-visual-debugger"  # adjust to your clone location
+   mkdir -p ~/.claude/skills
+   ln -s "$REPO_DIR"/plugins/e2e-agent-browser/skills/* ~/.claude/skills/
    ```
 
 ## Contributors

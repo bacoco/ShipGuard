@@ -510,10 +510,13 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       compBefore.classList.remove('active');
       // Store comparison data on the lightbox for toggle handlers
       compBar._compData = t.comparison;
-      compBar._testScreenshot = t.screenshot;
+      compBar._testScreenshot = t.comparison.after;
+      // Show the "after" image by default when comparison exists
+      document.getElementById('lb-img').src = t.comparison.after;
     } else {
       compBar.style.display = 'none';
       compBar._compData = null;
+      compBar._testScreenshot = null;
     }
 
     lb.classList.add('visible');
@@ -668,14 +671,14 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var manifest = {
         action: 'ai-review',
         timestamp: new Date().toISOString(),
-        test: {
+        tests: [{
           id: t.id,
           name: t.name,
           url: t.url || '',
           screenshot: t.screenshot || '',
           description: t.description || '',
           steps: t.steps || []
-        }
+        }]
       };
       var json = JSON.stringify(manifest, null, 2);
       var blob = new Blob([json], { type: 'application/json' });
@@ -714,7 +717,15 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       if (currentPath.length < 2) { currentPath = []; redraw(); return; }
       // Add annotation with empty comment (will be filled by popup)
       if (!annotationData[currentTestId]) annotationData[currentTestId] = [];
-      var newAnnot = { points: currentPath.slice(), comment: '' };
+      // Compute bounding box from points for /visual-fix compatibility
+      var xs = currentPath.map(function(p) { return p.x; });
+      var ys = currentPath.map(function(p) { return p.y; });
+      var newAnnot = {
+        points: currentPath.slice(),
+        x1: Math.min.apply(null, xs), y1: Math.min.apply(null, ys),
+        x2: Math.max.apply(null, xs), y2: Math.max.apply(null, ys),
+        comment: ''
+      };
       annotationData[currentTestId].push(newAnnot);
       if (!selected[currentTestId]) { selected[currentTestId] = true; selectedCount++; updateBar(); }
       redraw();

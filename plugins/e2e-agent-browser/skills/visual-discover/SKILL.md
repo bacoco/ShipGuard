@@ -36,8 +36,12 @@ If NO framework is detected in Phase 1.1:
 
 1. Scan the project root, `src/`, and `public/` directories for `*.html` files
 2. Each `.html` file becomes a test manifest in a `pages/` category
-3. The URL is derived from the file path relative to the project root (e.g., `src/about.html` → `{base_url}/src/about.html`)
-4. Generate a minimal manifest per page:
+3. Derive the URL from the file path with these rules:
+   - Files inside `public/` → strip the `public/` prefix (e.g., `public/about.html` → `{base_url}/about.html`)
+   - `index.html` at any level → map to the directory URL (e.g., `public/index.html` → `{base_url}/`, `public/help/index.html` → `{base_url}/help/`)
+   - Other files → use the relative path as-is (e.g., `pages/contact.html` → `{base_url}/pages/contact.html`)
+4. Screenshot names must be unique per page — derive from the relative URL path, slugified (e.g., `public/help/index.html` → `pages-help-index.png`, `about.html` → `pages-about.png`)
+5. Generate a minimal manifest per page:
 
 ```yaml
 name: "<filename without extension>"
@@ -49,16 +53,16 @@ tags: [auto-generated, static-html]
 
 steps:
   - action: open
-    url: "{base_url}/<relative-path>"
+    url: "{base_url}/<derived-url-path>"
   - action: llm-check
     description: "Page loads and renders content"
     criteria: "Page content is visible, no blank screen, no broken images or missing resources"
     severity: critical
-    screenshot: "<filename>.png"
+    screenshot: "pages-<slugified-path>.png"
 ```
 
-5. Log detection: "No framework detected — falling back to static HTML scan"
-6. If no `.html` files found either, ask the user to specify the route source
+6. Log detection: "No framework detected — falling back to static HTML scan"
+7. If no `.html` files found either, ask the user to specify the route source
 
 ### 1.3 Route Definitions
 

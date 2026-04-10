@@ -149,7 +149,17 @@ function parseRegressions() {
   if (!existsSync(REGRESSIONS_PATH)) return {};
   const data = yaml.load(readFileSync(REGRESSIONS_PATH, 'utf8'));
   const map = {};
-  const regs = Array.isArray(data?.regressions) ? data.regressions : [];
+  const raw = data?.regressions;
+  let regs = [];
+  if (Array.isArray(raw)) {
+    regs = raw;
+  } else if (raw && typeof raw === 'object') {
+    // YAML parser returns an object — normalize to array of {test, failure_reason}
+    regs = Object.entries(raw).map(([key, val]) => {
+      if (typeof val === 'object' && val !== null) return { test: val.test || key, failure_reason: val.failure_reason || '' };
+      return { test: key, failure_reason: String(val || '') };
+    });
+  }
   for (const r of regs) {
     if (r && r.test) map[r.test] = r.failure_reason || '';
   }
@@ -389,20 +399,29 @@ if (process.argv.includes('--serve')) {
 
   const http = await import('http');
   const { createReadStream, existsSync: fExists } = await import('fs');
-  const { extname } = await import('path');
+  const { extname, isAbsolute: pathIsAbsolute } = await import('path');
 
   const MIME = { '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.css': 'text/css', '.js': 'text/javascript' };
   const PORT = parseInt(process.argv.find(a => a.startsWith('--port='))?.split('=')[1] || '8888');
 
+  const root = resolve(RESULTS_DIR);
+
   const server = http.createServer((req, res) => {
-    const url = req.url === '/' ? '/review.html' : req.url;
-    const filePath = join(RESULTS_DIR, decodeURIComponent(url).replace(/^\//, ''));
-    const resolved = resolve(filePath);
-    if (!resolved.startsWith(resolve(RESULTS_DIR))) { res.writeHead(403); res.end('Forbidden'); return; }
-    if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
-    const ext = extname(filePath);
+    const rawUrl = req.url === '/' ? '/review.html' : req.url;
+    let decoded;
+    try {
+      decoded = decodeURIComponent(rawUrl);
+    } catch {
+      res.writeHead(400); res.end('Bad request'); return;
+    }
+    if (decoded.includes('\0')) { res.writeHead(400); res.end('Bad request'); return; }
+    const resolved = resolve(RESULTS_DIR, '.' + decoded);
+    const rel = relative(root, resolved);
+    if (rel.startsWith('..') || pathIsAbsolute(rel)) { res.writeHead(403); res.end('Forbidden'); return; }
+    if (!fExists(resolved)) { res.writeHead(404); res.end('Not found'); return; }
+    const ext = extname(resolved);
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-    createReadStream(filePath).pipe(res);
+    createReadStream(resolved).pipe(res);
   });
 
   server.listen(PORT, () => {
