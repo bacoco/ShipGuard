@@ -300,6 +300,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
   <div class="header-tabs" id="header-tabs">
     <button class="tab-btn active" id="tab-visual" onclick="switchTab('visual')">Visual Tests</button>
     <button class="tab-btn" id="tab-audit" onclick="switchTab('audit')">Code Audit</button>
+    <button class="tab-btn" id="tab-monitor" onclick="switchTab('monitor')" style="display:none">Monitor</button>
   </div>
   <div class="header-meta" id="meta"></div>
 </div>
@@ -325,6 +326,15 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 
 <div id="audit-layout" style="display:none">
   <main id="audit-grid"></main>
+</div>
+
+<div id="monitor-toolbar" style="display:none">
+  <div class="monitor-stats" id="monitor-stats"></div>
+</div>
+
+<div id="monitor-layout" style="display:none">
+  <div class="gantt" id="monitor-gantt"></div>
+  <div class="monitor-footer" id="monitor-footer"></div>
 </div>
 
 <div id="action-bar">
