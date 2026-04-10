@@ -30,7 +30,41 @@ Search for framework indicators in this order:
 - `angular.json` → **Angular**
 - Fallback: grep for route patterns (`<Route`, `path:`, `router.get`)
 
-### 1.2 Route Definitions
+### 1.2 Static HTML Fallback
+
+If NO framework is detected in Phase 1.1:
+
+1. Scan the project root, `src/`, and `public/` directories for `*.html` files
+2. Each `.html` file becomes a test manifest in a `pages/` category
+3. Derive the URL from the file path with these rules:
+   - Files inside `public/` → strip the `public/` prefix (e.g., `public/about.html` → `{base_url}/about.html`)
+   - `index.html` at any level → map to the directory URL (e.g., `public/index.html` → `{base_url}/`, `public/help/index.html` → `{base_url}/help/`)
+   - Other files → use the relative path as-is (e.g., `pages/contact.html` → `{base_url}/pages/contact.html`)
+4. Screenshot names must be unique per page — derive from the relative URL path, slugified (e.g., `public/help/index.html` → `pages-help-index.png`, `about.html` → `pages-about.png`)
+5. Generate a minimal manifest per page:
+
+```yaml
+name: "<filename without extension>"
+description: "Auto-generated from static HTML file"
+priority: medium
+requires_auth: false
+timeout: 30s
+tags: [auto-generated, static-html]
+
+steps:
+  - action: open
+    url: "{base_url}/<derived-url-path>"
+  - action: llm-check
+    description: "Page loads and renders content"
+    criteria: "Page content is visible, no blank screen, no broken images or missing resources"
+    severity: critical
+    screenshot: "pages-<slugified-path>.png"
+```
+
+6. Log detection: "No framework detected — falling back to static HTML scan"
+7. If no `.html` files found either, ask the user to specify the route source
+
+### 1.3 Route Definitions
 
 Based on the detected framework:
 
@@ -45,7 +79,7 @@ Based on the detected framework:
 
 Collect: route path, page component file, any associated layout.
 
-### 1.3 Navigation Structure
+### 1.4 Navigation Structure
 
 Find navigation components that define the UI hierarchy:
 - Search for files named `navigation.ts`, `nav-*.ts`, `sidebar-*.tsx`, `menu-*.tsx`
@@ -53,14 +87,14 @@ Find navigation components that define the UI hierarchy:
 - Look for arrays of navigation items with labels, paths, icons
 - This defines the **test directory structure**
 
-### 1.4 Feature Flags
+### 1.5 Feature Flags
 
 Search for feature flag systems:
 - `NEXT_PUBLIC_FEATURE_*`, `FEATURE_*` env vars
 - `isFeatureEnabled()`, `featureFlag` patterns
 - Record which features are flagged — tests for disabled features get `priority: low`
 
-### 1.5 Interactive Components
+### 1.6 Interactive Components
 
 For each route, scan the page component for:
 - Forms (`<form`, `onSubmit`, input fields)
@@ -70,7 +104,7 @@ For each route, scan the page component for:
 - Data tables, lists with actions
 - These become the **steps** in the manifest
 
-### 1.6 Test Data
+### 1.7 Test Data
 
 Search the project for usable test files:
 - `test/fixtures/`, `data-sample/`, `__fixtures__/`
@@ -78,7 +112,7 @@ Search the project for usable test files:
 - Seed scripts, sample data generators
 - Record paths for use in manifest `data:` sections
 
-### 1.7 Credentials
+### 1.8 Credentials
 
 Look for dev credentials in:
 - `CLAUDE.md`, `README.md` — search for "credentials", "login", "username", "password"
@@ -201,7 +235,7 @@ After generation, output:
 ```
 ## /visual-discover Summary
 
-**Framework:** Next.js App Router
+**Framework:** Next.js App Router (or "Static HTML fallback — no framework detected")
 **Routes found:** 24
 **Navigation groups:** 4
 

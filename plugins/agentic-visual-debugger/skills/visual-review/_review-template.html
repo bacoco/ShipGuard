@@ -566,7 +566,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var p = canvasCoords(e);
       var annot = null;
       if (penMode === 'freehand' && currentPath.length > 2) {
-        annot = {type:'freehand', points:currentPath.slice(), note:''};
+        // Compute bounding box from points for /visual-fix compatibility
+        var xs = currentPath.map(function(p){return p.x/canvas.width;});
+        var ys = currentPath.map(function(p){return p.y/canvas.height;});
+        annot = {type:'freehand', points:currentPath.slice(), x1:Math.min.apply(null,xs), y1:Math.min.apply(null,ys), x2:Math.max.apply(null,xs), y2:Math.max.apply(null,ys), note:''};
       } else if (penMode === 'rect' && Math.abs(p.x-drawStart.x) > 5 && Math.abs(p.y-drawStart.y) > 5) {
         annot = {type:'rect', x1:drawStart.x/canvas.width, y1:drawStart.y/canvas.height, x2:p.x/canvas.width, y2:p.y/canvas.height, note:''};
       }

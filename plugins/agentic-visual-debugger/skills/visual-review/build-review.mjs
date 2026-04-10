@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync } from 'fs';
-import { join, relative, basename, dirname } from 'path';
+import { join, relative, basename, dirname, resolve, isAbsolute as pathIsAbsolute } from 'path';
 import { execFileSync } from 'child_process';
 
 // Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
@@ -166,9 +166,17 @@ function parseRegressions() {
   const data = yaml.load(readFileSync(REGRESSIONS_PATH, 'utf8'));
   const map = {};
   // Support both `regressions:` and `tests:` as the top-level array key
-  const regs = Array.isArray(data?.regressions) ? data.regressions
-              : Array.isArray(data?.tests)       ? data.tests
-              : [];
+  // Also handle object shape from minimal YAML parser (normalize to array)
+  const raw = data?.regressions ?? data?.tests;
+  let regs = [];
+  if (Array.isArray(raw)) {
+    regs = raw;
+  } else if (raw && typeof raw === 'object') {
+    regs = Object.entries(raw).map(([key, val]) => {
+      if (typeof val === 'object' && val !== null) return { test: val.test || key, failure_reason: val.failure_reason || '' };
+      return { test: key, failure_reason: String(val || '') };
+    });
+  }
   for (const r of regs) {
     if (r && r.test) map[r.test] = r;
   }
@@ -444,14 +452,18 @@ if (process.argv.includes('--serve')) {
       res.end();
       return;
     }
-    const url = req.url === '/' ? '/review.html' : req.url;
-    const filePath = join(RESULTS_DIR, url.replace(/^\//, ''));
-    // BUG-4: Prevent path traversal attacks
-    if (!filePath.startsWith(RESULTS_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
-    if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
-    const ext = extname(filePath);
+    const rawUrl = req.url === '/' ? '/review.html' : req.url;
+    let decoded;
+    try { decoded = decodeURIComponent(rawUrl); } catch { res.writeHead(400); res.end('Bad request'); return; }
+    if (decoded.includes('\0')) { res.writeHead(400); res.end('Bad request'); return; }
+    const root = resolve(RESULTS_DIR);
+    const resolved = resolve(RESULTS_DIR, '.' + decoded);
+    const rel = relative(root, resolved);
+    if (rel.startsWith('..') || pathIsAbsolute(rel)) { res.writeHead(403); res.end('Forbidden'); return; }
+    if (!fExists(resolved)) { res.writeHead(404); res.end('Not found'); return; }
+    const ext = extname(resolved);
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-    createReadStream(filePath).pipe(res);
+    createReadStream(resolved).pipe(res);
   });
 
   server.listen(PORT, () => {
