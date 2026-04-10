@@ -37,8 +37,11 @@ sg-code-audit starts
   │
   ├── GET http://localhost:8888/health
   │     │
-  │     ├── 200 OK
-  │     │   └── Server already running → monitoring active silently
+  │     ├── 200 OK + results_dir matches
+  │     │   └── Correct server already running → monitoring active silently
+  │     │
+  │     ├── 200 OK + results_dir mismatch
+  │     │   └── Wrong project's server → treat as "not running", try next port
   │     │
   │     └── Connection refused → server not running
   │           │
@@ -46,10 +49,13 @@ sg-code-audit starts
   │               "Voulez-vous suivre l'avancement de l'audit
   │                en temps réel dans un tableau de bord ? (oui/non)"
   │                 │
-  │                 ├── oui → start server:
-  │                 │     node visual-tests/build-review.mjs --serve
-  │                 │     (path resolved from results_dir — same logic as Phase 6)
-  │                 │     wait for GET /health to return 200 (retry 3x, 1s apart)
+  │                 ├── oui → bootstrap if needed, then start server:
+  │                 │     1. Check if visual-tests/build-review.mjs exists
+  │                 │     2. If not: copy build-review.mjs + _review-template.html
+  │                 │        from the plugin directory to visual-tests/
+  │                 │        (same bootstrap as sg-visual-review Setup section)
+  │                 │     3. node visual-tests/build-review.mjs --serve
+  │                 │     4. wait for GET /health to return 200 (retry 3x, 1s apart)
   │                 │     → monitoring active
   │                 │
   │                 └── non → proceed without monitoring
@@ -73,7 +79,17 @@ All monitor endpoints are added to the existing HTTP server on port 8888.
 
 ### `GET /health`
 
-Returns `200 OK` with `{"status": "ok"}`. Used by sg-code-audit to detect if the server is running.
+Returns `200 OK` with the server's identity. Used by sg-code-audit to detect if the **correct** server is running.
+
+Response:
+```json
+{
+  "status": "ok",
+  "results_dir": "/absolute/path/to/visual-tests/_results"
+}
+```
+
+sg-code-audit must compare the returned `results_dir` against its own `results_dir`. If they differ (another project's server is on port 8888), treat it as "server not running" and offer to start a new one on a different port (`--port=8889`, incrementing until a free port is found).
 
 ### `POST /api/monitor/audit-start`
 
@@ -106,6 +122,7 @@ Called when an agent starts, completes, fails, or overflows.
 Request body:
 ```json
 {
+  "agent_id": "r1:z01",
   "zone_id": "z01",
   "status": "started | completed | failed | overflow",
   "round": 1,
@@ -113,7 +130,7 @@ Request body:
   "ended_at": "2026-04-10T14:33:15Z",
   "duration_ms": 193000,
   "tokens": {"total": 42526, "input": 28000, "output": 14526},
-  "cost_usd": 0.12,
+  "estimated_cost_usd": 0.12,
   "tool_uses": 23,
   "bugs_found": 4,
   "files_audited": 18,
@@ -121,12 +138,15 @@ Request body:
 }
 ```
 
-For `status: "started"`, only `zone_id`, `status`, `round`, and `started_at` are required. Other fields are null/0.
+**`agent_id`** is the primary lookup key, formatted as `r{round}:{zone_id}` (e.g. `r1:z01`, `r2:z01`, `r1:z05a`). This is necessary because the same zone_id appears in multiple rounds (deep/paranoid mode), and overflow splits create new zone_ids within the same round.
+
+For `status: "started"`, only `agent_id`, `zone_id`, `status`, `round`, and `started_at` are required. Other fields are null/0.
 
 For `status: "overflow"`, include `error: "context overflow — re-splitting"` and the new zone IDs:
 
 ```json
 {
+  "agent_id": "r1:z05",
   "zone_id": "z05",
   "status": "overflow",
   "round": 1,
@@ -134,7 +154,7 @@ For `status: "overflow"`, include `error: "context overflow — re-splitting"` a
   "ended_at": "2026-04-10T14:31:45Z",
   "duration_ms": 103000,
   "tokens": {"total": 12000, "input": 12000, "output": 0},
-  "cost_usd": 0.02,
+  "estimated_cost_usd": 0.02,
   "tool_uses": 3,
   "bugs_found": 0,
   "files_audited": 0,
@@ -142,6 +162,14 @@ For `status: "overflow"`, include `error: "context overflow — re-splitting"` a
   "overflow_into": ["z05a", "z05b"]
 }
 ```
+
+**Overflow protocol:** After posting `overflow` for the parent, sg-code-audit MUST immediately post `agent-update` with `status: "started"` for each child zone (e.g. `r1:z05a`, `r1:z05b`). This creates the child bars in the Gantt. The sequence is:
+
+1. POST `{agent_id: "r1:z05", status: "overflow", overflow_into: ["z05a", "z05b"]}`
+2. POST `{agent_id: "r1:z05a", zone_id: "z05a", status: "started", ...}`
+3. POST `{agent_id: "r1:z05b", zone_id: "z05b", status: "started", ...}`
+4. Dispatch new agents for z05a and z05b
+5. On completion: POST `{agent_id: "r1:z05a", status: "completed", ...}` etc.
 
 Response: `200 {"ok": true}`
 
@@ -184,6 +212,7 @@ Written to `_results/monitor-data.json` (same directory as `audit-results.json` 
   "ended_at": null,
   "agents": [
     {
+      "agent_id": "r1:z01",
       "zone_id": "z01",
       "paths": ["src/routes/"],
       "file_count": 28,
@@ -193,7 +222,7 @@ Written to `_results/monitor-data.json` (same directory as `audit-results.json` 
       "ended_at": "2026-04-10T14:33:15Z",
       "duration_ms": 193000,
       "tokens": {"total": 42526, "input": 28000, "output": 14526},
-      "cost_usd": 0.12,
+      "estimated_cost_usd": 0.12,
       "tool_uses": 23,
       "bugs_found": 4,
       "files_audited": 18,
@@ -201,6 +230,7 @@ Written to `_results/monitor-data.json` (same directory as `audit-results.json` 
       "overflow_into": null
     },
     {
+      "agent_id": "r1:z05",
       "zone_id": "z05",
       "paths": ["src/components/"],
       "file_count": 85,
@@ -210,7 +240,7 @@ Written to `_results/monitor-data.json` (same directory as `audit-results.json` 
       "ended_at": "2026-04-10T14:31:45Z",
       "duration_ms": 103000,
       "tokens": {"total": 12000, "input": 12000, "output": 0},
-      "cost_usd": 0.02,
+      "estimated_cost_usd": 0.02,
       "tool_uses": 3,
       "bugs_found": 0,
       "files_audited": 0,
@@ -220,11 +250,11 @@ Written to `_results/monitor-data.json` (same directory as `audit-results.json` 
   ],
   "totals": {
     "tokens": 285000,
-    "cost_usd": 0.87,
+    "estimated_cost_usd": 0.87,
     "tool_uses": 156,
     "bugs_found": 31,
     "files_audited": 187,
-    "duration_ms": 312000
+    "wall_clock_ms": 312000
   }
 }
 ```
@@ -251,7 +281,7 @@ Third button in the existing tab bar, after "Visual Tests" and "Code Audit":
 <button class="tab-btn" id="tab-monitor" onclick="switchTab('monitor')">Monitor</button>
 ```
 
-Visible only when `monitor-data.json` exists (same pattern as the Code Audit tab for `audit-results.json`).
+**Hidden by default.** Unlike the Code Audit tab (which uses build-time data injection), the Monitor tab reveals itself dynamically at runtime. On page load, the JS makes a single `GET /api/monitor` call. If it returns 200, the tab button appears and renders the data. If 404, the tab stays hidden. This is necessary because the HTML may have been built before the audit started — monitor data arrives after build time.
 
 ### Layout
 
@@ -285,9 +315,9 @@ Five stat badges, same component style as existing Visual Tests stats:
 
 | Badge | Source |
 |-------|--------|
-| Duration | `totals.duration_ms` formatted as Xm Ys |
+| Duration | `totals.wall_clock_ms` formatted as Xm Ys (wall-clock from audit start to end, NOT sum of agent durations) |
 | Tokens | `totals.tokens` formatted as XK |
-| Cost | `totals.cost_usd` formatted as $X.XX |
+| Cost | `totals.estimated_cost_usd` formatted as ~$X.XX (tilde prefix — this is an estimate based on 60/40 input/output ratio when split unavailable) |
 | Bugs | `totals.bugs_found` |
 | Agents | `agents.length` (including overflow splits) |
 
@@ -349,7 +379,7 @@ If audit data also exists (`audit-results.json`), show a link: "View Code Audit 
 3. Add `POST /api/monitor/agent-update` route — updates agent entry, recalculates totals, writes monitor-data.json
 4. Add `POST /api/monitor/audit-complete` route — finalizes monitor state
 5. Add `GET /api/monitor` route — returns current monitor state as JSON
-6. In the build phase: read `monitor-data.json` from results dir (if exists), inject as `data.monitor` alongside `data.audit`
+6. Monitor data is NOT injected at build time (unlike audit data). The review page fetches it dynamically via `GET /api/monitor` because monitor data typically arrives after the HTML is built
 7. Monitor state is held in a module-level variable (same pattern as the PID file) — no external database
 
 All POST routes accept JSON body. All responses are JSON. CORS headers already present from the `/save-manifest` route.
@@ -372,7 +402,7 @@ Add a "Phase 0 — Monitor Setup" before the existing Phase 1:
 1. Check if review server is running: `GET http://localhost:8888/health`
 2. If running: set `monitor_active = true`
 3. If not running: ask user "Voulez-vous suivre l'avancement de l'audit en temps réel dans un tableau de bord ? (oui/non)"
-4. If yes: start server with `node <visual-tests-path>/build-review.mjs --serve`, wait for health check, set `monitor_active = true`
+4. If yes: bootstrap `build-review.mjs` + `_review-template.html` from plugin if not present in `visual-tests/`, then start server with `node visual-tests/build-review.mjs --serve`, wait for health check, set `monitor_active = true`
 5. If no: set `monitor_active = false`
 
 Then throughout the existing phases, add conditional POST calls:
@@ -402,8 +432,10 @@ Add one line to the "What It Does" section mentioning the Monitor tab appears wh
 | Agent result has no token data | Set tokens to `{"total": 0, "input": 0, "output": 0}`, cost to 0 |
 | Malformed POST body | Return `400 {"error": "..."}`, do not crash server |
 | Multiple audits in parallel | Not supported — second audit-start overwrites the first |
-| Review page opened with no monitor data | Tab button hidden (same as Code Audit with no audit-results.json) |
+| Review page opened with no monitor data | Tab button hidden — initial `GET /api/monitor` returns 404, tab stays invisible |
 | Server not reachable at audit start | User chose "non" or network issue — audit runs normally |
+| Health check returns wrong results_dir | Another project's server — treat as "not running", try next port |
+| build-review.mjs not in project | Bootstrap from plugin directory before starting server |
 
 ## Out of Scope
 
