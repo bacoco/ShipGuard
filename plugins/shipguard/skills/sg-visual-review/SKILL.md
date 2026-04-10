@@ -39,6 +39,7 @@ This script:
 3. Reads `visual-tests/_regressions.yaml` for failure reasons
 4. Matches screenshots from `visual-tests/_results/screenshots/`
 5. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
+6. If `monitor-data.json` exists in `_results/`, a "Monitor" tab appears showing the Gantt timeline of the last audit
 
 ### Step 2: Open in Browser
 
