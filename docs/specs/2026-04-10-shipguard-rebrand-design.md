@@ -54,7 +54,8 @@ shipguard/                              (GitHub repo)
 │   │   ├── code-audit-bugs.png
 │   │   ├── visual-tests-grid.png
 │   │   ├── annotation-with-note.png
-│   │   └── discover-output.png
+│   │   ├── discover-output.png
+│   │   └── monitor-tab-gantt.png
 │   ├── specs/
 │   │   ├── 2026-04-10-code-audit-design.md
 │   │   └── 2026-04-10-shipguard-rebrand-design.md

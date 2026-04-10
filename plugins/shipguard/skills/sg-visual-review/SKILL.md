@@ -62,13 +62,12 @@ The review page provides:
 - Search by test name
 
 **Code Audit tab**
-- Displays findings from `audit-results.json` if present in `_results/`
-- Lists impacted routes, severity levels, and audit recommendations
-- Used to cross-reference code issues with visual test failures
+- Shows bug cards from `audit-results.json` if present in `_results/`
+- Filter by severity, category, fix status, and free-text search. CSV export available
 
 **Monitor tab**
-- Appears only when `monitor-data.json` exists in `_results/`
-- Shows a Gantt timeline of the last audit run — per-step durations, parallelism, and bottlenecks
+- Appears only when `monitor-data.json` exists in `_results/` or an audit is in progress
+- Shows a Gantt timeline of the last audit run — per-agent duration, token usage, estimated cost, and bugs found per zone
 
 **Lightbox**
 - Click any card to open full screenshot + test details
