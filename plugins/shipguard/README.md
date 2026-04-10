@@ -30,6 +30,8 @@ Dispatches parallel AI agents to audit every file in the repo. Each agent review
 
 - `--focus=path/` -- restrict audit to a specific directory
 - `--report-only` -- find bugs but do not fix them
+- `--all` -- force full scope, skip the smart scope question
+- `--diff=<ref>` -- use a specific base reference for smart scope
 
 Flags combine freely: `/sg-code-audit deep --focus=src/ --report-only`
 
@@ -50,6 +52,24 @@ Results are written to `audit-results.json` with the following structure:
 
 Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
 
+### Smart Scope (all skills)
+
+By default, skills detect what changed and propose a focused scope:
+
+```
+/sg-code-audit              # Asks: "12 files changed since main. Only what changed?"
+/sg-visual-run              # Asks: "What do you want to test? Only what changed / Regressions / Full suite"
+/sg-visual-discover         # Asks: "5 routes impacted. Generate manifests for new routes only?"
+```
+
+Override with flags:
+
+| Flag | Effect |
+|------|--------|
+| `--all` | Force full scope (skip question) |
+| `--diff=<ref>` | Use specific base reference |
+| `--refresh-existing` | (discover only) Regenerate existing manifests |
+
 ## sg-visual-run
 
 Executes YAML test manifests using agent-browser. Hybrid execution: mechanical steps run directly, complex assertions delegate to LLM evaluation.
@@ -61,6 +81,8 @@ Executes YAML test manifests using agent-browser. Hybrid execution: mechanical s
 /sg-visual-run I changed the sidebar, check it  # Natural language
 /sg-visual-run --from-audit                     # Run tests for audit-impacted routes
 /sg-visual-run --regressions                    # Re-run previously failed tests
+/sg-visual-run --all                            # Force full suite, skip smart scope
+/sg-visual-run --diff=<ref>                     # Use specific base reference for scope
 ```
 
 **Interactive mode** (no args) presents four options: only what changed (git diff), only regressions, full suite, or free-form description.
@@ -93,6 +115,9 @@ Scans the codebase to detect routes, forms, and user journeys, then generates YA
 ```bash
 /sg-visual-discover                    # Scan current project
 /sg-visual-discover path/to/project    # Scan a specific project
+/sg-visual-discover --all              # Force full discovery, skip smart scope
+/sg-visual-discover --diff=<ref>       # Use specific base reference for scope
+/sg-visual-discover --refresh-existing # Regenerate existing manifests too
 ```
 
 Supports Next.js (App Router & Pages Router), React Router, Vue, and Angular. Manifests are written to `visual-tests/` with one YAML file per route or user journey.

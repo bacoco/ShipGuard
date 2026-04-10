@@ -28,7 +28,7 @@ Restart Claude Code. The `/sg-*` commands are ready.
 /sg-code-audit
 ```
 
-Parallel agents scan your codebase zone by zone. Each bug is classified by severity and category. Fixes are applied automatically in isolated git worktrees.
+ShipGuard detects what changed since your base branch and proposes a focused audit. Parallel agents scan the impacted files and their direct importers. Each bug is classified by severity and category. Fixes are applied automatically in isolated git worktrees.
 
 ![Code Audit — bugs found by severity](docs/screenshots/code-audit-bugs.png)
 
