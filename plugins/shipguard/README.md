@@ -15,7 +15,7 @@ AI-powered code audit + visual E2E testing for Claude Code.
 
 ## sg-code-audit
 
-Dispatches parallel AI agents to audit every file in the repo. Each agent reviews a non-overlapping zone, finds bugs, and produces structured JSON.
+Dispatches parallel AI agents to audit every file in the repo. Each agent reviews a non-overlapping zone, finds bugs, and produces structured JSON. At startup, the audit offers to open a live dashboard at `http://localhost:8888` where the **Monitor** tab shows a real-time Gantt timeline of all agents: progress, tokens, cost, and bugs per zone.
 
 ### Modes
 

@@ -32,6 +32,10 @@ ShipGuard detects what changed since your base branch and proposes a focused aud
 
 ![Code Audit — bugs found by severity](docs/screenshots/code-audit-bugs.png)
 
+When the audit starts, ShipGuard offers to open a live dashboard at **http://localhost:8888**. While agents work in parallel, the Monitor tab shows a real-time Gantt timeline: which agent is running, which finished, how many tokens each consumed, how many bugs each found, and the estimated cost. If an agent overflows its context, you see the re-split happen live.
+
+![Monitor — live Gantt timeline of audit agents](docs/screenshots/monitor-tab-gantt.png)
+
 ### Step 2 -- Discover what to test
 
 ```
@@ -60,9 +64,7 @@ The impacted routes from the audit are opened in a real browser. Each page is sc
 /sg-visual-review
 ```
 
-One page, three tabs: **Visual Tests** (screenshots), **Code Audit** (bugs), and **Monitor** (live Gantt timeline of agent progress, token usage, and estimated cost). Filter by severity, category, status. Search. Export CSV.
-
-![Monitor — live Gantt timeline of audit agents](docs/screenshots/monitor-tab-gantt.png)
+All results in one page at **http://localhost:8888** -- three tabs: **Visual Tests** (screenshots), **Code Audit** (bugs), and **Monitor** (the Gantt timeline from step 1). Filter by severity, category, status. Search. Export CSV.
 
 ### Step 5 -- Annotate problems visually
 
