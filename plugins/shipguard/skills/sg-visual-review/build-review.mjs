@@ -42,7 +42,7 @@ function yamlParse(text) {
 
     // Collect multiline block content
     if (inMultiline) {
-      if (line.match(/^\s+/) && !line.match(/^[a-z_]/i)) {
+      if (line.match(/^\s+/) && !line.match(/^[a-z_][a-z0-9_-]*:\s/i)) {
         multilineLines.push(line.replace(/^\s+/, ''));
         continue;
       } else {
@@ -252,7 +252,12 @@ const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
   .map(e => e.name);
 
 // ── 1. Parse config ──
-const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
+let config;
+try {
+  config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
+} catch {
+  config = { base_url: 'http://localhost:3000' };
+}
 
 // ── 2. Parse report.md for status ──
 function parseReport() {
@@ -476,7 +481,7 @@ console.log(`  Status: ${passCount} pass, ${failCount} fail, ${staleCount} stale
 console.log(`  Screenshots matched: ${tests.filter(t => t.screenshot).length}/${tests.length}`);
 
 const template = getHtmlTemplate();
-const html = template.replace('"__PLACEHOLDER_VISUAL_DATA__"', JSON.stringify(data));
+const html = template.replace('"__PLACEHOLDER_VISUAL_DATA__"', JSON.stringify(data).replace(/<\/script/gi, '<\\/script'));
 writeFileSync(OUTPUT_PATH, html, 'utf8');
 
 console.log(`  Output: ${OUTPUT_PATH}`);
@@ -514,7 +519,7 @@ if (!process.argv.includes('--stop')) {
 if (process.argv.includes('--serve')) {
   if (existsSync(PID_FILE)) {
     const oldPid = readFileSync(PID_FILE, 'utf8').trim();
-    if (oldPid) try { process.kill(parseInt(oldPid)); } catch { /* already dead */ }
+    if (oldPid) { const p = parseInt(oldPid); if (Number.isInteger(p) && p > 0) try { process.kill(p); } catch { /* already dead */ } }
   }
 
   const http = await import('http');
@@ -530,9 +535,11 @@ if (process.argv.includes('--serve')) {
       const MAX_BODY = 5 * 1024 * 1024; // 5 MB
       let body = '';
       let bodySize = 0;
+      let aborted = false;
       req.on('data', chunk => {
         bodySize += chunk.length;
         if (bodySize > MAX_BODY) {
+          aborted = true;
           req.destroy();
           res.writeHead(413, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Payload too large (max 5 MB)' }));
@@ -541,6 +548,7 @@ if (process.argv.includes('--serve')) {
         body += chunk;
       });
       req.on('end', () => {
+        if (aborted) return;
         try {
           const data = JSON.parse(body);
           const manifestPath = join(RESULTS_DIR, 'fix-manifest.json');
@@ -703,7 +711,7 @@ if (process.argv.includes('--serve')) {
     if (!fExists(resolved)) { res.writeHead(404); res.end('Not found'); return; }
     const ext = extname(resolved);
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-    createReadStream(resolved).pipe(res);
+    createReadStream(resolved).on('error', () => { if (!res.headersSent) { res.writeHead(500); res.end('Read error'); } }).pipe(res);
   });
 
   server.listen(PORT, () => {
