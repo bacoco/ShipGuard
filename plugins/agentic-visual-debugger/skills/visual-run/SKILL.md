@@ -15,6 +15,7 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 |---------|----------|
 | `/visual-run` | **Interactive** — asks user what to do |
 | `/visual-run <natural language>` | Describe what to test — the skill figures out the rest |
+| `/visual-run --from-audit` | Read `audit-results.json`, extract `impacted_routes`, find matching test manifests, run only those |
 
 ### Interactive Mode (no arguments)
 
@@ -78,6 +79,17 @@ When you pass free text, the skill operates in **impact analysis mode**:
 | `check the dashboard loads` | Finds dashboard/home.yaml, runs it |
 | `I added a button in the header` | Finds header-related tests, plus generates a new test for the header button if none exists |
 | `does the settings page work?` | Finds settings tests, runs them |
+
+### From-Audit Mode
+
+When `--from-audit` is passed:
+
+1. Read `{results_dir}/audit-results.json` (canonical location: same directory as screenshots and manifests)
+2. Extract `impacted_routes` array
+3. For each route, find matching YAML manifests by URL path (glob `visual-tests/**/*.yaml`, match `url` field)
+4. If no manifest matches a route, log it as "uncovered route" (do NOT auto-generate — the user can run `/visual-discover` separately to create manifests for new routes)
+5. Run matched manifests (highest severity routes first)
+6. Report: which routes were visually verified, which had no manifest (uncovered), and which code-audit findings were visually confirmed vs not reproduced
 
 ## Pre-flight
 
