@@ -431,6 +431,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   var activeStatus = 'ALL';
   var query = '';
   var lastRunOnly = true;
+  var penMode = null;
 
   // ── Stats ──
   function renderStats() {
@@ -553,9 +554,9 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       card.appendChild(body);
       // Scoring badge
       if (t.fixCycles > 0) {
-        var sc = document.createElement('span'); sc.className='card-score ';
-        if (t.fixCycles >= 3) { sc.className+='card-score-critical'; sc.textContent=t.fixCycles+'x fixed'; }
-        else if (t.fixCycles >= 1) { sc.className+='card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
+        var sc = document.createElement('span'); sc.className='card-score';
+        if (t.fixCycles >= 3) { sc.className+=' card-score-critical'; sc.textContent=t.fixCycles+'x fixed'; }
+        else if (t.fixCycles >= 1) { sc.className+=' card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
         card.appendChild(sc);
       }
       card.addEventListener('click', function(){openLightbox(t.id);});
@@ -586,7 +587,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   // ── Annotation State ──
   var annotationData = {}; // {testId: [{type:'freehand'|'rect', points:[], note:'', ...}]}
   var currentTestId = null;
-  var penMode = null; // null | 'freehand' | 'rect'
+  // penMode declared at top of IIFE
   var isDrawing = false;
   var drawStart = null;
   var currentPath = [];
@@ -839,8 +840,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       })(i);
       item.appendChild(edit);
       var del = document.createElement('button'); del.className='annot-item-del'; del.textContent='\u2715';
+      del.setAttribute('data-index', i);
       del.addEventListener('click', function() {
-        annotationData[currentTestId].splice(i,1);
+        var idx = parseInt(this.getAttribute('data-index'), 10);
+        annotationData[currentTestId].splice(idx,1);
         if(!annotationData[currentTestId].length) delete annotationData[currentTestId];
         if(window._annotRedraw) window._annotRedraw();
         renderAnnotList(); renderGrid();
@@ -1121,8 +1124,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   });
   // Save before unload
   window.addEventListener('beforeunload', saveSession);
-  // Clear session after successful validate
-  var _origValidateSuccess = null; // handled in validate click
+  // Clear session after successful validate — handled in validate click
 
   // ── Clear all annotations for current test ──
   document.getElementById('lb-annot-clear').addEventListener('click', function() {
@@ -1189,14 +1191,15 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   function renderAuditStats() {
     if (!D.audit) return;
     var s = D.audit.summary;
+    var sev = s.by_severity || {};
     var el = document.getElementById('stats');
     el.textContent = '';
     var items = [
       ['stat-total', s.total_bugs + ' bugs'],
-      ['audit-badge-critical', s.by_severity.critical + ' critical'],
-      ['audit-badge-high', s.by_severity.high + ' high'],
-      ['audit-badge-medium', s.by_severity.medium + ' medium'],
-      ['audit-badge-low', s.by_severity.low + ' low']
+      ['audit-badge-critical', (sev.critical || 0) + ' critical'],
+      ['audit-badge-high', (sev.high || 0) + ' high'],
+      ['audit-badge-medium', (sev.medium || 0) + ' medium'],
+      ['audit-badge-low', (sev.low || 0) + ' low']
     ];
     items.forEach(function(item) {
       var span = document.createElement('span');
@@ -1217,6 +1220,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   function renderAuditFilters() {
     if (!D.audit) return;
+    if (!D.audit.summary || !D.audit.summary.by_category) return;
     var sevEl = document.getElementById('audit-sev-filters');
     var catEl = document.getElementById('audit-cat-filters');
     sevEl.textContent = '';
@@ -1425,7 +1429,14 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     items.forEach(function(item) {
       var div = document.createElement('div');
       div.className = 'monitor-stat';
-      div.innerHTML = '<div class="monitor-stat-value">' + item[0] + '</div><div class="monitor-stat-label">' + item[1] + '</div>';
+      var valDiv = document.createElement('div');
+      valDiv.className = 'monitor-stat-value';
+      valDiv.textContent = item[0];
+      var lblDiv = document.createElement('div');
+      lblDiv.className = 'monitor-stat-label';
+      lblDiv.textContent = item[1];
+      div.appendChild(valDiv);
+      div.appendChild(lblDiv);
       el.appendChild(div);
     });
     // Also update header stats when on monitor tab
@@ -1465,7 +1476,11 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var label = document.createElement('div');
       label.className = 'gantt-label';
       var pathText = (a.paths && a.paths[0]) ? a.paths[0] : '';
-      label.innerHTML = '<span class="gantt-label-zone">' + (a.zone_id || a.agent_id || '?') + '</span> ' + pathText;
+      var zoneSpan = document.createElement('span');
+      zoneSpan.className = 'gantt-label-zone';
+      zoneSpan.textContent = a.zone_id || a.agent_id || '?';
+      label.appendChild(zoneSpan);
+      label.appendChild(document.createTextNode(' ' + pathText));
       row.appendChild(label);
 
       // Track + bar
