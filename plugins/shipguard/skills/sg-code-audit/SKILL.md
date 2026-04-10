@@ -26,6 +26,59 @@ Dispatch parallel AI agents to audit every file in your repo. Each agent reviews
 
 ---
 
+## Phase 0 — Monitor Setup
+
+Detect or start the review server for real-time audit monitoring. This is optional — if the user declines or the server can't start, the audit proceeds normally.
+
+### Step 1: Check for existing server
+
+```bash
+curl -s --max-time 2 http://localhost:8888/health
+```
+
+- **200 OK:** Parse the response JSON. Compare `results_dir` against the current project's `results_dir`.
+  - If they match → set `monitor_active = true`, `monitor_url = "http://localhost:8888"`. Print: `Monitor: connected to existing server.`
+  - If they differ → another project's server is running. Try ports 8889, 8890 with `--port=` (same health check + results_dir comparison). If none match, treat as "not running" and pick the first free port for Step 2.
+- **Connection refused / timeout:** Server not running. Go to Step 2.
+
+### Step 2: Ask user
+
+If no matching server found:
+
+> "Voulez-vous suivre l'avancement de l'audit en temps réel dans un tableau de bord ? (oui/non)"
+
+- **oui:**
+  1. Check if `visual-tests/build-review.mjs` exists. If not, bootstrap from the plugin directory:
+     ```bash
+     mkdir -p visual-tests/_results/screenshots
+     cp ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs visual-tests/
+     cp ~/.claude/plugins/shipguard/skills/sg-visual-review/_review-template.html visual-tests/
+     ```
+     Also create a minimal `visual-tests/_config.yaml` if it doesn't exist (required by the build script):
+     ```bash
+     cat > visual-tests/_config.yaml << 'EOF'
+     base_url: http://localhost:3000
+     EOF
+     ```
+  2. Pick port: use 8888 if free, otherwise the first free port found in Step 1.
+  3. Start server:
+     ```bash
+     node visual-tests/build-review.mjs --serve --port={port}
+     ```
+  4. Wait for health check (retry 3x, 1s apart):
+     ```bash
+     curl -s --max-time 2 http://localhost:{port}/health
+     ```
+  5. If healthy → `monitor_active = true`, `monitor_url = "http://localhost:{port}"`. Print: `Monitor: server started at http://localhost:{port}`
+  6. If not → `monitor_active = false`. Print: `Monitor: server failed to start — proceeding without monitoring.`
+- **non:** Set `monitor_active = false`.
+
+### Step 3: Store monitor state
+
+Store `monitor_active` (boolean) and `monitor_url` (string) as working variables for subsequent phases.
+
+---
+
 ## Phase 1 — Parse Arguments
 
 Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and **scope**.
@@ -339,6 +392,27 @@ Store all dispatched agent handles for tracking.
 
 Print to user: `Round {round_number}: Dispatched {agent_count} agents. Waiting for completion...`
 
+### Monitor: report audit start + agent starts
+
+If `monitor_active` is true:
+
+1. **Once before the round loop** (after Phase 3 zones are known, before the first Phase 4 iteration), POST audit-start. Do NOT re-post on subsequent rounds (deep/paranoid mode) — `audit-start` resets all state.
+   ```
+   POST {monitor_url}/api/monitor/audit-start
+   Body: {"mode": "{mode}", "round_count": {round_count}, "agent_count": {agent_count},
+          "zones": [{zone objects with zone_id, paths, file_count}],
+          "scope_mode": "{scope_mode}", "scope_ref": "{scope_ref}",
+          "timestamp": "{ISO 8601 now}"}
+   ```
+   If the POST fails, set `monitor_active = false` and continue silently.
+
+2. After dispatching each agent (every round), POST agent-started:
+   ```
+   POST {monitor_url}/api/monitor/agent-update
+   Body: {"agent_id": "r{round}:{zone_id}", "zone_id": "{zone_id}", "status": "started",
+          "round": {round}, "started_at": "{ISO 8601 now}"}
+   ```
+
 ---
 
 ## Phase 5 — Collect + Retry
@@ -364,6 +438,38 @@ As each background agent completes, process its result.
    - Log the error
    - Print to user: `Zone {zone.id} failed: {error summary}`
    - Do NOT retry — move on
+
+### Monitor: report agent completion
+
+If `monitor_active` is true, after processing each agent's result:
+
+- **Success:** POST agent-update with completion data:
+  ```
+  POST {monitor_url}/api/monitor/agent-update
+  Body: {"agent_id": "r{round}:{zone_id}", "zone_id": "{zone_id}", "status": "completed",
+         "round": {round}, "started_at": "{original}", "ended_at": "{ISO 8601 now}",
+         "duration_ms": {from agent result footer or elapsed time},
+         "tokens": {"total": {total_tokens}, "input": {input_tokens}, "output": {output_tokens}},
+         "estimated_cost_usd": {calculated from tokens — sonnet: $3/$15 per 1M in/out},
+         "tool_uses": {from agent result footer}, "bugs_found": {from zone JSON},
+         "files_audited": {from zone JSON}}
+  ```
+  Extract `total_tokens`, `tool_uses`, and `duration_ms` from the Agent tool's result footer. If input/output split is unavailable, estimate 60/40 ratio from total.
+
+- **Context overflow:** POST overflow + started for children:
+  ```
+  POST {monitor_url}/api/monitor/agent-update
+  Body: {"agent_id": "r{round}:{zone_id}", "status": "overflow",
+         "error": "context overflow — re-splitting", "overflow_into": ["{child_id_a}", "{child_id_b}"]}
+  POST {monitor_url}/api/monitor/agent-update
+  Body: {"agent_id": "r{round}:{child_id_a}", "zone_id": "{child_id_a}", "status": "started", ...}
+  POST {monitor_url}/api/monitor/agent-update
+  Body: {"agent_id": "r{round}:{child_id_b}", "zone_id": "{child_id_b}", "status": "started", ...}
+  ```
+
+- **Error:** POST agent-update with `status: "failed"` and `error: "{error message}"`.
+
+All monitor POSTs are wrapped in try/catch. If any POST fails, set `monitor_active = false` — never crash the audit for monitoring.
 
 ### Track completion
 
@@ -552,6 +658,17 @@ Next steps:
   /sg-visual-run --from-audit    Visually verify impacted routes
   /sg-visual-review              See the full dashboard with Code Audit tab
 ```
+
+### Monitor: report audit complete
+
+If `monitor_active` is true:
+
+```
+POST {monitor_url}/api/monitor/audit-complete
+Body: {"status": "completed", "timestamp": "{ISO 8601 now}"}
+```
+
+Print: `Monitor: audit complete — view results at {monitor_url}`
 
 ---
 
