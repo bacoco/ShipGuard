@@ -1,195 +1,88 @@
-<p align="center">
-  <img src="docs/hero.png" alt="Agentic Visual Debugger" width="100%">
-</p>
+![ShipGuard](docs/screenshots/hero.png)
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <a href="https://github.com/bacoco/agentic-visual-debugger/releases"><img src="https://img.shields.io/github/v/release/bacoco/agentic-visual-debugger" alt="Latest Release"></a>
-</p>
+# ShipGuard
 
-# agentic-visual-debugger
+**AI-powered code audit + visual E2E testing. Zero tests written.**
 
-### You push code. You don't know what you broke. This plugin does.
-
-One command. Every page in your app gets tested, screenshotted, and inspected by AI. Broken layout? Missing data? Error toast hiding in a corner? It catches it. You circle the problem with a pen. The AI fixes it.
-
-**You never write a single test.**
+You push code. You don't know what you broke. ShipGuard dispatches parallel AI agents to find bugs in your code, then visually verifies the impacted pages with real browser screenshots. No test files to write, no test infrastructure to maintain.
 
 ---
 
-## You vs. this plugin
+## The flow
 
-| What you do today | What happens with this plugin |
-|--------------------|-------------------|
-| Write tests for every page | AI generates them from your codebase |
-| Tests break every time you refactor | Tests use visible text, not CSS selectors — they adapt |
-| Screenshots rot in CI artifacts | AI reads every screenshot and fails on visual errors |
-| Bug? Read the test code, figure out what broke | Circle the problem on the screenshot. AI traces it to the source and fixes it. |
-| "Did my fix actually work?" | Side-by-side before/after comparison |
+```
+/sg-code-audit              # Find bugs in code
+/sg-visual-run --from-audit # Verify impacted routes visually
+/sg-visual-review           # See everything in one dashboard
+```
 
 ---
 
-## 2 minutes from install to first result
-
-**Step 1** — Install the plugin in [Claude Code](https://claude.ai/code):
+## Install
 
 ```bash
-claude plugin marketplace add bacoco/agentic-visual-debugger
-claude plugin install agentic-visual-debugger
+claude plugin add bacoco/shipguard
 ```
 
-Then restart Claude Code so the `/visual-*` commands appear in autocomplete.
-
-**Step 2** — Scan your app:
-
-```
-/visual-discover
-```
-
-Done. 80-150 tests generated. You wrote nothing.
-
-**Step 3** — Run them:
-
-```
-/visual-run
-```
-
-Every page screenshotted. Every screenshot inspected. Failures flagged.
-
-![All your tests in one view](docs/discover-output.png)
+That's it. Restart Claude Code and the `/sg-*` commands are ready.
 
 ---
 
-## See a bug? Point at it.
+## Skills
 
-`/visual-review` opens a full-screen review page. 3D cards, dark theme, animated grid.
-
-![Review page](docs/review-page.png)
-
-Click any screenshot to open it full-screen. Then:
-
-- **Draw freely** on the image with the freehand pen (`F` key)
-- **Draw rectangles** around problem areas (`R` key)
-- **Add a note** describing what's wrong (popup after each annotation)
-- **Flag "Redo page"** if the whole screen is bad (`D` key) — no annotation needed
-- **Just select it** without any annotation — defaults to "improve this UI"
-- **Undo** any annotation (`Z` key)
-- **Navigate** between screenshots with arrows or keyboard left/right
-
-![Circle the bug](docs/review-annotation.png)
-
-Your annotations persist if you close the page (localStorage, 24h). Updated screenshots after a fix show first with a pulsing "UPDATED" badge.
-
-When a before/after pair exists, toggle between old and new versions. Don't like the fix? Click **Revert** to go back.
-
-Click **"Validate"** — the fix manifest is saved server-side. The page tells you the next step.
-
-![Lightbox with details](docs/review-lightbox.png)
+| Skill | What it does |
+|-------|-------------|
+| `/sg-code-audit` | Dispatch parallel agents to find and fix bugs across your repo |
+| `/sg-visual-run` | Run visual tests with agent-browser -- scripted or natural language |
+| `/sg-visual-review` | Interactive dashboard -- screenshots + code audit in one page |
+| `/sg-visual-discover` | Scan your app and generate YAML test manifests automatically |
+| `/sg-visual-fix` | Read annotated screenshots, trace bugs to source, fix and verify |
+| `/sg-visual-review-stop` | Stop the review dashboard server |
 
 ---
 
-## The AI fixes it while you watch
+## Screenshots
 
-```
-/visual-fix
-```
+### Code Audit
+![Code Audit](docs/screenshots/code-audit-tab.png)
 
-For each problem you circled:
-
-1. The AI reads your screenshot and zooms into the region you marked
-2. It traces the visual bug to the exact component and line of code
-3. It implements the fix
-4. It rebuilds the app
-5. It re-runs that specific test and captures a new screenshot
-
-The review page regenerates with a **before/after comparison tab**. Old screenshot on the left, new one on the right. You see exactly what changed.
-
-![Before and after](docs/fix-before-after.png)
-
-Still not right? Annotate again. Run `/visual-fix` again. **The loop closes when you stop finding problems.**
+### Visual Tests
+![Visual Tests](docs/screenshots/visual-tests-tab.png)
 
 ---
 
-## After a code change — test only what matters
+## Code Audit Modes
 
-You don't re-run 112 tests after fixing a button. Just describe what you changed:
+| Mode | Agents | Rounds | What it finds |
+|------|--------|--------|---------------|
+| `quick` | 5 | 1 | Known patterns, lint-like issues |
+| `standard` | 10 | 1 | Broader coverage, standard audit |
+| `deep` | 15 | 2 | + runtime behavior, race conditions |
+| `paranoid` | 20 | 3 | + edge cases, security, logic errors |
 
 ```
-/visual-run I fixed the sidebar and the upload flow
+/sg-code-audit --mode paranoid
 ```
-
-The plugin checks your `git diff`, finds the 3 impacted tests, runs those. 30 seconds, not 40 minutes. No test exists for what you changed? The plugin creates one on the fly.
 
 ---
 
-## Commands
+## How it works
 
-| Command | What it does |
-|---------|-------------|
-| `/visual-discover` | Scan your codebase, generate tests for every route |
-| `/visual-run` | Run tests — all, or describe what changed |
-| `/visual-review` | Open the visual review page |
-| `/visual-fix` | Fix everything you annotated, show before/after |
-| `/visual-review-stop` | Stop the review server |
+1. **Code audit** -- Parallel agents scan your codebase for bugs, grouped by severity
+2. **Route mapping** -- Impacted routes are identified from the audit results
+3. **Visual testing** -- Real browser sessions screenshot every impacted page
+4. **AI inspection** -- Each screenshot is analyzed for visual regressions
+5. **Fix loop** -- Annotate problems on screenshots, the AI traces them to source and fixes
 
-### Review page features
-
-| Feature | How |
-|---------|-----|
-| Freehand drawing | Pen tool or `F` key |
-| Rectangle selection | Box tool or `R` key |
-| Undo annotation | Button or `Z` key |
-| Flag "redo page" | Button or `D` key |
-| Select without annotation | Checkbox — defaults to "improve UI" |
-| Before/After comparison | Toggle in lightbox when fix exists |
-| Revert to previous version | Revert button in before/after panel |
-| Session persistence | Annotations saved in localStorage (24h) |
-| Updated screenshots first | Pulsing green badge, sorted to top |
-| Stability scoring | Pages fixed 3+ times flagged as "critical" |
+Tests are YAML manifests that describe what the user sees -- not how the DOM is structured. When a CSS class changes, selector-based tests break. These don't.
 
 ---
 
-## Proven on a real production app
+## Proven at scale
 
-**112 routes. 16 backend services. 6 authentication flows.**
-
-Next.js, React, Vue, Angular — any framework with detectable routes. Handles JWT auth, feature flags, file uploads, multi-step workflows, LLM-generated content, responsive layouts.
-
-This isn't a demo. It runs daily on a real SaaS platform.
+112 routes. 16 backend services. 6 authentication flows. Next.js, React, Vue, Angular -- any framework with detectable routes. Handles JWT auth, feature flags, file uploads, multi-step workflows, responsive layouts.
 
 ---
-
-## How it works under the hood
-
-Tests are YAML manifests that describe what the user sees — not how the DOM is structured:
-
-```yaml
-- action: click
-  target: "Nouvelle conversation"     # visible text, not .btn-primary-v2
-- action: llm-check
-  criteria: "The page shows seller, buyer, and notary names"
-```
-
-When a CSS class changes, Playwright tests break. These don't — because they never knew about the class.
-
-For the full architecture and design decisions, read the **[Design Spec](docs/design-spec.md)**.
-
----
-
-## Development
-
-```bash
-git clone https://github.com/bacoco/agentic-visual-debugger.git
-cd agentic-visual-debugger
-claude plugin marketplace add .
-claude plugin install agentic-visual-debugger
-```
-
-## Contributors
-
-Built by [Loic Baconnier](https://github.com/bacoco) with:
-- **Claude Code** (Anthropic) — architecture, skills, review page, annotation system
-- **Codex** (OpenAI) — code review, implementation assistance
 
 ## License
 
