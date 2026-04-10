@@ -1,7 +1,7 @@
 {
-  "name": "agentic-visual-debugger",
-  "description": "Agentic visual debugger — AI-powered visual E2E testing with agent-browser. Discover routes, screenshot every page, annotate bugs, auto-fix.",
-  "version": "1.0.0",
+  "name": "shipguard",
+  "description": "ShipGuard — AI-powered code audit + visual E2E testing. Audit the code first, verify visually second. Zero tests written.",
+  "version": "2.0.0",
   "author": {
     "name": "bacoco"
   }

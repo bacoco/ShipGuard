@@ -6,8 +6,8 @@
   },
   "plugins": [
     {
-      "name": "agentic-visual-debugger",
-      "description": "AI-powered visual E2E testing — discover routes, screenshot every page, annotate bugs, auto-fix",
+      "name": "shipguard",
+      "description": "AI-powered code audit + visual E2E testing. Zero tests written.",
       "source": "./plugins/agentic-visual-debugger",
       "category": "testing",
       "homepage": "https://github.com/bacoco/agentic-visual-debugger"
