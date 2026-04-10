@@ -90,18 +90,21 @@ Apply the minimal fix. Follow project rules:
 
 #### 2d. Rebuild and capture "after" screenshot
 
-```bash
-# If frontend change:
-docker compose -f infra/docker-compose.mac-studio.yml up -d --build uranus
-# Wait for healthy
+Read `build_command` from `visual-tests/_config.yaml`:
 
-# If backend change:
-docker compose -f infra/docker-compose.mac-studio.yml up -d --build api-synthesia
+- If `build_command` is set: execute it
+- If `build_command` is not set or null: ask the user how to rebuild, then proceed
+
+```bash
+# Examples of build_command values in _config.yaml:
+# build_command: "docker compose up -d --build frontend"
+# build_command: "npm run build"
+# build_command: null    # no rebuild needed (static site)
 
 # Re-run the specific test steps
-npx agent-browser open {test_url}
+agent-browser open {test_url}
 # ... execute test steps from manifest
-npx agent-browser screenshot --full visual-tests/_results/screenshots/{test-id}-after.png
+agent-browser screenshot --full visual-tests/_results/screenshots/{test-id}-after.png
 ```
 
 #### 2e. Save before/after pair

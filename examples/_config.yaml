@@ -6,3 +6,10 @@ credentials:
 screenshots_dir: "visual-tests/_results/screenshots"
 report_path: "visual-tests/_results/report.md"
 agent_browser_path: "agent-browser"
+
+# Build command to rebuild the app after code changes (used by /visual-fix)
+# Set to null or omit if no rebuild is needed (e.g., static sites)
+build_command: null
+# Examples:
+# build_command: "docker compose up -d --build frontend"
+# build_command: "npm run build && npm start"

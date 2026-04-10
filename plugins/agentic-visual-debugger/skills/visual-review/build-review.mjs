@@ -16,17 +16,41 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSy
 import { join, relative, basename, dirname, resolve, isAbsolute as pathIsAbsolute } from 'path';
 import { execFileSync } from 'child_process';
 
-// Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
+// Minimal YAML parser — handles flat keys, arrays, nested objects, and multiline blocks.
 // No external dependency needed.
+// Known limitations: no anchors/aliases, no flow mappings, no nested arrays beyond steps.
 function yamlParse(text) {
   const result = {};
   let currentKey = null;
   let currentArray = null;
   let currentObj = null;
   let inArray = false;   // true when current top-level key holds an array
+  let inMultiline = null; // 'literal' (|) or 'folded' (>) or null
+  let multilineLines = [];
+
+  function flushMultiline() {
+    if (inMultiline && currentKey) {
+      const sep = inMultiline === 'literal' ? '\n' : ' ';
+      result[currentKey] = multilineLines.join(sep).trim();
+    }
+    inMultiline = null;
+    multilineLines = [];
+  }
 
   for (const rawLine of text.split('\n')) {
     const line = rawLine.replace(/\r$/, '');
+
+    // Collect multiline block content
+    if (inMultiline) {
+      if (line.match(/^\s+/) && !line.match(/^[a-z_]/i)) {
+        multilineLines.push(line.replace(/^\s+/, ''));
+        continue;
+      } else {
+        flushMultiline();
+        // fall through to process this line normally
+      }
+    }
+
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
     // Top-level key: value
@@ -43,7 +67,13 @@ function yamlParse(text) {
         currentKey = key;
         continue;
       }
-      if (val === '' || val === '|' || val === '>') {
+      if (val === '|' || val === '>') {
+        currentKey = key;
+        inMultiline = val === '|' ? 'literal' : 'folded';
+        multilineLines = [];
+        continue;
+      }
+      if (val === '') {
         // Empty value — could be an array or a nested object; decide on next line
         currentKey = key;
         result[key] = null; // placeholder; will be set to [] or {} on first child line
@@ -115,6 +145,7 @@ function yamlParse(text) {
       }
     }
   }
+  flushMultiline();
   return result;
 }
 
@@ -128,10 +159,9 @@ const REGRESSIONS_PATH = join(ROOT, '_regressions.yaml');
 const CONFIG_PATH = join(ROOT, '_config.yaml');
 const OUTPUT_PATH = join(RESULTS_DIR, 'review.html');
 
-const CATEGORIES = [
-  'auth', 'principal', 'standalone', 'outils', 'intelligence',
-  'dashboard-only', 'hub', 'docs', 'admin', 'legal',
-];
+const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
+  .filter(e => e.isDirectory() && !e.name.startsWith('_') && e.name !== 'node_modules')
+  .map(e => e.name);
 
 // ── 1. Parse config ──
 const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
@@ -142,12 +172,15 @@ function parseReport() {
   const md = readFileSync(REPORT_PATH, 'utf8');
   const statusMap = {};
   for (const line of md.split('\n')) {
-    // Format 1: | test-slug | PASS |
-    let m = line.match(/^\|\s*([a-z0-9_-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL)(?:\*\*)?\s*\|/i);
+    // Format 1: | test-slug | PASS | (supports / in slugs)
+    let m = line.match(/^\|\s*([a-z0-9_/-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL)(?:\*\*)?\s*\|/i);
     if (m) { statusMap[m[1]] = m[2].toUpperCase(); continue; }
     // Format 2: - category/test-slug: PASS
     m = line.match(/^-\s+([a-z0-9_/-]+):\s*(PASS|FAIL|STALE)/i);
     if (m) { statusMap[m[1]] = m[2].toUpperCase(); continue; }
+    // Format 3: | category/slug — Description | PASS | ... | (table with description)
+    m = line.match(/^\|\s*([a-z0-9_/-]+)\s*[—–-]\s/i);
+    if (m) { const sm = line.match(/\b(PASS|FAIL|STALE|ERROR)\b/i); if (sm) { statusMap[m[1]] = sm[1].toUpperCase(); continue; } }
   }
   const summaryMatch = md.match(/Tests:\s*(\d+)\s*run,\s*(\d+)\s*pass,\s*(\d+)\s*fail/);
   const dateMatch = md.match(/# Visual Report — (\S+ \S+)/);

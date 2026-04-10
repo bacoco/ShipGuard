@@ -1,7 +1,7 @@
 ---
 name: visual-discover
 description: Explore a web project's codebase to discover testable user journeys, then generate YAML test manifests mirroring the UI navigation tree. Use when setting up Visual tests for a new project, or after structural UI changes (new routes, removed pages, navigation updates). Trigger on "visual discover", "generate visual tests", "discover test routes", "update test manifests", "scan UI for tests".
-context: fork
+context: conversation
 argument-hint: "[project-path]"
 ---
 
