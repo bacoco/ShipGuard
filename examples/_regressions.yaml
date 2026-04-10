@@ -6,3 +6,6 @@ regressions: []
 #   - test: auth/login
 #     failure_reason: "Login button not visible"
 #     consecutive_passes: 0
+#     first_failed: "2026-04-10T14:30:00Z"
+#     last_failed: "2026-04-10T14:30:00Z"
+#     screenshot: "auth-login.png"

@@ -1,0 +1,19 @@
+name: "Login form validation"
+description: "Verify role dropdown and error message on invalid submit"
+tags: [auth, form, validation]
+
+steps:
+  - action: open
+    url: "{base_url}/login"
+
+  - action: select
+    target: "role-select"
+    value: "admin"
+
+  - action: click
+    target: "Submit"
+
+  - action: assert_text
+    target: "error-message"
+    expected: "Invalid credentials"
+    screenshot: login-error.png

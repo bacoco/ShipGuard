@@ -33,6 +33,7 @@ steps:
     description: "Document appears in the list with correct status"
     criteria: "Document is listed with 'completed' or 'ready' status, filename matches uploaded file"
     severity: critical
+    screenshot: upload-entity-check.png
 
   - action: llm-check
     description: "Extracted entities are relevant to the document type"
