@@ -44,7 +44,7 @@ When you pass free text, the skill operates in **impact analysis mode**:
 /visual-run teste l'upload de PDF et le pipeline
 /visual-run j'ai modifie le sidebar de Harmonia, verifie que tout marche
 /visual-run est-ce que le chat fonctionne avec un document attache ?
-/visual-run j'ai change ArticleModal.tsx et notaire-chat-view.tsx
+/visual-run j'ai change Header.tsx et ChatView.tsx
 ```
 
 **Flow:**
@@ -76,8 +76,8 @@ When you pass free text, the skill operates in **impact analysis mode**:
 | `teste l'upload de PDF` | Finds upload-pdf.yaml, runs it |
 | `j'ai modifie le pipeline d'ingestion` | git diff → finds changed files → maps to ingestion tests → runs them |
 | `verifie que le dashboard charge` | Finds dashboard/home.yaml, runs it |
-| `j'ai ajoute un bouton dans le header du chat` | Finds notaire-chat tests, plus generates a new test for the header button if none exists |
-| `est-ce que la veille juridique fonctionne ?` | Finds JorfWatch/legal tests, runs them |
+| `j'ai ajoute un bouton dans le header` | Finds header-related tests, plus generates a new test for the header button if none exists |
+| `est-ce que la page settings fonctionne ?` | Finds settings tests, runs them |
 
 ## Pre-flight
 
@@ -135,7 +135,7 @@ Before executing, replace variables in all string fields:
 - `{data.xxx}` → from the manifest's `data:` section
 
 **Internal variables** (resolved by the skill, not from config):
-- `{session_id}` → `e2e-run-{timestamp}` (unique per execution)
+- `{session_id}` → `visual-run-{timestamp}` (unique per execution)
 - `{screenshots_dir}` → value of `screenshots_dir` in `_config.yaml`
 - `{report_path}` → value of `report_path` in `_config.yaml`
 - `{date}`, `{time}` → current date and time
@@ -308,7 +308,7 @@ For each test that PASSED and is in regressions:
 ```yaml
 # Auto-maintained by /visual-run — do not edit manually
 regressions:
-  - test: notaire-chat/upload-pdf
+  - test: dashboard/file-upload
     first_failed: "2026-03-22"
     last_failed: "2026-03-24"
     consecutive_passes: 0
@@ -389,8 +389,8 @@ New tests generated:
 |---------|-------|---------|
 | `open <url>` | Navigate to URL | `agent-browser open http://localhost:3000` |
 | `snapshot` | Accessibility tree with refs (for AI) | `agent-browser snapshot` |
-| `click <ref>` | Click element by ref | `agent-browser click e12` |
-| `fill <ref> <text>` | Clear and fill input | `agent-browser fill e10 "alex"` |
+| `click <ref>` | Click element by ref | `agent-browser click @e12` |
+| `fill <ref> <text>` | Clear and fill input | `agent-browser fill @e10 "alex"` |
 | `upload <sel> <files>` | Upload file to input | `agent-browser upload "#file-input" ./test.md` |
 | `eval <js>` | Run JavaScript in page | `agent-browser eval 'document.querySelector("input").id'` |
 | `screenshot <path>` | Take screenshot | `agent-browser screenshot --full /tmp/capture.png` |

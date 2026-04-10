@@ -39,7 +39,7 @@ Human annotates screenshots in review.html
 
 Find the manifest file:
 - If argument provided: use that path
-- Otherwise: find the most recent `visual-fix-manifest-*.json` in the current directory or Downloads
+- Otherwise: read `visual-tests/_results/fix-manifest.json` (saved by the review page server)
 
 The manifest contains:
 ```json
@@ -47,9 +47,9 @@ The manifest contains:
   "action": "validate-and-fix",
   "tests": [
     {
-      "test": "principal/notaire-chat",
-      "url": "http://localhost:6969/notaire-chat",
-      "screenshot": "screenshots/notaire-chat-load.png",
+      "test": "auth/login",
+      "url": "http://localhost:3000/login",
+      "screenshot": "screenshots/login-load.png",
       "annotations": [
         { "x1": 0.2, "y1": 0.3, "x2": 0.8, "y2": 0.6 }
       ],
@@ -119,20 +119,16 @@ cp visual-tests/_results/screenshots/{original}.png visual-tests/_results/screen
 Regenerate the review page with a "Comparison" tab:
 
 ```bash
-node visual-tests/build-review.mjs --with-comparisons
+node visual-tests/build-review.mjs --serve
 ```
 
-The comparison tab shows side-by-side before/after for each fixed test:
-- Left: "before" screenshot with red annotation rectangles overlay
-- Right: "after" screenshot
-- Status: FIXED / STILL_BROKEN
-- Description of what was changed
+The review page shows before/after screenshots when pairs exist (matching `{slug}-before.png` and `{slug}-after.png` in the screenshots directory).
 
 ### Step 4: Commit and Report
 
 ```bash
 git add <fixed files> visual-tests/_results/screenshots/*-after.png
-git commit -m "fix(e2e): fix N annotated issues from human review"
+git commit -m "fix(visual): fix N annotated issues from human review"
 ```
 
 Report to user:
@@ -141,7 +137,7 @@ Visual Review Fix Complete:
 - {N} annotated issues processed
 - {M} fixed, {K} need further investigation
 - Before/after comparison: visual-tests/_results/review.html (Comparison tab)
-- Rebuilt: uranus / api-synthesia
+- Rebuilt: (build_command from _config.yaml)
 ```
 
 ## Important Rules
@@ -150,5 +146,5 @@ Visual Review Fix Complete:
 - ALWAYS focus on the annotated region coordinates — the human marked exactly where the problem is
 - ALWAYS capture an "after" screenshot using the same test steps
 - ALWAYS verify the fix visually (read the "after" screenshot)
-- If a fix requires backend changes, rebuild api-synthesia too
+- If a fix requires backend changes, run the appropriate build_command
 - If you can't identify the issue from the screenshot, say so — don't guess

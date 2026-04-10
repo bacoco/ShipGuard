@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Visual Screenshot Review — ExcenIA</title>
+<title>Visual Screenshot Review</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -214,7 +214,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 <body>
 
 <div id="header">
-  <div class="header-brand">ExcenIA Visual Review</div>
+  <div class="header-brand">Visual Review</div>
   <div class="header-stats" id="stats"></div>
   <div class="header-meta" id="meta"></div>
 </div>
@@ -517,12 +517,12 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       else label.textContent = 'Click a tool to annotate';
     }
 
-    // Convert screen mouse coords to canvas pixel coords (handles zoom/scaling)
+    // Convert screen mouse coords to canvas pixel coords (handles CSS transform zoom)
     function canvasCoords(e) {
       var r = canvas.getBoundingClientRect();
-      var scaleX = canvas.width / r.width;
-      var scaleY = canvas.height / r.height;
-      return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
+      // getBoundingClientRect includes CSS transform (zoom), but canvas.width is unscaled.
+      // Divide by actual rendered size to get normalized 0..1, then multiply by canvas pixel size.
+      return { x: (e.clientX - r.left) / r.width * canvas.width, y: (e.clientY - r.top) / r.height * canvas.height };
     }
 
     // Mouse events
@@ -567,8 +567,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var annot = null;
       if (penMode === 'freehand' && currentPath.length > 2) {
         // Compute bounding box from points for /visual-fix compatibility
-        var xs = currentPath.map(function(p){return p.x/canvas.width;});
-        var ys = currentPath.map(function(p){return p.y/canvas.height;});
+        var xs = currentPath.map(function(p){return p.x;});
+        var ys = currentPath.map(function(p){return p.y;});
         annot = {type:'freehand', points:currentPath.slice(), x1:Math.min.apply(null,xs), y1:Math.min.apply(null,ys), x2:Math.max.apply(null,xs), y2:Math.max.apply(null,ys), note:''};
       } else if (penMode === 'rect' && Math.abs(p.x-drawStart.x) > 5 && Math.abs(p.y-drawStart.y) > 5) {
         annot = {type:'rect', x1:drawStart.x/canvas.width, y1:drawStart.y/canvas.height, x2:p.x/canvas.width, y2:p.y/canvas.height, note:''};
@@ -844,10 +844,11 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   // ── Keyboard ──
   document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key==='Escape') {
-      if (document.getElementById('note-overlay').classList.contains('visible')) { saveAnnotation(''); }
+      if (document.getElementById('note-overlay').classList.contains('visible')) { pendingAnnot=null; document.getElementById('note-overlay').classList.remove('visible'); if(window._annotRedraw) window._annotRedraw(); }
       else if (document.getElementById('lightbox').classList.contains('visible')) closeLightbox();
-      else if (selectedCount>0) { selected={};selectedCount=0;renderGrid();updateBar(); }
+      else if (selectedCount>0) { Object.keys(selected).forEach(function(id){delete annotationData[id];delete redoFlags[id];delete revertFlags[id];}); selected={};selectedCount=0;renderGrid();updateBar(); }
     }
   });
 
@@ -882,8 +883,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       if (d.ok) {
         clearSession(); // Clear localStorage after successful save
         document.getElementById('success-overlay').classList.add('visible');
-        // Auto-dismiss on click
-        document.getElementById('success-overlay').addEventListener('click', function(){this.classList.remove('visible');});
+        // Auto-dismiss on click (use {once:true} to avoid duplicate listeners)
+        document.getElementById('success-overlay').addEventListener('click', function(){this.classList.remove('visible');}, {once:true});
       }
       else showToast('Error: ' + (d.error||'unknown'));
     }).catch(function(e) {
@@ -925,6 +926,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   // Keyboard nav in lightbox
   document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (!document.getElementById('lightbox').classList.contains('visible')) return;
     if (document.getElementById('note-overlay').classList.contains('visible')) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); navLightbox(-1); }
@@ -958,8 +960,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     // Resize canvas to match
     setTimeout(function(){ if(window._annotSetup && currentTestId) window._annotSetup(currentTestId); }, 100);
   }, {passive:false});
-  // Reset zoom on test change
-  var _origAnnotSetup = window._annotSetup;
   // Reset zoom when opening a new test
   function resetZoom() {
     zoomLevel = 1;

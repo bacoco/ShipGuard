@@ -159,6 +159,24 @@ const REGRESSIONS_PATH = join(ROOT, '_regressions.yaml');
 const CONFIG_PATH = join(ROOT, '_config.yaml');
 const OUTPUT_PATH = join(RESULTS_DIR, 'review.html');
 
+// ── Early exit: --stop just kills the server, no build needed ──
+const PID_FILE = join(RESULTS_DIR, '.server.pid');
+if (process.argv.includes('--stop')) {
+  if (existsSync(PID_FILE)) {
+    const pid = parseInt(readFileSync(PID_FILE, 'utf8').trim());
+    if (Number.isInteger(pid) && pid > 0) {
+      try { process.kill(pid); } catch { /* already dead */ }
+      console.log(`Server stopped (PID ${pid}).`);
+    } else {
+      console.log('Invalid PID in .server.pid — ignoring.');
+    }
+    writeFileSync(PID_FILE, '', 'utf8');
+  } else {
+    console.log('No server running.');
+  }
+  process.exit(0);
+}
+
 const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
   .filter(e => e.isDirectory() && !e.name.startsWith('_') && e.name !== 'node_modules')
   .map(e => e.name);
@@ -245,44 +263,32 @@ function walkDir(dir, category, tests) {
   }
 }
 
-// Escape for safe embedding in JSON (no HTML escaping — data lives in JS, not in DOM)
-function sanitize(s) {
-  return String(s)
-    .replace(/\\/g, '\\\\')
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e');
-}
-
 function buildEntry(id, category, manifest) {
   const slug = id.split('/').pop();
   return {
-    id: sanitize(id),
-    category: sanitize(category),
-    name: sanitize(manifest.name || slug),
-    description: sanitize(manifest.description || ''),
-    priority: sanitize(manifest.priority || 'medium'),
-    tags: (manifest.tags || []).map(sanitize),
+    id,
+    category,
+    name: manifest.name || slug,
+    description: manifest.description || '',
+    priority: manifest.priority || 'medium',
+    tags: manifest.tags || [],
     requiresAuth: manifest.requires_auth ?? true,
-    featureFlag: manifest.feature_flag ? sanitize(manifest.feature_flag) : null,
+    featureFlag: manifest.feature_flag || null,
     url: extractUrl(manifest.steps || []),
-    steps: (manifest.steps || []).map(s => {
-      const step = {};
-      for (const k in s) { step[k] = sanitize(s[k]); }
-      return step;
-    }),
+    steps: manifest.steps || [],
     screenshot: findScreenshot(id, slug, manifest.steps || []),
     screenshotBefore: findBeforeScreenshot(id, slug, manifest.steps || []),
     screenshotMtime: getScreenshotMtime(id, slug, manifest.steps || []),
     status: 'STALE',
     failureReason: null,
-    fixCycles: 0, // will be set from regressions history
+    fixCycles: 0,
   };
 }
 
 function extractUrl(steps) {
   const openStep = steps.find(s => s.action === 'open' && s.url);
   if (!openStep) return '';
-  return sanitize(openStep.url.replace('{base_url}', config.base_url || 'http://localhost:6969'));
+  return openStep.url.replace('{base_url}', config.base_url || 'http://localhost:3000');
 }
 
 function getScreenshotMtime(id, slug, steps) {
@@ -332,7 +338,7 @@ function mergeStatus(tests, report, regressions) {
     }
     const reg = regressions[t.id] || regressions[slug];
     if (reg) {
-      t.failureReason = sanitize(reg.failure_reason || '');
+      t.failureReason = reg.failure_reason || '';
       if (t.status === 'STALE') t.status = 'FAIL';
       // consecutive_passes === 0 means currently broken = at least 1 fix cycle attempted
       if (typeof reg.consecutive_passes === 'number' && reg.consecutive_passes === 0) {
@@ -418,22 +424,6 @@ if (!process.argv.includes('--stop')) {
     } catch { /* thumbnail generation failed — grid uses full images */ }
   }
   console.log(`  Thumbnails: ${thumbCount}/${tests.filter(t => t.screenshot).length}`);
-}
-
-// ── Server PID file ──
-const PID_FILE = join(RESULTS_DIR, '.server.pid');
-
-// --stop: kill existing server
-if (process.argv.includes('--stop')) {
-  if (existsSync(PID_FILE)) {
-    const pid = parseInt(readFileSync(PID_FILE, 'utf8').trim());
-    try { process.kill(pid); } catch { /* already dead */ }
-    writeFileSync(PID_FILE, '', 'utf8');
-    console.log(`Server stopped (PID ${pid}).`);
-  } else {
-    console.log('No server running.');
-  }
-  process.exit(0);
 }
 
 // --serve: start HTTP server with PID file

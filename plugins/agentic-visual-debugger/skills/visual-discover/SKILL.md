@@ -243,7 +243,7 @@ After generation, output:
 - _config.yaml (new)
 - _shared/login.yaml (new)
 - auth/login.yaml (new)
-- notaire-chat/upload-pdf.yaml (new)
+- dashboard/home.yaml (new)
 - ...
 
 ### Skipped (already exist)
@@ -267,8 +267,8 @@ Run `/visual-run --regressions` to run only known failures.
 |---------|-------|---------|
 | `open <url>` | Navigate to URL | `agent-browser open http://localhost:3000` |
 | `snapshot` | Accessibility tree with refs (for AI) | `agent-browser snapshot` |
-| `click <ref>` | Click element by ref | `agent-browser click e12` |
-| `fill <ref> <text>` | Clear and fill input | `agent-browser fill e10 "alex"` |
+| `click <ref>` | Click element by ref | `agent-browser click @e12` |
+| `fill <ref> <text>` | Clear and fill input | `agent-browser fill @e10 "alex"` |
 | `upload <sel> <files>` | Upload file to input | `agent-browser upload "#file-input" ./test.md` |
 | `eval <js>` | Run JavaScript in page | `agent-browser eval 'document.querySelector("input").id'` |
 | `screenshot <path>` | Take screenshot | `agent-browser screenshot /tmp/capture.png` |

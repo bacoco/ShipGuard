@@ -21,7 +21,7 @@ Generate and open a self-contained HTML page to visually review all Visual test 
 
 - `/visual-discover` has been run (manifests exist in `visual-tests/`)
 - `/visual-run` has been run at least once (screenshots + report exist in `visual-tests/_results/`)
-- `js-yaml` available via npm/pnpm
+- No external npm dependencies — the build script uses a built-in YAML parser
 
 ## What It Does
 
@@ -30,7 +30,7 @@ Generate and open a self-contained HTML page to visually review all Visual test 
 Run the build script:
 
 ```bash
-node visual-tests/build-review.mjs
+node visual-tests/build-review.mjs --serve
 ```
 
 This script:
@@ -84,7 +84,7 @@ The review page provides:
   "timestamp": "2026-04-09T...",
   "tests": [
     {
-      "test": "principal/notaire-chat",
+      "test": "auth/login",
       "annotations": [
         { "x1": 0.2, "y1": 0.3, "x2": 0.8, "y2": 0.6 }
       ]
@@ -104,7 +104,7 @@ Take the exported JSON and feed it back:
 Or use the test paths directly:
 
 ```bash
-/visual-run principal/notaire-chat principal/veille-juridique docs/index
+/visual-run auth/login dashboard/home settings/profile
 ```
 
 ## Build Script Location
@@ -123,8 +123,8 @@ If the build script is not yet in the project:
 
 ```bash
 # Copy from plugin
-cp ~/.claude/skills/visual-review/build-review.mjs visual-tests/
-cp ~/.claude/skills/visual-review/_review-template.html visual-tests/
+cp ~/.claude/plugins/agentic-visual-debugger/skills/visual-review/build-review.mjs visual-tests/
+cp ~/.claude/plugins/agentic-visual-debugger/skills/visual-review/_review-template.html visual-tests/
 
 # Add npm script (optional)
 # In package.json: "visual:review": "node visual-tests/build-review.mjs"
@@ -132,7 +132,7 @@ cp ~/.claude/skills/visual-review/_review-template.html visual-tests/
 
 ## Design
 
-- Dark theme matching ExcenIA design tokens (slate-900 bg, copper accents)
+- Dark theme (slate-900 bg, copper accents)
 - Responsive grid (4 columns desktop, 1 column mobile)
 - No external dependencies (works with file:// protocol)
 - Keyboard shortcuts: Escape to close lightbox/clear selection
