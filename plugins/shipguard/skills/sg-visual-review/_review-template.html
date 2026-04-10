@@ -202,6 +202,38 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 /* Empty state */
 .empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
 
+/* Monitor tab */
+#monitor-toolbar{display:none;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap}
+#monitor-layout{display:none;padding:20px;min-height:calc(100vh - 120px)}
+.monitor-stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.monitor-stat{padding:8px 16px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;min-width:120px}
+.monitor-stat-value{font-size:22px;font-weight:700;color:var(--fg)}
+.monitor-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+
+/* Gantt chart */
+.gantt{position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;overflow-x:auto}
+.gantt-row{display:flex;align-items:center;gap:12px;margin-bottom:6px;min-height:28px}
+.gantt-label{width:200px;flex-shrink:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gantt-label-zone{color:var(--primary);font-weight:600;margin-right:4px}
+.gantt-track{flex:1;position:relative;height:24px;background:var(--secondary);border-radius:4px;overflow:visible}
+.gantt-bar{position:absolute;top:0;height:100%;border-radius:4px;min-width:4px;transition:width .3s ease}
+.gantt-bar-completed{background:var(--pass)}
+.gantt-bar-running{background:var(--primary);animation:gantt-pulse 1.5s ease-in-out infinite}
+.gantt-bar-failed{background:var(--fail)}
+.gantt-bar-overflow{background:var(--stale)}
+.gantt-bar-pending{background:var(--border)}
+@keyframes gantt-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.gantt-right{width:120px;flex-shrink:0;font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
+.gantt-overflow-icon{color:var(--stale);font-size:13px;margin-left:4px}
+.gantt-legend{display:flex;gap:16px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.gantt-legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.gantt-legend-dot{width:10px;height:10px;border-radius:2px}
+
+/* Monitor footer */
+.monitor-footer{margin-top:16px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.monitor-footer-link{color:var(--primary);cursor:pointer;text-decoration:underline}
+.monitor-footer-link:hover{color:var(--fg)}
+
 /* Tab switcher */
 .header-tabs{display:none;gap:4px;margin-left:16px}
 .header-tabs.visible{display:flex}
