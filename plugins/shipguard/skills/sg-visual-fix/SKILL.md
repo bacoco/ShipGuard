@@ -64,8 +64,9 @@ The manifest contains:
 #### 2a. Read the "before" screenshot
 
 ```bash
-# Read the screenshot file
-Read(visual-tests/_results/{screenshot_path})
+# Read the screenshot file — screenshot_path is relative to visual-tests/_results/screenshots/
+# Use the full path directly: visual-tests/_results/screenshots/{original}.png
+Read(visual-tests/_results/screenshots/{original}.png)
 ```
 
 Focus on the annotated regions (x1/y1 to x2/y2 as percentages of image dimensions). Describe what you see in each marked region:
@@ -101,6 +102,9 @@ Read `build_command` from `visual-tests/_config.yaml`:
 # build_command: "npm run build"
 # build_command: null    # no rebuild needed (static site)
 
+# {test-id} is the manifest path with slashes replaced by hyphens
+# e.g. "auth/login" becomes "auth-login", "dashboard/home" becomes "dashboard-home"
+
 # Re-run the specific test steps
 agent-browser open {test_url}
 # ... execute test steps from manifest
@@ -123,6 +127,14 @@ node visual-tests/build-review.mjs --serve
 ```
 
 The review page shows before/after screenshots when pairs exist (matching `{slug}-before.png` and `{slug}-after.png` in the screenshots directory).
+
+### Step 3b: Stop Review Server
+
+After all fixes are applied and verified, stop the review server:
+
+```bash
+node visual-tests/build-review.mjs --stop
+```
 
 ### Step 4: Commit and Report
 

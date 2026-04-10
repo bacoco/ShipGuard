@@ -2,7 +2,7 @@
 name: sg-visual-run
 description: Execute Visual test manifests using agent-browser with hybrid scripted+LLM assertions. Accepts natural language to describe what to test or what changed — the skill finds and runs the right tests, generating missing ones if needed. Trigger on "sg-visual-run", "visual run", "run visual tests", "test regressions", "run tests", "visual-run", "check if the app works", "I changed X check it still works".
 context: conversation
-argument-hint: "[tests to run or natural language description] [--all] [--diff=ref]"
+argument-hint: "[tests to run or natural language description] [--from-audit] [--regressions] [--all] [--diff=ref]"
 ---
 
 # /sg-visual-run — Execute Visual Tests
@@ -18,6 +18,7 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 | `/sg-visual-run --from-audit` | Read `audit-results.json`, extract `impacted_routes`, find matching test manifests, run only those |
 | `/sg-visual-run --diff=main` | Run tests for routes impacted by changes since `main` |
 | `/sg-visual-run --all` | Force full suite (skip scope question) |
+| `/sg-visual-run --regressions` | Re-run tests that failed on the last run (from `_regressions.yaml`) |
 
 ## Flag Parsing
 
@@ -26,8 +27,9 @@ Before entering any mode, check for scope override flags:
 1. Check for `--all` flag. If present → run full suite and skip the interactive menu.
 2. Check for `--diff=<ref>` flag. If present → use that ref for "only what changed" logic and skip the interactive menu.
 3. If BOTH `--all` and `--diff` are present → error: `Cannot use --all and --diff together.`
-4. `--from-audit` takes priority over `--diff`: if both are present, `--from-audit` wins because it has its own scope from `audit-results.json`.
-5. If no scope flags are present → proceed to Interactive Mode or Natural Language Mode as before.
+4. Check for `--from-audit` flag. If present → read `impacted_routes` from `audit-results.json` and build execution list from matching manifests. `--from-audit` takes priority over `--diff`: if both are present, `--from-audit` wins because it has its own scope from `audit-results.json`.
+5. Check for `--regressions` flag. If present → read `_regressions.yaml` and run only those tests; skip the interactive menu.
+6. If no scope flags are present → proceed to Interactive Mode or Natural Language Mode as before.
 
 ### Interactive Mode (no arguments)
 
@@ -58,7 +60,7 @@ If the user picks "Only what changed":
      base="HEAD~1"
    fi
    ```
-2. Run `git diff --name-only {base}` → modified files list.
+2. Run `git diff --name-only {base} HEAD` → modified files list.
 3. If 0 files changed, ask: `No diff vs {base}. Use last commit?` and reuse the same last-commit / full-suite / different-base logic as `sg-code-audit`.
 4. Map modified files to routes using the same framework-specific route detection described in `sg-code-audit` Phase 6 Step 3.
 5. Match routes to YAML manifests (glob `visual-tests/**/*.yaml`, match the `url` field).
@@ -101,7 +103,8 @@ When you pass free text, the skill operates in **impact analysis mode**:
    - **Tag the manifest** with `auto_generated: true`, `generated_by: visual-run`, `generated_date: "{date}"` in the frontmatter
    - Save it to the test tree
    - Then execute it
-   - Auto-generated manifests are reported separately. After 3 consecutive passes, they are **automatically removed** (same rule as regressions in `_regressions.yaml`)
+   - Auto-generated manifests are reported separately. After 3 consecutive passes, they are **automatically removed** (same rule as regressions in `_regressions.yaml`).
+   - Track auto-generated manifests in `_results/.auto-generated-manifests.json` (list of manifest paths). On cleanup, only remove manifests listed in this file.
 
 4. **Execute** — Run matched + generated tests (regressions among them first)
 
@@ -163,7 +166,7 @@ For each manifest assigned to this agent:
 ### Step 0: Test Isolation
 
 ```bash
-agent-browser --session {session_id} open {base_url}
+agent-browser open {base_url}
 ```
 
 Every test starts from the base URL. No state carries over from previous tests.
@@ -445,6 +448,7 @@ New tests generated:
 | `upload <sel> <files>` | Upload file to input | `agent-browser upload "#file-input" ./test.md` |
 | `eval <js>` | Run JavaScript in page | `agent-browser eval 'document.querySelector("input").id'` |
 | `screenshot <path>` | Take screenshot | `agent-browser screenshot --full /tmp/capture.png` |
+| `screenshot --full <path>` | Take full-page screenshot | `agent-browser screenshot --full /tmp/capture.png` |
 | `get url` | Get current URL | `agent-browser get url` |
 | `close` | Close browser | `agent-browser close` |
 

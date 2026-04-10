@@ -327,12 +327,12 @@ Run `/sg-visual-run --regressions` to run only known failures.
 | `upload <sel> <files>` | Upload file to input | `agent-browser upload "#file-input" ./test.md` |
 | `eval <js>` | Run JavaScript in page | `agent-browser eval 'document.querySelector("input").id'` |
 | `screenshot <path>` | Take screenshot | `agent-browser screenshot /tmp/capture.png` |
-| get url | Get current URL | agent-browser get url |
-| close | Close browser | agent-browser close |
+| `get url` | Get current URL | `agent-browser get url` |
+| `close` | Close browser | `agent-browser close` |
 
 ## Key Rules
 
-1. **NEVER overwrite existing manifests** — only create new ones
+1. **NEVER overwrite existing manifests** UNLESS `--refresh-existing` is passed. When refreshing, preserve user-added comments and custom steps. By default, only create new ones.
 2. **NEVER delete manifests** — mark deprecated
 3. **Always verify agent-browser is installed** before running
 4. **Use real element labels** — do a snapshot of each page to find actual button/input text
