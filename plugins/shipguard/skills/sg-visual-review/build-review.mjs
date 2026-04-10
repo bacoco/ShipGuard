@@ -554,6 +554,139 @@ if (process.argv.includes('--serve')) {
       });
       return;
     }
+    // ── GET /health ──
+    if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ status: 'ok', results_dir: resolve(RESULTS_DIR) }));
+      return;
+    }
+
+    // ── GET /api/monitor ──
+    if (req.method === 'GET' && req.url === '/api/monitor') {
+      // Fallback: reload from disk if in-memory state was lost (server restart)
+      if (!monitorState) loadMonitorFromDisk();
+      if (!monitorState) {
+        res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: 'No monitor data' }));
+      } else {
+        recalcTotals();
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify(monitorState));
+      }
+      return;
+    }
+
+    // ── POST /api/monitor/audit-start ──
+    if (req.method === 'POST' && req.url === '/api/monitor/audit-start') {
+      try {
+        const data = await parseJsonBody(req, res, 1024 * 1024);
+        if (!data) return;
+        monitorState = {
+          status: 'running',
+          mode: data.mode || 'standard',
+          round_count: data.round_count || 1,
+          scope_mode: data.scope_mode || 'full',
+          scope_ref: data.scope_ref || null,
+          started_at: data.timestamp || new Date().toISOString(),
+          ended_at: null,
+          agents: (data.zones || []).map(z => ({
+            agent_id: 'r1:' + z.zone_id,
+            zone_id: z.zone_id,
+            paths: z.paths || [],
+            file_count: z.file_count || 0,
+            status: 'pending',
+            round: 1,
+            started_at: null,
+            ended_at: null,
+            duration_ms: 0,
+            tokens: { total: 0, input: 0, output: 0 },
+            estimated_cost_usd: 0,
+            tool_uses: 0,
+            bugs_found: 0,
+            files_audited: 0,
+            error: null,
+            overflow_into: null,
+          })),
+          totals: { tokens: 0, estimated_cost_usd: 0, tool_uses: 0, bugs_found: 0, files_audited: 0, wall_clock_ms: 0 },
+        };
+        writeMonitorData();
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch { /* parseJsonBody already sent error response */ }
+      return;
+    }
+
+    // ── POST /api/monitor/agent-update ──
+    if (req.method === 'POST' && req.url === '/api/monitor/agent-update') {
+      try {
+        const data = await parseJsonBody(req, res, 1024 * 1024);
+        if (!data) return;
+        if (!monitorState) {
+          res.writeHead(409, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: 'No audit in progress' }));
+          return;
+        }
+        const agentId = data.agent_id;
+        let agent = monitorState.agents.find(a => a.agent_id === agentId);
+        if (!agent) {
+          // New agent (e.g. overflow child) — add it
+          agent = {
+            agent_id: agentId,
+            zone_id: data.zone_id || agentId,
+            paths: data.paths || [],
+            file_count: data.file_count || 0,
+            status: 'pending',
+            round: data.round || 1,
+            started_at: null, ended_at: null, duration_ms: 0,
+            tokens: { total: 0, input: 0, output: 0 },
+            estimated_cost_usd: 0, tool_uses: 0, bugs_found: 0, files_audited: 0,
+            error: null, overflow_into: null,
+          };
+          monitorState.agents.push(agent);
+        }
+        // Update fields from payload
+        agent.agent_id = agentId;
+        if (data.zone_id) agent.zone_id = data.zone_id;
+        if (data.status) agent.status = data.status;
+        if (data.round) agent.round = data.round;
+        if (data.started_at) agent.started_at = data.started_at;
+        if (data.ended_at) agent.ended_at = data.ended_at;
+        if (data.duration_ms) agent.duration_ms = data.duration_ms;
+        if (data.tokens) agent.tokens = data.tokens;
+        if (data.estimated_cost_usd != null) agent.estimated_cost_usd = data.estimated_cost_usd;
+        if (data.tool_uses != null) agent.tool_uses = data.tool_uses;
+        if (data.bugs_found != null) agent.bugs_found = data.bugs_found;
+        if (data.files_audited != null) agent.files_audited = data.files_audited;
+        if (data.error !== undefined) agent.error = data.error;
+        if (data.overflow_into) agent.overflow_into = data.overflow_into;
+        recalcTotals();
+        writeMonitorData();
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch { /* parseJsonBody already sent error response */ }
+      return;
+    }
+
+    // ── POST /api/monitor/audit-complete ──
+    if (req.method === 'POST' && req.url === '/api/monitor/audit-complete') {
+      try {
+        const data = await parseJsonBody(req, res, 1024 * 1024);
+        if (!data) return;
+        if (!monitorState) {
+          res.writeHead(409, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: 'No audit in progress' }));
+          return;
+        }
+        monitorState.status = data.status || 'completed';
+        monitorState.ended_at = data.timestamp || new Date().toISOString();
+        recalcTotals();
+        writeMonitorData();
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch { /* parseJsonBody already sent error response */ }
+      return;
+    }
+
     if (req.method === 'OPTIONS') {
       res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' });
       res.end();
