@@ -1148,27 +1148,39 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     var toolbar = document.getElementById('toolbar');
     var auditLayout = document.getElementById('audit-layout');
     var auditToolbar = document.getElementById('audit-toolbar');
+    var monitorLayout = document.getElementById('monitor-layout');
+    var monitorToolbar = document.getElementById('monitor-toolbar');
     var actionBar = document.getElementById('action-bar');
     var tabVisual = document.getElementById('tab-visual');
     var tabAudit = document.getElementById('tab-audit');
+    var tabMonitor = document.getElementById('tab-monitor');
+    // Hide all
+    layout.style.display = 'none';
+    toolbar.style.display = 'none';
+    auditLayout.style.display = 'none';
+    auditToolbar.style.display = 'none';
+    monitorLayout.style.display = 'none';
+    monitorToolbar.style.display = 'none';
+    actionBar.style.display = 'none';
+    tabVisual.classList.remove('active');
+    tabAudit.classList.remove('active');
+    tabMonitor.classList.remove('active');
     if (tab === 'visual') {
       layout.style.display = 'flex';
       toolbar.style.display = 'flex';
-      auditLayout.style.display = 'none';
-      auditToolbar.style.display = 'none';
       actionBar.style.display = '';
       tabVisual.classList.add('active');
-      tabAudit.classList.remove('active');
       renderStats();
-    } else {
-      layout.style.display = 'none';
-      toolbar.style.display = 'none';
+    } else if (tab === 'audit') {
       auditLayout.style.display = 'block';
       auditToolbar.style.display = 'flex';
-      actionBar.style.display = 'none';
-      tabVisual.classList.remove('active');
       tabAudit.classList.add('active');
       renderAuditStats();
+    } else if (tab === 'monitor') {
+      monitorLayout.style.display = 'block';
+      monitorToolbar.style.display = 'flex';
+      tabMonitor.classList.add('active');
+      renderMonitorTab();
     }
   }
   // Expose for inline onclick
@@ -1378,8 +1390,233 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     applyAuditFilters();
   }
 
+  // ── Monitor tab ──
+  var monitorData = null;
+  var monitorPollTimer = null;
+  var monitorDiscoveryTimer = null;
+
+  function fmtDuration(ms) {
+    if (!ms || ms <= 0) return '0s';
+    var s = Math.floor(ms / 1000);
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m > 0 ? m + 'm ' + s + 's' : s + 's';
+  }
+
+  function fmtTokens(n) {
+    if (!n) return '0';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return Math.round(n / 1000) + 'K';
+    return String(n);
+  }
+
+  function renderMonitorStats() {
+    var el = document.getElementById('monitor-stats');
+    el.textContent = '';
+    if (!monitorData) return;
+    var t = monitorData.totals || {};
+    var items = [
+      [fmtDuration(t.wall_clock_ms), 'Duration'],
+      [fmtTokens(t.tokens), 'Tokens'],
+      ['~$' + (t.estimated_cost_usd || 0).toFixed(2), 'Est. Cost'],
+      [String(t.bugs_found || 0), 'Bugs Found'],
+      [String((monitorData.agents || []).length), 'Agents'],
+    ];
+    items.forEach(function(item) {
+      var div = document.createElement('div');
+      div.className = 'monitor-stat';
+      div.innerHTML = '<div class="monitor-stat-value">' + item[0] + '</div><div class="monitor-stat-label">' + item[1] + '</div>';
+      el.appendChild(div);
+    });
+    // Also update header stats when on monitor tab
+    var headerStats = document.getElementById('stats');
+    headerStats.textContent = '';
+    [
+      ['stat-total', fmtDuration(t.wall_clock_ms)],
+      ['stat-pass', fmtTokens(t.tokens) + ' tokens'],
+      ['stat-rate', '~$' + (t.estimated_cost_usd || 0).toFixed(2)],
+      ['stat-fail', (t.bugs_found || 0) + ' bugs'],
+    ].forEach(function(s) {
+      var span = document.createElement('span');
+      span.className = 'stat ' + s[0];
+      span.textContent = s[1];
+      headerStats.appendChild(span);
+    });
+  }
+
+  function renderGantt() {
+    var container = document.getElementById('monitor-gantt');
+    container.textContent = '';
+    if (!monitorData || !monitorData.agents || !monitorData.agents.length) {
+      container.innerHTML = '<div class="empty">No agent data yet.</div>';
+      return;
+    }
+    var agents = monitorData.agents;
+    var auditStart = new Date(monitorData.started_at).getTime();
+    var now = Date.now();
+    var auditEnd = monitorData.ended_at ? new Date(monitorData.ended_at).getTime() : now;
+    var totalSpan = Math.max(auditEnd - auditStart, 1000);
+
+    agents.forEach(function(a) {
+      var row = document.createElement('div');
+      row.className = 'gantt-row';
+
+      // Label: zone_id + first path
+      var label = document.createElement('div');
+      label.className = 'gantt-label';
+      var pathText = (a.paths && a.paths[0]) ? a.paths[0] : '';
+      label.innerHTML = '<span class="gantt-label-zone">' + (a.zone_id || a.agent_id || '?') + '</span> ' + pathText;
+      row.appendChild(label);
+
+      // Track + bar
+      var track = document.createElement('div');
+      track.className = 'gantt-track';
+      var bar = document.createElement('div');
+      // Map API status "started" to CSS class "running" (animated pulse)
+      var barStatus = a.status === 'started' ? 'running' : (a.status || 'pending');
+      bar.className = 'gantt-bar gantt-bar-' + barStatus;
+      var barStart = a.started_at ? new Date(a.started_at).getTime() - auditStart : 0;
+      var barEnd = a.ended_at ? new Date(a.ended_at).getTime() - auditStart : (a.status === 'started' ? now - auditStart : barStart);
+      var leftPct = Math.max(0, (barStart / totalSpan) * 100);
+      var widthPct = Math.max(0.5, ((barEnd - barStart) / totalSpan) * 100);
+      bar.style.left = leftPct + '%';
+      bar.style.width = Math.min(widthPct, 100 - leftPct) + '%';
+      track.appendChild(bar);
+
+      // Overflow icon
+      if (a.status === 'overflow') {
+        var icon = document.createElement('span');
+        icon.className = 'gantt-overflow-icon';
+        icon.textContent = ' \u26A1';
+        icon.title = 'Context overflow \u2014 re-split into ' + (a.overflow_into || []).join(', ');
+        track.appendChild(icon);
+      }
+      row.appendChild(track);
+
+      // Right label: bugs + cost
+      var right = document.createElement('div');
+      right.className = 'gantt-right';
+      if (a.status === 'completed' || a.status === 'failed' || a.status === 'overflow') {
+        right.textContent = (a.bugs_found || 0) + ' bugs  $' + (a.estimated_cost_usd || 0).toFixed(2);
+      } else if (a.status === 'started') {
+        right.textContent = 'running\u2026';
+      } else {
+        right.textContent = 'pending';
+      }
+      row.appendChild(right);
+
+      container.appendChild(row);
+    });
+
+    // Legend
+    var legend = document.createElement('div');
+    legend.className = 'gantt-legend';
+    [
+      ['var(--primary)', 'running'],
+      ['var(--pass)', 'completed'],
+      ['var(--fail)', 'failed'],
+      ['var(--stale)', 'overflow'],
+    ].forEach(function(item) {
+      var el = document.createElement('div');
+      el.className = 'gantt-legend-item';
+      el.innerHTML = '<span class="gantt-legend-dot" style="background:' + item[0] + '"></span>' + item[1];
+      legend.appendChild(el);
+    });
+    container.appendChild(legend);
+  }
+
+  function renderMonitorFooter() {
+    var el = document.getElementById('monitor-footer');
+    if (!monitorData) { el.textContent = ''; return; }
+    var agents = monitorData.agents || [];
+    var completed = agents.filter(function(a) { return a.status === 'completed'; }).length;
+    var failed = agents.filter(function(a) { return a.status === 'failed'; }).length;
+    var total = agents.length;
+    var text = '';
+    if (monitorData.status === 'running') {
+      text = 'Audit in progress \u2014 ' + completed + '/' + total + ' agents completed';
+    } else if (monitorData.status === 'completed') {
+      text = 'Completed \u2014 ' + total + ' agents, ' + (monitorData.round_count || 1) + ' round(s), ' + fmtDuration(monitorData.totals ? monitorData.totals.wall_clock_ms : 0);
+    } else if (monitorData.status === 'failed') {
+      text = 'Audit failed \u2014 ' + completed + ' completed, ' + failed + ' failed';
+    }
+    el.textContent = '';
+    var span = document.createElement('span');
+    span.textContent = text;
+    el.appendChild(span);
+    // Link to Code Audit tab if audit data exists
+    if (D.audit) {
+      var link = document.createElement('span');
+      link.className = 'monitor-footer-link';
+      link.textContent = 'View Code Audit results \u2192';
+      link.addEventListener('click', function() { switchTab('audit'); });
+      el.appendChild(link);
+    }
+  }
+
+  function renderMonitorTab() {
+    renderMonitorStats();
+    renderGantt();
+    renderMonitorFooter();
+  }
+
+  function pollMonitor() {
+    fetch('/api/monitor').then(function(r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function(data) {
+      if (!data) return;
+      monitorData = data;
+      if (activeTab === 'monitor') renderMonitorTab();
+      // Stop polling when audit is done
+      if (data.status !== 'running' && monitorPollTimer) {
+        clearInterval(monitorPollTimer);
+        monitorPollTimer = null;
+      }
+    }).catch(function() { /* server unreachable — ignore */ });
+  }
+
+  function activateMonitorTab(data) {
+    monitorData = data;
+    document.getElementById('tab-monitor').style.display = '';
+    document.getElementById('header-tabs').classList.add('visible');
+    // Stop discovery polling once tab is active
+    if (monitorDiscoveryTimer) { clearInterval(monitorDiscoveryTimer); monitorDiscoveryTimer = null; }
+    // Start live polling if audit is still running
+    if (data.status === 'running' && !monitorPollTimer) {
+      monitorPollTimer = setInterval(pollMonitor, 3000);
+    }
+  }
+
+  function probeMonitor() {
+    fetch('/api/monitor').then(function(r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function(data) {
+      if (data) activateMonitorTab(data);
+    }).catch(function() { /* server unreachable — keep trying */ });
+  }
+
+  function initMonitorTab() {
+    // Probe once immediately
+    fetch('/api/monitor').then(function(r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function(data) {
+      if (data) {
+        activateMonitorTab(data);
+      } else {
+        // No data yet — keep probing every 5s (page may be open before audit starts)
+        monitorDiscoveryTimer = setInterval(probeMonitor, 5000);
+      }
+    }).catch(function() {
+      // Server not reachable — probe periodically in case it starts later
+      monitorDiscoveryTimer = setInterval(probeMonitor, 5000);
+    });
+  }
+
   // ── Init ──
-  renderStats(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation(); initAuditTab();
+  renderStats(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation(); initAuditTab(); initMonitorTab();
 })(__VISUAL_DATA__);
 </script>
 </body>
