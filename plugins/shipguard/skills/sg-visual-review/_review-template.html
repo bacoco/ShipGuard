@@ -449,7 +449,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   // ── Detect updated screenshots (changed after last fix-manifest) ──
   var lastFixTs = D.lastFixTimestamp || 0;
-  function isUpdated(t) { return t.screenshotMtime && lastFixTs && t.screenshotMtime > lastFixTs; }
+  function isUpdated(t) { return t.screenshotMtime && lastFixTs && t.screenshotMtime >= lastFixTs; }
 
   // ── Filters ──
   function renderFilters() {
@@ -750,16 +750,15 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     // Expose for lightbox
     window._annotSetup = function(testId) {
       currentTestId = testId;
-      penMode = null;
       updatePenUI();
       // Update redo button state
       var redoBtn = document.getElementById('pen-redo');
       if (redoBtn) redoBtn.classList.toggle('active', !!redoFlags[testId]);
       var img = document.getElementById('lb-img');
       function sizeCanvas() {
-        canvas.width = img.clientWidth || 800;
-        canvas.height = img.clientHeight || 500;
-        redraw();
+        canvas.width = (img.naturalWidth || img.clientWidth) || 800;
+        canvas.height = (img.naturalHeight || img.clientHeight) || 500;
+        if (!isDrawing) redraw();
       }
       if (img.complete && img.naturalWidth) requestAnimationFrame(sizeCanvas);
       else img.addEventListener('load', function(){ requestAnimationFrame(sizeCanvas); }, {once:true});
@@ -796,6 +795,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     if (!annotationData[currentTestId]) annotationData[currentTestId] = [];
     annotationData[currentTestId].push(pendingAnnot);
     if (!selected[currentTestId]) { selected[currentTestId]=true; selectedCount++; updateBar(); }
+    else { saveSession(); }
     pendingAnnot = null;
     if (window._annotRedraw) window._annotRedraw();
     renderAnnotList();
@@ -933,7 +933,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     renderGrid();
   });
 
-  function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); }
+  function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); penMode = null; updatePenUI(); }
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
 
   // Click outside detail panel area closes lightbox
@@ -1017,7 +1017,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   });
 
   document.getElementById('btn-clear').addEventListener('click', function(){
-    // Clear everything — selections, annotations, redo flags
+    // Clear everything — selections, annotations, redo flags, revert flags
+    for (var id in selected) { delete revertFlags[id]; }
     Object.keys(selected).forEach(function(id){ delete annotationData[id]; delete redoFlags[id]; });
     selected={}; selectedCount=0; renderGrid(); updateBar();
   });
@@ -1026,8 +1027,11 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   function navLightbox(dir) {
     var list = getLbList();
     if (!list.length) return;
-    currentLbIndex = Math.max(0, Math.min(list.length-1, currentLbIndex + dir));
-    openLightbox(list[currentLbIndex].id);
+    var idx = -1;
+    for (var i = 0; i < list.length; i++) { if (list[i].id === currentTestId) { idx = i; break; } }
+    if (idx === -1) idx = 0; else idx = Math.max(0, Math.min(list.length - 1, idx + dir));
+    currentLbIndex = idx;
+    openLightbox(list[idx].id);
   }
 
   document.getElementById('lb-prev').addEventListener('click', function(e){e.stopPropagation();navLightbox(-1);});
@@ -1598,7 +1602,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     // Stop discovery polling once tab is active
     if (monitorDiscoveryTimer) { clearInterval(monitorDiscoveryTimer); monitorDiscoveryTimer = null; }
     // Start live polling if audit is still running
-    if (data.status === 'running' && !monitorPollTimer) {
+    if (monitorPollTimer) clearInterval(monitorPollTimer);
+    if (data.status === 'running') {
       monitorPollTimer = setInterval(pollMonitor, 3000);
     }
   }
