@@ -122,10 +122,11 @@ function yamlParse(text) {
 
       // Property of current array object
       if (inArray && currentObj && typeof currentObj === 'object') {
-        const propMatch = line.match(/^\s+([a-z_][a-z0-9_-]*):\s*(.+)/i);
+        const propMatch = line.match(/^\s+([a-z_][a-z0-9_-]*):\s*(.*)/i);
         if (propMatch) {
           const val = propMatch[2].replace(/^["']|["']$/g, '').trim();
-          if (val === 'true') currentObj[propMatch[1]] = true;
+          if (val === '') currentObj[propMatch[1]] = null;
+          else if (val === 'true') currentObj[propMatch[1]] = true;
           else if (val === 'false') currentObj[propMatch[1]] = false;
           else if (/^\d+$/.test(val)) currentObj[propMatch[1]] = parseInt(val);
           else currentObj[propMatch[1]] = val;
@@ -137,10 +138,10 @@ function yamlParse(text) {
       if (!inArray) {
         if (result[currentKey] === null) result[currentKey] = {}; // promote placeholder
         if (typeof result[currentKey] === 'object' && !Array.isArray(result[currentKey])) {
-          const nestedMatch = line.match(/^\s+([a-z_][a-z0-9_-]*):\s*(.+)/i);
+          const nestedMatch = line.match(/^\s+([a-z_][a-z0-9_-]*):\s*(.*)/i);
           if (nestedMatch) {
             const val = nestedMatch[2].replace(/^["']|["']$/g, '').trim();
-            result[currentKey][nestedMatch[1]] = val;
+            result[currentKey][nestedMatch[1]] = val === '' ? null : val;
           }
         }
       }

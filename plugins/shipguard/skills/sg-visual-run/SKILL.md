@@ -126,7 +126,11 @@ When `--from-audit` is passed:
 
 1. Read `audit-results.json` from the results directory: check `visual-tests/_results/audit-results.json` first, then `{repo_root}/audit-results.json`, then `.code-audit-results/audit-results.json`. Fail with a clear message if not found.
 2. Extract `impacted_routes` array
-3. For each route, find matching YAML manifests by comparing `impacted_route.route` against `manifest.steps[0].url` (the open step URL)
+3. For each route, find matching YAML manifests using **pathname matching**:
+   - Extract the pathname from `manifest.steps[0].url` by stripping `{base_url}` or any `http(s)://host:port` prefix. E.g., `{base_url}/chat` → `/chat`, `http://localhost:3000/dashboard` → `/dashboard`.
+   - Compare the extracted pathname against `impacted_route.route` (which is always a bare path like `/dashboard`, `/chat`, `/dossier/:id`).
+   - For parameterized routes (`:id`, `[id]`), match the path segments: `/dossier/:id` matches `/dossier/anything`.
+   - A manifest matches if its extracted pathname starts with or equals the impacted route path.
 4. If no manifest matches a route, log it as "uncovered route" (do NOT auto-generate — the user can run `/sg-visual-discover` separately to create manifests for new routes)
 5. Run matched manifests (highest `impacted_route.severity` routes first; use manifest `priority` as secondary sort key)
 6. Report: which routes were visually verified, which had no manifest (uncovered), and which code-audit findings were visually confirmed vs not reproduced
@@ -143,7 +147,7 @@ When `--from-audit` is passed:
 
 Collect manifests to run:
 
-1. **If `--from-audit`**: follow the From-Audit Mode flow — read `audit-results.json`, extract `impacted_routes`, match YAML manifests by comparing `impacted_route.route` against `manifest.steps[0].url`, order by `impacted_route.severity` (critical first; manifest `priority` as secondary sort key)
+1. **If `--from-audit`**: follow the From-Audit Mode flow — read `audit-results.json`, extract `impacted_routes`, match YAML manifests using pathname matching (strip `{base_url}` prefix from `manifest.steps[0].url`, compare pathname against `impacted_route.route`), order by `impacted_route.severity` (critical first; manifest `priority` as secondary sort key)
 2. **If `--diff=<ref>` or the user picked "Only what changed"**: git diff → route detection → match manifests (see Interactive Mode above), then include regressions
 3. **If natural language provided**: analyze intent, match manifests, generate missing ones
 4. **If `--regressions`**: only from `_regressions.yaml`, ordered by `last_failed` descending
