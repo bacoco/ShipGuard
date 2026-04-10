@@ -524,7 +524,7 @@ if (process.argv.includes('--serve')) {
   const MIME = { '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.css': 'text/css', '.js': 'text/javascript' };
   const PORT = parseInt(process.argv.find(a => a.startsWith('--port='))?.split('=')[1] || '8888');
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     // POST /save-manifest — save fix manifest from review page
     if (req.method === 'POST' && req.url === '/save-manifest') {
       const MAX_BODY = 5 * 1024 * 1024; // 5 MB
