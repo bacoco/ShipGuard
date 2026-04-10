@@ -1,10 +1,22 @@
-![ShipGuard](docs/screenshots/hero.png)
+![ShipGuard](docs/screenshots/hero-banner.jpg)
 
 # ShipGuard
 
 **AI-powered code audit + visual E2E testing. Zero tests written.**
 
 You push code. You don't know what you broke. ShipGuard dispatches parallel AI agents to find bugs in your code, then visually verifies the impacted pages with real browser screenshots. No test files to write, no test infrastructure to maintain.
+
+---
+
+## Install
+
+ShipGuard is a Claude Code plugin. Add it in one line:
+
+```
+claude plugin add bacoco/shipguard
+```
+
+Restart Claude Code. The `/sg-*` commands are ready.
 
 ---
 
@@ -15,16 +27,6 @@ You push code. You don't know what you broke. ShipGuard dispatches parallel AI a
 /sg-visual-run --from-audit # Verify impacted routes visually
 /sg-visual-review           # See everything in one dashboard
 ```
-
----
-
-## Install
-
-```bash
-claude plugin add bacoco/shipguard
-```
-
-That's it. Restart Claude Code and the `/sg-*` commands are ready.
 
 ---
 
@@ -41,16 +43,6 @@ That's it. Restart Claude Code and the `/sg-*` commands are ready.
 
 ---
 
-## Screenshots
-
-### Code Audit
-![Code Audit](docs/screenshots/code-audit-tab.png)
-
-### Visual Tests
-![Visual Tests](docs/screenshots/visual-tests-tab.png)
-
----
-
 ## Code Audit Modes
 
 | Mode | Agents | Rounds | What it finds |
@@ -61,7 +53,7 @@ That's it. Restart Claude Code and the `/sg-*` commands are ready.
 | `paranoid` | 20 | 3 | + edge cases, security, logic errors |
 
 ```
-/sg-code-audit --mode paranoid
+/sg-code-audit paranoid
 ```
 
 ---
@@ -75,6 +67,19 @@ That's it. Restart Claude Code and the `/sg-*` commands are ready.
 5. **Fix loop** -- Annotate problems on screenshots, the AI traces them to source and fixes
 
 Tests are YAML manifests that describe what the user sees -- not how the DOM is structured. When a CSS class changes, selector-based tests break. These don't.
+
+---
+
+## Screenshots
+
+### Code Audit Dashboard
+![Code Audit](docs/screenshots/hero.png)
+
+### Filtered by Severity
+![Filtered](docs/screenshots/code-audit-tab.png)
+
+### Visual Tests
+![Visual Tests](docs/screenshots/visual-tests-tab.png)
 
 ---
 
