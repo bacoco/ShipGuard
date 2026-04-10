@@ -51,8 +51,12 @@ If no matching server found:
   1. Check if `visual-tests/build-review.mjs` exists. If not, bootstrap from the plugin directory:
      ```bash
      mkdir -p visual-tests/_results/screenshots
-     cp ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs visual-tests/
-     cp ~/.claude/plugins/shipguard/skills/sg-visual-review/_review-template.html visual-tests/
+     if [ -f ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs ]; then
+       cp ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs visual-tests/
+       cp ~/.claude/plugins/shipguard/skills/sg-visual-review/_review-template.html visual-tests/
+     else
+       echo "Plugin files not found — skipping bootstrap"
+     fi
      ```
      Also create a minimal `visual-tests/_config.yaml` if it doesn't exist (required by the build script):
      ```bash
@@ -108,7 +112,7 @@ Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and 
         base="HEAD~1"
       fi
       ```
-   b. Run `git diff --name-only {base}` to get changed files.
+   b. Run `git diff --name-only {base} HEAD` to get changed files.
    c. If `focus_path` is set, filter the changed files to that subtree before asking the question. `--diff=<ref>` and `--focus=<path>` both apply.
    d. If diff is NOT empty ({N} files changed), ask the user:
       > "I detected {N} files changed since `{base}`. What scope?"
@@ -132,7 +136,7 @@ Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and 
       > If the user picks 3 → ask for ref
 
 6. If `scope_mode == "diff"`:
-   a. Get changed files: `git diff --name-only {scope_ref}` → store as `diff_files[]`
+   a. Get changed files: `git diff --name-only {scope_ref} HEAD` → store as `diff_files[]`
    b. If `focus_path` is set, filter `diff_files[]` to that subtree before import expansion. `--diff=<ref>` and `--focus=<path>` both apply.
    c. Filter out binary files (images, fonts, compiled assets). Keep only `*.py`, `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.go`, `*.rs`, `*.java`, `*.kt`, `*.yaml`, `*.yml`, `Dockerfile*`.
    d. For each changed source file, find direct importers (1 level):
@@ -220,7 +224,7 @@ find {repo_root_or_focus_path} \( -name '*.py' -o -name '*.ts' -o -name '*.tsx' 
 
 This produces lines like `   42 ./src/routes` — directory path with file count.
 
-**IMPORTANT:** Use `sort` (not `sort -u`) before `uniq -c` so that `uniq -c` counts the actual number of files per directory. With `sort -u`, every count would be 1.
+**IMPORTANT:** Use `sort` (not `sort -u`) before `uniq -c` so that duplicate directory paths from different files are counted correctly. With `sort -u`, each directory appears only once, making every count 1.
 
 ### Step 2: Apply splitting rules
 
@@ -390,6 +394,8 @@ For each zone, dispatch an agent:
 
 Store all dispatched agent handles for tracking.
 
+**Note on worktrees:** The Agent tool with `isolation: worktree` automatically creates a temporary git worktree and branch. The branch name is returned in the agent's result as `branch`. Store it for the merge phase.
+
 Print to user: `Round {round_number}: Dispatched {agent_count} agents. Waiting for completion...`
 
 ### Monitor: report audit start + agent starts
@@ -430,7 +436,7 @@ As each background agent completes, process its result.
      - Track the new agents
    - Print to user: `Zone {zone.id} context overflow — re-splitting into {zone.id}a and {zone.id}b`
 3. **If the output indicates success:**
-   - Read the zone JSON file from the worktree: `{results_dir}/zone-{zone.id}-r{round_number}.json`
+   - Read the zone JSON file from the agent's worktree path (returned in the agent result). The file is at `{worktree_path}/{results_dir_relative}/zone-{zone.id}-r{round_number}.json`.
    - Validate that the JSON parses correctly and has the required fields
    - Store the parsed results
    - Print to user: `Zone {zone.id} complete: {N} bugs found`
@@ -455,6 +461,8 @@ If `monitor_active` is true, after processing each agent's result:
          "files_audited": {from zone JSON}}
   ```
   Extract `total_tokens`, `tool_uses`, and `duration_ms` from the Agent tool's result footer. If input/output split is unavailable, estimate 60/40 ratio from total.
+
+  **Note:** Cost estimation uses the model specified in the agent dispatch (default: sonnet). If a different model is used, adjust the pricing table accordingly.
 
 - **Context overflow:** POST overflow + started for children:
   ```
@@ -501,7 +509,7 @@ If `fix_mode` is true AND working tree is clean:
 
 For each completed zone that has a worktree branch:
 
-1. Run: `git merge {branch_name} --no-edit`
+1. Run: `git merge {agent.branch} --no-edit` (where `agent.branch` is the branch name returned by the Agent tool in step 4)
 2. Check the exit code:
    - **Success (exit 0):** Merge completed. Continue to next branch.
    - **Conflict (exit non-zero):**
@@ -515,9 +523,10 @@ For each completed zone that has a worktree branch:
 
 After all merges:
 
-1. Clean up worktrees: remove each worktree directory
-2. Clean up branches: delete each worktree branch
-3. If `skipped_merges` is not empty, report to user:
+1. **First, collect ALL zone JSONs from ALL worktrees** (including zones in `skipped_merges` whose worktrees were not merged). Read and store each zone JSON before any cleanup.
+2. Clean up worktrees: `git worktree remove {worktree_path} --force` for each worktree
+3. Clean up branches: `git branch -d {agent.branch}` for each merged branch (skip branches in `skipped_merges` — the user needs them)
+4. If `skipped_merges` is not empty, report to user:
    ```
    Merge conflicts in {N} zones — manual resolution required:
    - Zone {id}: {conflicting files}
@@ -621,11 +630,11 @@ For each bug, map its file path to the most likely UI route. Use framework-speci
 
 Deduplicate routes: if multiple bugs map to the same route, keep one entry with the highest severity and a combined reason.
 
+If no web framework is detected (no Next.js, React Router, etc.), set `impacted_routes` to an empty array `[]`.
+
 ### Step 4: Write results
 
-Write `audit-results.json` to the results directory. The canonical location is determined by:
-1. If `visual-tests/_results/` exists, write there (co-located with visual test results)
-2. Otherwise, write to `{repo_root}/audit-results.json`
+Write `audit-results.json` to `{results_dir}`. The `results_dir` was determined in Phase 1 and is the single source of truth for all output files.
 
 ### Step 5: Print summary
 
@@ -773,7 +782,20 @@ All bugs from all rounds are combined in the final `audit-results.json` bugs arr
   "impacted_routes": [
     {"route": "/dashboard", "reason": "Zustand store bug in dashboard-store.ts", "severity": "high"}
   ],
-  "bugs": []
+  "bugs": [
+    {
+      "id": "r1-z03-001",
+      "severity": "critical",
+      "category": "security",
+      "subcategory": "auth-bypass",
+      "file": "src/routes/documents.py",
+      "line": 119,
+      "title": "Missing ownership check",
+      "description": "Any authenticated user can access any document by guessing the document ID.",
+      "fix_applied": true,
+      "fix_commit": "abc1234"
+    }
+  ]
 }
 ```
 

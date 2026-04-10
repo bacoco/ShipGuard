@@ -33,7 +33,7 @@ Find what R1+R2 missed. Think like a security auditor + QA tester.
 - `except Exception:` that catches too broadly (catching SystemExit, KeyboardInterrupt)
 - `list[0]` / `dict["key"]` on data from external sources without length/existence check
 - Direct filesystem access (open(), Path()) where storage abstraction should be used
-- `asyncio.get_event_loop()` (deprecated) instead of `get_running_loop()`
+- Flag `asyncio.get_event_loop()` when called inside an `async def` or when a loop is already running — use `asyncio.get_running_loop()` instead.
 - Blocking calls (subprocess.run, time.sleep, synchronous I/O) inside async functions
 - Threading: shared mutable state without locks
 - Missing `async with` / `async for` on async context managers/iterators
