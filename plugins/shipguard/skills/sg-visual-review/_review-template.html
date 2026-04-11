@@ -1,67 +1,178 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ShipGuard Review</title>
+<title>SHIPGUARD — Mission Control</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0f1b2e;--card:#16253b;--fg:#e5e0dc;--primary:#c59b75;
-  --secondary:#1f2e47;--border:#283853;--muted:#a8a097;
-  --fail:#ff6b6b;--pass:#1a7e40;--stale:#b45309;--info:#5b9aff;
-  --radius:8px;
+  --bg:#0a0a0f;--surface:#111118;--card:#16161f;--border:#1e1e2e;
+  --fg:#e2e2e8;--muted:#6b6b80;--accent:#6366f1;
+  --green:#10b981;--red:#ef4444;--orange:#f59e0b;--blue:#3b82f6;
+  --secondary:#0f0f1a;--radius:8px;
+}
+body.light{
+  --bg:#f5f5f7;--surface:#ffffff;--card:#ffffff;--border:#e2e2e8;
+  --fg:#111118;--muted:#6b6b80;--accent:#4f46e5;
+  --secondary:#f0f0f4;
 }
 body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-serif;min-height:100vh}
 
-/* Header */
-#header{display:flex;align-items:center;gap:20px;padding:16px 24px;background:var(--secondary);border-bottom:1px solid var(--border);flex-wrap:wrap}
-.header-brand{font-size:18px;font-weight:700;color:var(--primary)}
-.header-stats{display:flex;gap:12px;flex-wrap:wrap}
-.stat{padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600}
-.stat-total{background:var(--border);color:var(--fg)}
-.stat-pass{background:#1a7e4033;color:#4ade80}
-.stat-fail{background:#ff6b6b22;color:var(--fail)}
-.stat-rate{background:var(--primary)22;color:var(--primary)}
-.header-meta{margin-left:auto;font-size:12px;color:var(--muted)}
+/* ── Header ── */
+#header{display:flex;align-items:center;gap:16px;padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.header-brand{font-size:18px;font-weight:900;color:var(--accent);letter-spacing:.08em;flex-shrink:0}
+.header-spacer{flex:1}
+#audit-status-badge{display:none;align-items:center;gap:8px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+#audit-status-badge.live{background:#10b98118;border:1px solid var(--green);color:var(--green)}
+#audit-status-badge.live::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-dot 1.2s infinite;flex-shrink:0}
+#audit-status-badge.complete{background:#6366f110;border:1px solid var(--accent);color:var(--accent)}
+.theme-toggle{display:flex;gap:2px;background:var(--border);border-radius:20px;padding:2px}
+.theme-btn{padding:4px 12px;border-radius:18px;border:none;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);background:transparent;transition:.15s}
+.theme-btn.active{background:var(--surface);color:var(--fg);box-shadow:0 1px 4px rgba(0,0,0,.2)}
 
-/* Toolbar */
-#toolbar{display:flex;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap}
-.filter-group{display:flex;gap:4px}
+/* ── Main tab bar ── */
+.main-tab-bar{display:flex;gap:0;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.main-tab-btn{padding:11px 22px;font-size:14px;font-weight:600;color:var(--muted);background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;transition:.15s}
+.main-tab-btn:hover{color:var(--fg)}
+.main-tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.main-tab-badge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.main-tab-badge-bugs{background:#ef444422;color:var(--red)}
+.main-tab-badge-live{background:#10b98122;color:var(--green);animation:pulse-glow 2s infinite}
+@keyframes pulse-glow{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+
+/* ── Sub-tab bar (Code Audit) ── */
+.sub-tab-bar{display:flex;gap:0;padding:0 24px;background:var(--bg);border-bottom:1px solid var(--border)}
+.sub-tab-btn{padding:9px 18px;font-size:13px;font-weight:600;color:var(--muted);background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:.15s}
+.sub-tab-btn:hover{color:var(--fg)}
+.sub-tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.sub-tab-count{margin-left:6px;font-size:11px;font-weight:700;opacity:.8}
+
+/* ── Code Audit container ── */
+#audit-view{display:none}
+#audit-view.visible{display:block}
+.sub-tab-panel{display:none;padding:24px 28px}
+.sub-tab-panel.visible{display:block}
+
+/* ── Overview sub-tab ── */
+.mc-stat-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px}
+.mc-stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;flex:1;min-width:100px;text-align:center;cursor:pointer;transition:.15s;position:relative}
+.mc-stat:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.mc-stat.inert{cursor:default}
+.mc-stat.inert:hover{transform:none;box-shadow:none;border-color:var(--border)}
+.mc-stat-num{font-size:26px;font-weight:800;line-height:1}
+.mc-stat-label{font-size:10px;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.5px}
+.mc-stat.total .mc-stat-num{color:var(--accent)}
+.mc-stat.critical .mc-stat-num{color:var(--red)}
+.mc-stat.high .mc-stat-num{color:var(--orange)}
+.mc-stat.medium .mc-stat-num{color:var(--blue)}
+.mc-stat.low .mc-stat-num{color:var(--muted)}
+.mc-stat.fixed .mc-stat-num{color:var(--green)}
+.mc-stat.audited .mc-stat-num{color:var(--accent)}
+
+/* Progress (live audit) */
+.mc-progress-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:24px}
+.mc-progress-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.mc-progress-title{font-size:14px;font-weight:600;color:var(--fg)}
+.mc-progress-label{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.mc-progress-track{height:8px;background:var(--secondary);border-radius:4px;overflow:hidden;margin-bottom:16px}
+.mc-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),#818cf8);border-radius:4px;transition:width .5s ease}
+.mc-summary-line{font-size:13px;color:var(--muted);margin-bottom:20px}
+.mc-summary-line strong{color:var(--fg)}
+
+/* Severity distribution bar */
+.mc-dist-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:8px;gap:2px}
+.mc-dist-seg{height:100%;border-radius:2px;transition:.3s}
+.mc-dist-legend{display:flex;gap:14px;flex-wrap:wrap}
+.mc-dist-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.mc-dist-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+
+/* ── Bugs sub-tab ── */
+.mc-bug-filters-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
 .filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:.2s}
-.filter-btn:hover{border-color:var(--primary);color:var(--fg)}
-.filter-btn.active{background:var(--primary);color:var(--bg);border-color:var(--primary)}
-#search{flex:1;min-width:200px;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:13px;outline:none}
-#search:focus{border-color:var(--primary)}
+.filter-btn:hover{border-color:var(--accent);color:var(--fg)}
+.filter-btn.active{background:var(--accent);color:white;border-color:var(--accent)}
+#bug-search{flex:1;min-width:160px;max-width:280px;padding:7px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:12px;outline:none}
+#bug-search:focus{border-color:var(--accent)}
+body.light #bug-search{background:var(--surface)}
 
-/* Layout */
-#layout{display:flex;min-height:calc(100vh - 120px)}
-#sidebar{width:200px;padding:16px 12px;border-right:1px solid var(--border);flex-shrink:0}
+/* ── Routes sub-tab ── */
+/* ── Agents sub-tab ── */
+.mc-pod-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+@media(max-width:900px){.mc-pod-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){.mc-pod-grid{grid-template-columns:repeat(2,1fr)}}
+.mc-pod{padding:10px 12px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-weight:600;background:var(--card)}
+.mc-pod-id{color:var(--muted);font-size:10px;margin-bottom:2px;font-weight:400}
+.mc-pod-status{font-size:11px}
+.mc-pod.running{background:#6366f110;border-color:var(--accent);animation:pod-pulse 1.5s infinite}
+.mc-pod.running .mc-pod-status{color:var(--accent)}
+@keyframes pod-pulse{0%,100%{border-color:var(--accent)}50%{border-color:#818cf8}}
+.mc-pod.done{background:var(--card);border-color:#10b98144}
+.mc-pod.done .mc-pod-status{color:var(--green)}
+.mc-pod.pending{background:var(--secondary);opacity:.55}
+.mc-pod.pending .mc-pod-status{color:var(--muted)}
+.mc-pod.failed{background:#ef444410;border-color:#ef444444}
+.mc-pod.failed .mc-pod-status{color:var(--red)}
+
+/* ── Tables ── */
+.mc-table{width:100%;border-collapse:collapse;font-size:13px}
+.mc-table th{text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.mc-table td{padding:8px 12px;border-bottom:1px solid var(--border)}
+.mc-table tr:hover td{background:var(--secondary)}
+.mc-sev{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.mc-sev-critical{background:#ef444422;color:var(--red)}
+.mc-sev-high{background:#f59e0b22;color:var(--orange)}
+.mc-sev-medium{background:#3b82f622;color:var(--blue)}
+.mc-sev-low{background:var(--border);color:var(--muted)}
+.mc-cat{padding:2px 8px;border-radius:10px;background:var(--secondary);font-size:10px;color:var(--muted);white-space:nowrap}
+.mc-file{font-family:monospace;font-size:12px;color:var(--blue)}
+.mc-table tr.sev-critical td{border-left:3px solid var(--red)}
+.mc-table tr.sev-high td{border-left:3px solid var(--orange)}
+.mc-table tr.sev-high td:first-child{border-left:3px solid var(--orange)}
+.mc-table tr.sev-medium td{border-left:3px solid var(--blue)}
+.mc-table tr.sev-low td{border-left:3px solid var(--muted)}
+.mc-table tr.sev-critical td:first-child{border-left:3px solid var(--red)}
+.mc-table tr.sev-medium td:first-child{border-left:3px solid var(--blue)}
+.mc-table tr.sev-low td:first-child{border-left:3px solid var(--muted)}
+.route-row{cursor:pointer}
+.route-row:hover td{background:var(--card) !important}
+
+/* Empty state */
+.mc-empty{text-align:center;padding:80px 20px;color:var(--muted)}
+.mc-empty-icon{font-size:48px;opacity:.2;margin-bottom:16px}
+.mc-empty p{font-size:15px;margin-top:8px}
+.mc-empty code{background:var(--card);padding:3px 10px;border-radius:6px;color:var(--accent);font-size:14px}
+
+/* ── Visual tab toolbar ── */
+#toolbar{display:flex;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap;background:var(--bg);border-bottom:1px solid var(--border)}
+.filter-group{display:flex;gap:4px}
+#search{flex:1;min-width:200px;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:13px;outline:none}
+#search:focus{border-color:var(--accent)}
+
+/* ── Visual tab layout ── */
+#layout{display:flex;min-height:calc(100vh - 140px)}
+#sidebar{width:200px;padding:16px 12px;border-right:1px solid var(--border);flex-shrink:0;background:var(--bg)}
 #sidebar ul{list-style:none}
 .cat-item{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;justify-content:space-between;transition:.15s}
 .cat-item:hover{background:var(--card);color:var(--fg)}
-.cat-item.active{background:var(--primary)22;color:var(--primary);font-weight:600}
+.cat-item.active{background:#6366f122;color:var(--accent);font-weight:600}
 .cat-count{font-size:11px;opacity:.7}
-#grid{flex:1;padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;align-content:start}
+#grid{flex:1;padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;align-content:start;background:var(--bg)}
 
-/* Cards — 3D perspective */
+/* ── Visual Cards ── */
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;position:relative;
   transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease;
   transform-style:preserve-3d;perspective:800px}
-.card:hover{border-color:var(--primary);transform:translateY(-4px) rotateX(2deg);box-shadow:0 12px 32px rgba(0,0,0,.4),0 0 0 1px var(--primary)33}
-.card.selected{border-color:var(--fail);box-shadow:0 0 0 2px #ff6b6b44,0 8px 24px rgba(255,107,107,.15)}
+.card:hover{border-color:var(--accent);transform:translateY(-4px) rotateX(2deg);box-shadow:0 12px 32px rgba(0,0,0,.4),0 0 0 1px #6366f133}
+.card.selected{border-color:var(--red);box-shadow:0 0 0 2px #ef444444,0 8px 24px rgba(239,68,68,.15)}
 .card .thumb{width:100%;aspect-ratio:16/10;object-fit:cover;background:var(--secondary);display:block;transition:transform .3s ease}
 .card:hover .thumb{transform:scale(1.02)}
 .card .thumb-placeholder{width:100%;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:var(--secondary);color:var(--muted);font-size:12px}
 .card-body{padding:10px 12px}
 .card-name{font-size:13px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-
-/* Updated badge for recently changed screenshots */
-.badge-updated{background:#059669;color:white;animation:pulse-updated 2s infinite}
-@keyframes pulse-updated{0%,100%{opacity:1}50%{opacity:.6}}
-
-/* Entrance animation for cards */
+.badge-updated{background:#059669;color:white;animation:pulse-glow 2s infinite}
 @keyframes card-in{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
 .card{animation:card-in .4s ease backwards}
 .card:nth-child(1){animation-delay:.02s}.card:nth-child(2){animation-delay:.06s}
@@ -69,30 +180,40 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .card:nth-child(5){animation-delay:.18s}.card:nth-child(6){animation-delay:.22s}
 .card:nth-child(7){animation-delay:.26s}
 .badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-.badge-pass{background:#1a7e4033;color:#4ade80}
-.badge-fail{background:#ff6b6b22;color:var(--fail)}
-.badge-stale{background:#b4530922;color:#fbbf24}
+.badge-pass{background:#10b98122;color:var(--green)}
+.badge-fail{background:#ef444422;color:var(--red)}
+.badge-stale{background:#f59e0b22;color:var(--orange)}
 .badge-priority{background:var(--border);color:var(--muted);font-size:9px}
 .card-desc{font-size:11px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-
-/* Checkbox overlay */
 .card-check{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:4px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.4);cursor:pointer;opacity:0;transition:.15s;display:flex;align-items:center;justify-content:center;z-index:2}
 .card:hover .card-check,.card.selected .card-check{opacity:1}
-.card.selected .card-check{background:var(--fail);border-color:var(--fail)}
+.card.selected .card-check{background:var(--red);border-color:var(--red)}
 .card-check-mark{display:none;color:white;font-size:14px;font-weight:700}
 .card.selected .card-check-mark{display:block}
+.card-annot-badge{position:absolute;top:8px;left:8px;background:var(--red);color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;z-index:2}
+.card-score{position:absolute;bottom:46px;right:8px;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;z-index:2}
+.card-score-stable{background:#10b98122;color:var(--green)}
+.card-score-fragile{background:#f59e0b22;color:var(--orange)}
+.card-score-critical{background:#ef444422;color:var(--red)}
+.card.selected.annotated{box-shadow:0 0 0 2px var(--red),0 0 8px #ef444444}
+.empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
 
-/* Action bar */
-#action-bar{position:fixed;bottom:0;left:0;right:0;background:var(--secondary);border-top:2px solid var(--fail);padding:12px 24px;display:flex;align-items:center;gap:16px;transform:translateY(100%);transition:.3s;z-index:100}
+/* ── Action bar ── */
+#action-bar{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:2px solid var(--red);padding:12px 24px;display:flex;align-items:center;gap:16px;transform:translateY(100%);transition:.3s;z-index:100}
 #action-bar.visible{transform:translateY(0)}
-#selection-count{font-size:14px;font-weight:600;color:var(--fail)}
+#selection-count{font-size:14px;font-weight:600;color:var(--red)}
 .action-btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.15s}
-.action-btn-rerun{background:var(--primary);color:var(--bg)}
-.action-btn-copy{background:var(--info);color:white}
+.action-btn-rerun{background:var(--accent);color:white}
+.action-btn-copy{background:var(--blue);color:white}
 .action-btn-clear{background:transparent;color:var(--muted);border:1px solid var(--border)}
 .action-btn:hover{opacity:.85}
 
-/* Lightbox — FULLSCREEN by default, image takes max space */
+/* ── Session restore banner ── */
+.session-banner{display:none;padding:8px 24px;background:#059669;color:white;font-size:13px;font-weight:600;text-align:center;cursor:pointer}
+.session-banner:hover{background:#047857}
+.session-banner.visible{display:block}
+
+/* ── Lightbox ── */
 #lightbox{position:fixed;inset:0;z-index:200;display:none;background:rgba(0,0,0,.92)}
 #lightbox.visible{display:flex;flex-direction:column}
 .lb-topbar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:rgba(0,0,0,.6);flex-shrink:0;z-index:3}
@@ -100,43 +221,57 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .lb-topbar-badge{display:flex;gap:6px;align-items:center}
 .lb-topbar-close{width:36px;height:36px;border-radius:6px;border:none;background:rgba(255,255,255,.1);color:white;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .lb-topbar-close:hover{background:rgba(255,255,255,.2)}
-
 .lb-body{flex:1;display:flex;overflow:hidden}
 .lb-img-area{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:auto;background:#000}
 .lb-img-container{position:relative;display:inline-block;max-width:100%;max-height:100%}
 .lb-img{max-width:100%;max-height:calc(100vh - 56px);object-fit:contain;display:block;transition:transform .15s ease}
 .lb-img-container{transform-origin:center center}
-.lb-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2}
-.lb-canvas.drawing{pointer-events:auto;cursor:crosshair}
-
-/* Pen toolbar — large, visible, only pen + undo */
+.lb-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;display:none}
 .lb-pen-toolbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;z-index:4;background:rgba(0,0,0,.7);padding:8px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.15)}
 .pen-btn{width:44px;height:44px;border-radius:10px;border:2px solid rgba(255,255,255,.3);background:rgba(0,0,0,.5);color:white;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
-.pen-btn:hover{background:rgba(255,255,255,.15);border-color:var(--primary)}
-.pen-btn.active{background:var(--fail);border-color:var(--fail)}
-.pen-btn-redo{font-size:13px !important;width:auto !important;padding:0 14px !important;gap:6px}
-.pen-mode-label{font-size:12px;color:rgba(255,255,255,.7);padding:0 8px}
+.pen-btn:hover{background:rgba(255,255,255,.15);border-color:var(--accent)}
+.pen-btn.active{background:var(--red);border-color:var(--red)}
 .pen-sep{width:1px;height:28px;background:rgba(255,255,255,.2)}
-
-/* Nav arrows in lightbox */
-.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:rgba(0,0,0,.5);color:white;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;transition:.15s}
-.lb-nav:hover{background:rgba(255,255,255,.15);border-color:var(--primary)}
+/* ── Annotation toolbar (replaces pen toolbar) ── */
+.lb-annot-toolbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;z-index:4;background:rgba(0,0,0,.7);padding:8px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.15)}
+.annot-tool-btn{padding:7px 14px;border-radius:8px;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.5);color:white;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
+.annot-tool-btn:hover{background:rgba(255,255,255,.15);border-color:var(--accent)}
+.annot-tool-btn.active{background:var(--accent);border-color:var(--accent)}
+.annot-tool-redo{border-color:rgba(239,68,68,.4) !important;color:rgba(255,120,120,.9) !important}
+.annot-tool-redo:hover{background:rgba(239,68,68,.25) !important;border-color:var(--red) !important}
+.annot-tool-redo.active{background:var(--red) !important;border-color:var(--red) !important;color:white !important}
+.annot-tool-label{font-size:12px;color:rgba(255,255,255,.6);padding:0 6px;white-space:nowrap}
+/* ── Pin (click point on image) ── */
+.annot-pin{position:absolute;width:14px;height:14px;border-radius:50%;border:2px solid white;z-index:9;transform:translate(-50%,-50%);cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,.6);flex-shrink:0}
+.annot-pin:active{cursor:grabbing}
+.annot-zone{position:absolute;border:2px dashed;border-radius:4px;z-index:9;pointer-events:none;opacity:.25}
+/* ── Leader line SVG overlay ── */
+.annot-lines-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:8;overflow:visible}
+/* ── Annotation card ── */
+.annot-card{position:absolute;background:rgba(0,0,0,.87);border-radius:8px;border:1px solid rgba(255,255,255,.12);max-width:220px;min-width:140px;z-index:10;cursor:grab;user-select:none;box-shadow:0 4px 16px rgba(0,0,0,.5);border-left-width:4px;border-left-style:solid}
+.annot-card:active{cursor:grabbing}
+.annot-card-header{display:flex;align-items:center;gap:6px;padding:7px 8px 5px 8px;border-bottom:1px solid rgba(255,255,255,.08)}
+.annot-card-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.annot-card-num{font-size:11px;font-weight:700;color:rgba(255,255,255,.9);flex:1;white-space:nowrap}
+.annot-card-sev-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;opacity:.8;white-space:nowrap}
+.annot-card-del{background:none;border:none;color:rgba(255,255,255,.4);font-size:16px;cursor:pointer;padding:0 2px;line-height:1;transition:.1s;flex-shrink:0}
+.annot-card-del:hover{color:var(--red)}
+.annot-card-body{padding:6px 8px 8px 8px;font-size:12px;color:rgba(255,255,255,.85);line-height:1.4;word-break:break-word}
+/* ── Severity picker in note popup ── */
+.severity-picker{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.sev-btn{padding:5px 12px;border-radius:6px;border:2px solid transparent;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;background:var(--secondary);color:var(--fg)}
+.sev-btn.sev-critical{border-color:#ef4444;color:#ef4444}
+.sev-btn.sev-critical:hover,.sev-btn.sev-critical.active{background:#ef4444;color:white}
+.sev-btn.sev-high{border-color:#f59e0b;color:#f59e0b}
+.sev-btn.sev-high:hover,.sev-btn.sev-high.active{background:#f59e0b;color:white}
+.sev-btn.sev-medium{border-color:#3b82f6;color:#3b82f6}
+.sev-btn.sev-medium:hover,.sev-btn.sev-medium.active{background:#3b82f6;color:white}
+.sev-btn.sev-info{border-color:#6b6b80;color:#6b6b80}
+.sev-btn.sev-info:hover,.sev-btn.sev-info.active{background:#6b6b80;color:white}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:rgba(0,0,0,.5);color:white;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:15;transition:.15s}
+.lb-nav:hover{background:rgba(255,255,255,.15);border-color:var(--accent)}
 .lb-nav-prev{left:12px}
 .lb-nav-next{right:12px}
-
-/* Annotation count badge on cards */
-.card-annot-badge{position:absolute;top:8px;left:8px;background:var(--fail);color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;z-index:2}
-
-/* Post-validate success overlay */
-.success-overlay{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.8)}
-.success-overlay.visible{display:flex}
-.success-box{background:var(--card);border:2px solid var(--pass);border-radius:16px;padding:32px;width:480px;max-width:90vw;text-align:center}
-.success-box h2{font-size:20px;color:#4ade80;margin-bottom:12px}
-.success-box p{font-size:14px;color:var(--fg);margin-bottom:8px}
-.success-box code{background:var(--secondary);padding:4px 12px;border-radius:6px;font-size:15px;color:var(--primary);font-weight:700}
-.success-box-hint{font-size:12px;color:var(--muted);margin-top:16px}
-
-/* Detail sidebar in lightbox — compact, collapsible */
 .lb-detail{width:240px;background:var(--card);border-left:1px solid var(--border);overflow-y:auto;padding:14px;flex-shrink:0;transition:width .2s ease,padding .2s ease}
 .lb-detail.collapsed{width:0;padding:0;overflow:hidden;border:none}
 .lb-toggle-detail{position:absolute;top:50%;right:240px;transform:translateY(-50%);width:24px;height:48px;border-radius:6px 0 0 6px;background:var(--card);border:1px solid var(--border);border-right:none;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;transition:right .2s ease}
@@ -144,172 +279,171 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .lb-toggle-detail:hover{color:var(--fg);background:var(--secondary)}
 .lb-desc{font-size:11px;color:var(--muted);margin-bottom:10px}
 .lb-section{margin-bottom:10px}
-.lb-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--primary);margin-bottom:6px}
+.lb-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:6px}
 .lb-step{padding:5px 8px;background:var(--secondary);border-radius:4px;margin-bottom:3px;font-size:11px;display:flex;gap:6px}
-.lb-step-action{color:var(--primary);font-weight:600;min-width:55px}
+.lb-step-action{color:var(--accent);font-weight:600;min-width:55px}
 .lb-step-detail{color:var(--fg)}
-.lb-failure{padding:12px;background:#ff6b6b15;border:1px solid #ff6b6b33;border-radius:6px;color:var(--fail);font-size:13px;margin-bottom:16px}
-.lb-url{font-size:12px;color:var(--info);margin-bottom:12px;word-break:break-all}
-
-/* Annotations list in detail panel */
-.annot-list{margin-top:12px}
-.annot-item{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;background:var(--secondary);border-radius:6px;margin-bottom:6px;border-left:3px solid var(--fail)}
-.annot-item-num{font-size:11px;font-weight:700;color:var(--fail);min-width:18px}
-.annot-item-text{flex:1}
-.annot-item-note{font-size:12px;color:var(--fg);margin-bottom:4px}
-.annot-item-region{font-size:10px;color:var(--muted)}
-.annot-item-edit{background:none;border:1px solid var(--border);color:var(--muted);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer}
-.annot-item-edit:hover{color:var(--fg);border-color:var(--primary)}
-.annot-item-del{background:none;border:none;color:var(--fail);font-size:14px;cursor:pointer;padding:0 4px}
-
-/* Before/After slider */
+.lb-failure{padding:12px;background:#ef444415;border:1px solid #ef444433;border-radius:6px;color:var(--red);font-size:13px;margin-bottom:16px}
+.lb-url{font-size:12px;color:var(--blue);margin-bottom:12px;word-break:break-all}
 .lb-ba{display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:8px 12px;background:var(--secondary);border-radius:8px}
 .lb-ba-btn{padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
-.lb-ba-btn:hover{border-color:var(--primary);color:var(--fg)}
-.lb-ba-btn.active{background:var(--primary);color:var(--bg);border-color:var(--primary)}
-.lb-ba-btn-revert{background:transparent;border:1px solid var(--fail);color:var(--fail);margin-left:auto}
-.lb-ba-btn-revert:hover{background:var(--fail);color:white}
-.lb-ba-btn-revert.active{background:var(--fail);color:white}
+.lb-ba-btn:hover{border-color:var(--accent);color:var(--fg)}
+.lb-ba-btn.active{background:var(--accent);color:white;border-color:var(--accent)}
+.lb-ba-btn-revert{background:transparent;border:1px solid var(--red);color:var(--red);margin-left:auto}
+.lb-ba-btn-revert:hover{background:var(--red);color:white}
+.lb-ba-btn-revert.active{background:var(--red);color:white}
 .lb-ba-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.annot-list{margin-top:12px}
+.annot-item{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;background:var(--secondary);border-radius:6px;margin-bottom:6px;border-left:3px solid var(--red)}
+.annot-item.sev-critical{border-left-color:#ef4444}
+.annot-item.sev-high{border-left-color:#f59e0b}
+.annot-item.sev-medium{border-left-color:#3b82f6}
+.annot-item.sev-info{border-left-color:#6b6b80}
+.annot-item-num{font-size:11px;font-weight:700;color:var(--red);min-width:18px}
+.annot-item-text{flex:1}
+.annot-item-note{font-size:12px;color:var(--fg);margin-bottom:4px}
+.annot-item-region{font-size:10px;color:var(--muted);text-transform:capitalize}
+.annot-item-edit{background:none;border:1px solid var(--border);color:var(--muted);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer}
+.annot-item-edit:hover{color:var(--fg);border-color:var(--accent)}
+.annot-item-del{background:none;border:none;color:var(--red);font-size:14px;cursor:pointer;padding:0 4px}
 
-/* Scoring badge on cards */
-.card-score{position:absolute;bottom:46px;right:8px;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;z-index:2}
-.card-score-stable{background:#1a7e4033;color:#4ade80}
-.card-score-fragile{background:#b4530933;color:#fbbf24}
-.card-score-critical{background:#ff6b6b22;color:var(--fail)}
-
-/* Session resume banner */
-.session-banner{display:none;padding:8px 24px;background:#059669;color:white;font-size:13px;font-weight:600;text-align:center;cursor:pointer}
-.session-banner:hover{background:#047857}
-.session-banner.visible{display:block}
-
-/* Note input modal */
+/* ── Note modal ── */
 .note-overlay{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6)}
 .note-overlay.visible{display:flex}
 .note-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;width:400px;max-width:90vw}
-.note-box h3{font-size:15px;margin-bottom:12px;color:var(--primary)}
+.note-box h3{font-size:15px;margin-bottom:12px;color:var(--accent)}
 .note-box textarea{width:100%;height:80px;background:var(--secondary);border:1px solid var(--border);border-radius:6px;color:var(--fg);padding:10px;font-size:13px;resize:vertical;outline:none}
-.note-box textarea:focus{border-color:var(--primary)}
+.note-box textarea:focus{border-color:var(--accent)}
 .note-box-actions{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}
 .note-box-btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600}
 
-/* Toast */
-.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--primary);color:var(--bg);padding:8px 20px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:400;pointer-events:none}
+/* ── Success overlay ── */
+.success-overlay{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.8)}
+.success-overlay.visible{display:flex}
+.success-box{background:var(--card);border:2px solid var(--green);border-radius:16px;padding:32px;width:480px;max-width:90vw;text-align:center}
+.success-box h2{font-size:20px;color:var(--green);margin-bottom:12px}
+.success-box p{font-size:14px;color:var(--fg);margin-bottom:8px}
+.success-box code{background:var(--secondary);padding:4px 12px;border-radius:6px;font-size:15px;color:var(--accent);font-weight:700}
+.success-box-hint{font-size:12px;color:var(--muted);margin-top:16px}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--accent);color:white;padding:8px 20px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:400;pointer-events:none}
 .toast.show{opacity:1}
 
-.card.selected.annotated{box-shadow:0 0 0 2px var(--fail),0 0 8px var(--fail)44}
-
-/* Empty state */
-.empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
-
-/* Monitor tab */
-#monitor-toolbar{display:none;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap}
-#monitor-layout{display:none;padding:20px;min-height:calc(100vh - 120px)}
-.monitor-stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
-.monitor-stat{padding:8px 16px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;min-width:120px}
-.monitor-stat-value{font-size:22px;font-weight:700;color:var(--fg)}
-.monitor-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-
-/* Gantt chart */
-.gantt{position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;overflow-x:auto}
-.gantt-row{display:flex;align-items:center;gap:12px;margin-bottom:6px;min-height:28px}
-.gantt-label{width:200px;flex-shrink:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gantt-label-zone{color:var(--primary);font-weight:600;margin-right:4px}
-.gantt-track{flex:1;position:relative;height:24px;background:var(--secondary);border-radius:4px;overflow:visible}
-.gantt-bar{position:absolute;top:0;height:100%;border-radius:4px;min-width:4px;transition:width .3s ease}
-.gantt-bar-completed{background:var(--pass)}
-.gantt-bar-running{background:var(--primary);animation:gantt-pulse 1.5s ease-in-out infinite}
-.gantt-bar-failed{background:var(--fail)}
-.gantt-bar-overflow{background:var(--stale)}
-.gantt-bar-pending{background:var(--border)}
-@keyframes gantt-pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.gantt-right{width:120px;flex-shrink:0;font-size:11px;color:var(--muted);text-align:right;white-space:nowrap}
-.gantt-overflow-icon{color:var(--stale);font-size:13px;margin-left:4px}
-.gantt-legend{display:flex;gap:16px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
-.gantt-legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
-.gantt-legend-dot{width:10px;height:10px;border-radius:2px}
-
-/* Monitor footer */
-.monitor-footer{margin-top:16px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
-.monitor-footer-link{color:var(--primary);cursor:pointer;text-decoration:underline}
-.monitor-footer-link:hover{color:var(--fg)}
-
-/* Tab switcher */
-.header-tabs{display:none;gap:4px;margin-left:16px}
-.header-tabs.visible{display:flex}
-.tab-btn{padding:6px 16px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;transition:.2s}
-.tab-btn:hover{border-color:var(--primary);color:var(--fg)}
-.tab-btn.active{background:var(--primary);color:var(--bg);border-color:var(--primary)}
-
-/* Audit toolbar */
-#audit-toolbar{display:none;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap}
-#audit-toolbar .filter-group{display:flex;gap:4px}
-#audit-toolbar .filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:.2s}
-#audit-toolbar .filter-btn:hover{border-color:var(--primary);color:var(--fg)}
-#audit-toolbar .filter-btn.active{background:var(--primary);color:var(--bg);border-color:var(--primary)}
-#audit-search{flex:1;min-width:200px;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:13px;outline:none}
-#audit-search:focus{border-color:var(--primary)}
-.audit-export-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:.2s}
-.audit-export-btn:hover{border-color:var(--primary);color:var(--fg)}
-
-/* Audit layout */
-#audit-layout{display:none;min-height:calc(100vh - 120px)}
-#audit-grid{padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-content:start}
-
-/* Audit cards */
-.audit-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);border-left:4px solid var(--muted);overflow:hidden;cursor:pointer;position:relative;
-  transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease;
-  transform-style:preserve-3d;perspective:800px;animation:card-in .4s ease backwards}
-.audit-card:hover{transform:translateY(-4px) rotateX(2deg);box-shadow:0 12px 32px rgba(0,0,0,.4)}
-.audit-card.sev-critical{border-left-color:#ef4444}
-.audit-card.sev-high{border-left-color:#f97316}
-.audit-card.sev-medium{border-left-color:#eab308}
-.audit-card.sev-low{border-left-color:#6b7280}
-.audit-card-header{padding:12px 14px 8px;display:flex;align-items:flex-start;gap:8px}
-.audit-card-title{font-size:13px;font-weight:600;flex:1}
-.audit-card-badges{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap}
-.audit-badge-sev{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-.audit-badge-critical{background:#ef444422;color:#ef4444}
-.audit-badge-high{background:#f9731622;color:#f97316}
-.audit-badge-medium{background:#eab30822;color:#eab308}
-.audit-badge-low{background:#6b728022;color:#6b7280}
-.audit-badge-fix{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.5px}
-.audit-badge-fixed{background:#1a7e4033;color:#4ade80}
-.audit-badge-unfixed{background:#ff6b6b22;color:var(--fail)}
-.audit-badge-cat{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:var(--border);color:var(--muted)}
-.audit-card-file{padding:0 14px 8px;font-size:11px;color:var(--info);word-break:break-all}
-.audit-card-desc{padding:0 14px 12px;font-size:12px;color:var(--muted);display:none}
-.audit-card.expanded .audit-card-desc{display:block}
-.audit-card-id{font-size:10px;color:var(--muted);padding:0 14px 10px}
-
-/* Hide detail panel on narrow screens */
+/* ── Responsive ── */
 @media(max-width:768px){
   #sidebar{display:none}
   #grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));padding:12px}
   .lb-detail{display:none}
   .lb-img{max-width:100vw}
-  #audit-grid{grid-template-columns:1fr}
+  .mc-stat-row{gap:6px}
+  .mc-stat{min-width:80px;padding:10px 12px}
+  .mc-stat-num{font-size:20px}
+  .sub-tab-panel{padding:16px 14px}
 }
 </style>
 </head>
 <body>
 
+<!-- ════ HEADER ════ -->
 <div id="header">
-  <div class="header-brand">ShipGuard</div>
-  <div class="header-stats" id="stats"></div>
-  <div class="header-tabs" id="header-tabs">
-    <button class="tab-btn active" id="tab-visual" onclick="switchTab('visual')">Visual Tests</button>
-    <button class="tab-btn" id="tab-audit" onclick="switchTab('audit')">Code Audit</button>
-    <button class="tab-btn" id="tab-monitor" onclick="switchTab('monitor')" style="display:none">Monitor</button>
+  <div class="header-brand">SHIPGUARD</div>
+  <div class="header-spacer"></div>
+  <div id="audit-status-badge"></div>
+  <div class="theme-toggle">
+    <button class="theme-btn active" id="theme-dark" onclick="setTheme('dark')">Dark</button>
+    <button class="theme-btn" id="theme-light" onclick="setTheme('light')">Light</button>
   </div>
-  <div class="header-meta" id="meta"></div>
 </div>
 
+<!-- ════ MAIN TABS ════ -->
+<div class="main-tab-bar">
+  <button class="main-tab-btn active" id="main-tab-audit" onclick="switchMainTab('audit')">Code Audit <span class="main-tab-badge" id="audit-tab-badge"></span></button>
+  <button class="main-tab-btn" id="main-tab-visual" onclick="switchMainTab('visual')">Visual Tests</button>
+</div>
+
+<!-- ════════════════ CODE AUDIT TAB ════════════════ -->
+<div id="audit-view" class="visible">
+
+  <!-- Sub-tab bar -->
+  <div class="sub-tab-bar">
+    <button class="sub-tab-btn active" id="sub-tab-overview" onclick="switchSubTab('overview')">Overview</button>
+    <button class="sub-tab-btn" id="sub-tab-bugs" onclick="switchSubTab('bugs')">Bugs <span class="sub-tab-count" id="sub-tab-bugs-count"></span></button>
+    <button class="sub-tab-btn" id="sub-tab-routes" onclick="switchSubTab('routes')">Routes <span class="sub-tab-count" id="sub-tab-routes-count"></span></button>
+    <button class="sub-tab-btn" id="sub-tab-agents" onclick="switchSubTab('agents')">Agents <span class="sub-tab-count" id="sub-tab-agents-count"></span></button>
+  </div>
+
+  <!-- ── Sub-tab: Overview ── -->
+  <div class="sub-tab-panel visible" id="panel-overview">
+
+    <!-- Live progress (only during audit) -->
+    <div id="mc-progress-box" class="mc-progress-box" style="display:none">
+      <div class="mc-progress-top">
+        <span class="mc-progress-title" id="mc-progress-title">Audit in progress…</span>
+        <span class="mc-progress-label" id="mc-progress-label"></span>
+      </div>
+      <div class="mc-progress-track">
+        <div class="mc-progress-fill" id="mc-progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Stat cards (clickable) -->
+    <div class="mc-stat-row" id="mc-stat-row" style="display:none"></div>
+
+    <!-- Summary line -->
+    <div class="mc-summary-line" id="mc-summary-line" style="display:none"></div>
+
+    <!-- Severity distribution bar -->
+    <div id="mc-dist-section" style="display:none">
+      <div class="mc-dist-bar" id="mc-dist-bar"></div>
+      <div class="mc-dist-legend" id="mc-dist-legend"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="mc-empty" class="mc-empty" style="display:none">
+      <div class="mc-empty-icon">&#128736;</div>
+      <p>No audit data found.</p>
+      <p style="margin-top:8px">Run <code>/sg-code-audit</code> to start a new audit.</p>
+    </div>
+
+  </div>
+
+  <!-- ── Sub-tab: Bugs ── -->
+  <div class="sub-tab-panel" id="panel-bugs">
+    <div class="mc-bug-filters-row" id="mc-bug-filters-row">
+      <div id="mc-bug-filter-btns" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <input type="search" id="bug-search" placeholder="Search bugs…">
+    </div>
+    <div id="mc-bug-table-wrap">
+      <table class="mc-table" id="mc-bugs-table">
+        <thead><tr><th>ID</th><th>Severity</th><th>Category</th><th>File</th><th>Line</th><th>Title</th><th>Fixed</th></tr></thead>
+        <tbody id="mc-bugs-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Sub-tab: Routes ── -->
+  <div class="sub-tab-panel" id="panel-routes">
+    <table class="mc-table" id="mc-routes-table">
+      <thead><tr><th>Route</th><th>Severity</th><th>Bug Count</th><th>Reason</th></tr></thead>
+      <tbody id="mc-routes-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- ── Sub-tab: Agents ── -->
+  <div class="sub-tab-panel" id="panel-agents">
+    <div class="mc-pod-grid" id="mc-pod-grid"></div>
+  </div>
+
+</div>
+
+<!-- ════════════════ VISUAL TESTS TAB ════════════════ -->
+<div id="visual-view" style="display:none">
 <div class="session-banner" id="session-banner">Previous session found — click to restore your annotations</div>
 <div id="toolbar">
   <div class="filter-group" id="filters"></div>
   <button class="filter-btn" id="btn-last-run" title="Show only tests from the last run (with screenshots)">Last run only</button>
-  <input type="search" id="search" placeholder="Rechercher un test...">
+  <input type="search" id="search" placeholder="Search tests…">
 </div>
 
 <div id="layout">
@@ -317,35 +451,16 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
   <main id="grid"></main>
 </div>
 
-<div id="audit-toolbar" style="display:none">
-  <div class="filter-group" id="audit-sev-filters"></div>
-  <div class="filter-group" id="audit-cat-filters"></div>
-  <input type="search" id="audit-search" placeholder="Search bugs...">
-  <button class="audit-export-btn" id="audit-export-csv">Export CSV</button>
-</div>
-
-<div id="audit-layout" style="display:none">
-  <main id="audit-grid"></main>
-</div>
-
-<div id="monitor-toolbar" style="display:none">
-  <div class="monitor-stats" id="monitor-stats"></div>
-</div>
-
-<div id="monitor-layout" style="display:none">
-  <div class="gantt" id="monitor-gantt"></div>
-  <div class="monitor-footer" id="monitor-footer"></div>
-</div>
-
 <div id="action-bar">
   <span id="selection-count"></span>
-  <button class="action-btn" id="btn-validate" style="background:#ef4444;color:white">Validate &amp; Generate Report</button>
+  <button class="action-btn" id="btn-validate" style="background:var(--red);color:white">Validate &amp; Generate Report</button>
   <button class="action-btn action-btn-rerun" id="btn-rerun">Re-run selected</button>
   <button class="action-btn action-btn-copy" id="btn-copy">Copy IDs</button>
   <button class="action-btn action-btn-clear" id="btn-clear">Clear</button>
 </div>
+</div><!-- /visual-view -->
 
-<!-- Lightbox: full-screen layout with image + detail sidebar -->
+<!-- ════════════════ LIGHTBOX ════════════════ -->
 <div id="lightbox">
   <div class="lb-topbar">
     <span class="lb-topbar-name" id="lb-name"></span>
@@ -359,15 +474,13 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
       <div class="lb-img-container" id="lb-img-container">
         <img class="lb-img" id="lb-img" alt="">
         <canvas class="lb-canvas" id="lb-canvas"></canvas>
+        <svg class="annot-lines-svg" id="annot-lines-svg"></svg>
       </div>
-      <div class="lb-pen-toolbar" id="lb-pen-toolbar">
-        <button class="pen-btn" id="pen-freehand" title="Freehand pen (draw anything)">&#9998;</button>
-        <button class="pen-btn" id="pen-rect" title="Rectangle selection">&#9634;</button>
-        <span class="pen-sep"></span>
-        <button class="pen-btn" id="pen-undo" title="Undo last">&#8630;</button>
-        <span class="pen-sep"></span>
-        <button class="pen-btn pen-btn-redo" id="pen-redo" title="Flag: redo this page entirely">&#128465; Redo page</button>
-        <span class="pen-mode-label" id="pen-mode-label">Click a tool to annotate</span>
+      <div class="lb-annot-toolbar" id="lb-pen-toolbar">
+        <button class="annot-tool-btn" id="annot-add" title="Click image to add annotation">+ Add Note</button>
+        <button class="annot-tool-btn" id="pen-undo" title="Remove last annotation">&#8629; Undo</button>
+        <button class="annot-tool-btn annot-tool-redo" id="pen-redo" title="Flag page for full redo">&#128465; Redo page</button>
+        <span class="annot-tool-label" id="pen-mode-label">Click image to place a pin</span>
       </div>
     </div>
     <button class="lb-toggle-detail" id="lb-toggle-detail" title="Toggle info panel">&#9666;</button>
@@ -384,7 +497,7 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
       <div class="lb-section" id="lb-annot-section" style="display:none">
         <div class="lb-section-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>Annotations</span>
-          <button id="lb-annot-clear" style="background:none;border:1px solid var(--fail);color:var(--fail);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer">Clear all</button>
+          <button id="lb-annot-clear" style="background:none;border:1px solid var(--red);color:var(--red);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer">Clear all</button>
         </div>
         <div class="annot-list" id="lb-annot-list"></div>
       </div>
@@ -400,15 +513,21 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 <div class="note-overlay" id="note-overlay">
   <div class="note-box">
     <h3>Describe the problem</h3>
+    <div class="severity-picker" id="severity-picker">
+      <button class="sev-btn sev-critical active" data-sev="critical">Critical</button>
+      <button class="sev-btn sev-high" data-sev="high">High</button>
+      <button class="sev-btn sev-medium" data-sev="medium">Medium</button>
+      <button class="sev-btn sev-info" data-sev="info">Info</button>
+    </div>
     <textarea id="note-input" placeholder="What's wrong here? (optional — press Enter to skip)"></textarea>
     <div class="note-box-actions">
       <button class="note-box-btn" id="note-skip" style="background:var(--secondary);color:var(--fg)">Skip</button>
-      <button class="note-box-btn" id="note-save" style="background:var(--primary);color:var(--bg)">Save</button>
+      <button class="note-box-btn" id="note-save" style="background:var(--accent);color:white">Save</button>
     </div>
   </div>
 </div>
 
-<!-- Success overlay after validate -->
+<!-- Success overlay -->
 <div class="success-overlay" id="success-overlay">
   <div class="success-box">
     <h2>&#10003; Report saved</h2>
@@ -423,6 +542,32 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 <script>
 var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
+// ════════════════ THEME ════════════════
+(function() {
+  var saved = null;
+  try { saved = localStorage.getItem('shipguard-theme'); } catch(e) {}
+  if (saved === 'light') applyTheme('light');
+  else applyTheme('dark');
+})();
+
+function applyTheme(t) {
+  if (t === 'light') {
+    document.body.classList.add('light');
+  } else {
+    document.body.classList.remove('light');
+  }
+  var dark = document.getElementById('theme-dark');
+  var light = document.getElementById('theme-light');
+  if (dark) dark.classList.toggle('active', t !== 'light');
+  if (light) light.classList.toggle('active', t === 'light');
+}
+
+function setTheme(t) {
+  applyTheme(t);
+  try { localStorage.setItem('shipguard-theme', t); } catch(e) {}
+}
+
+// ════════════════ VISUAL TESTS ════════════════
 (function(D) {
   'use strict';
   var selected = {};
@@ -431,12 +576,12 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   var activeStatus = 'ALL';
   var query = '';
   var lastRunOnly = true;
-  var penMode = null;
 
   // ── Stats ──
   function renderStats() {
     var s = D.summary;
     var el = document.getElementById('stats');
+    if (!el) return;
     el.textContent = '';
     [['stat-total', s.total+' tests'],['stat-pass', s.pass+' pass'],['stat-fail', s.fail+' fail'],['stat-rate', s.passRate.toFixed(1)+'%']].forEach(function(item) {
       var span = document.createElement('span');
@@ -444,12 +589,13 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       span.textContent = item[1];
       el.appendChild(span);
     });
-    document.getElementById('meta').textContent = 'Last run: ' + s.lastRun;
+    var metaEl = document.getElementById('meta');
+    if (metaEl) metaEl.textContent = 'Last run: ' + s.lastRun;
   }
 
   // ── Detect updated screenshots (changed after last fix-manifest) ──
   var lastFixTs = D.lastFixTimestamp || 0;
-  function isUpdated(t) { return t.screenshotMtime && lastFixTs && t.screenshotMtime >= lastFixTs; }
+  function isUpdated(t) { return t.screenshotMtime && lastFixTs && t.screenshotMtime > lastFixTs; }
 
   // ── Filters ──
   function renderFilters() {
@@ -496,7 +642,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       if (query && t.name.toLowerCase().indexOf(query)===-1 && t.id.toLowerCase().indexOf(query)===-1) return false;
       return true;
     });
-    // Sort: updated screenshots first, then by name
     results.sort(function(a, b) {
       var ua = isUpdated(a) ? 1 : 0, ub = isUpdated(b) ? 1 : 0;
       if (ua !== ub) return ub - ua;
@@ -509,7 +654,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     var grid = document.getElementById('grid');
     grid.textContent = '';
     var tests = getFiltered();
-    if (!tests.length) { var e=document.createElement('div');e.className='empty';e.textContent='Aucun test ne correspond aux filtres.';grid.appendChild(e);return; }
+    if (!tests.length) { var e=document.createElement('div');e.className='empty';e.textContent='No tests match the current filters.';grid.appendChild(e);return; }
     tests.forEach(function(t) {
       var card = document.createElement('div');
       card.className = 'card' + (selected[t.id] ? ' selected' : '') + (annotationData[t.id] && annotationData[t.id].length ? ' annotated' : '');
@@ -519,7 +664,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       check.appendChild(cm);
       check.addEventListener('click', function(e){e.stopPropagation();toggleSelect(t.id);});
       card.appendChild(check);
-      // Annotation count badge
       var ac = (annotationData[t.id]||[]).length + (redoFlags[t.id]?1:0);
       if (ac > 0) {
         var abadge = document.createElement('span'); abadge.className='card-annot-badge';
@@ -552,11 +696,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var desc = document.createElement('div'); desc.className='card-desc'; desc.textContent=t.description;
       body.appendChild(desc);
       card.appendChild(body);
-      // Scoring badge
       if (t.fixCycles > 0) {
-        var sc = document.createElement('span'); sc.className='card-score';
-        if (t.fixCycles >= 3) { sc.className+=' card-score-critical'; sc.textContent=t.fixCycles+'x fixed'; }
-        else if (t.fixCycles >= 1) { sc.className+=' card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
+        var sc = document.createElement('span'); sc.className='card-score ';
+        if (t.fixCycles >= 3) { sc.className+='card-score-critical'; sc.textContent=t.fixCycles+'x fixed'; }
+        else if (t.fixCycles >= 1) { sc.className+='card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
         card.appendChild(sc);
       }
       card.addEventListener('click', function(){openLightbox(t.id);});
@@ -568,7 +711,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   function toggleSelect(id) {
     if(selected[id]){
       delete selected[id]; selectedCount=Math.max(0,selectedCount-1);
-      // Also remove annotations when deselecting (undo everything)
       delete annotationData[id];
       delete redoFlags[id];
     } else {
@@ -576,8 +718,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     }
     renderGrid(); updateBar();
   }
-  var redoFlags = {}; // {testId: true} — "redo this page entirely"
-  var revertFlags = {}; // {testId: true} — "revert to before screenshot"
+  var redoFlags = {};
+  var revertFlags = {};
   function updateBar() {
     var bar = document.getElementById('action-bar');
     if(selectedCount>0){bar.classList.add('visible');document.getElementById('selection-count').textContent=selectedCount+' selected';}
@@ -585,153 +727,66 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   }
 
   // ── Annotation State ──
-  var annotationData = {}; // {testId: [{type:'freehand'|'rect', points:[], note:'', ...}]}
+  var annotationData = {};
   var currentTestId = null;
-  // penMode declared at top of IIFE
-  var isDrawing = false;
-  var drawStart = null;
-  var currentPath = [];
+  // penMode kept for API compat (keyboard shortcut 'f' toggles add mode)
+  var penMode = null;
+
+  // ── Severity helpers ──
+  var SEV_COLORS = { critical:'#ef4444', high:'#f59e0b', medium:'#3b82f6', info:'#6b6b80' };
+  function sevColor(s) { return SEV_COLORS[s] || SEV_COLORS.critical; }
+
+  // ── Severity picker state ──
+  var pendingSeverity = 'critical';
+  (function() {
+    var picker = document.getElementById('severity-picker');
+    if (!picker) return;
+    picker.addEventListener('click', function(e) {
+      var btn = e.target.closest('.sev-btn');
+      if (!btn) return;
+      pendingSeverity = btn.getAttribute('data-sev') || 'critical';
+      var btns = picker.querySelectorAll('.sev-btn');
+      for (var i=0; i<btns.length; i++) btns[i].classList.remove('active');
+      btn.classList.add('active');
+    });
+  })();
+
+  // ── Card layer management ──
+  // addMode: when true, next click on image places a pin
+  var addMode = false;
+
+  function setAddMode(on) {
+    addMode = on;
+    penMode = on ? 'freehand' : null; // keep legacy compat
+    var btn = document.getElementById('annot-add');
+    var label = document.getElementById('pen-mode-label');
+    if (btn) btn.classList.toggle('active', on);
+    if (label) label.textContent = on ? 'Click image to place a pin' : '';
+    var imgArea = document.getElementById('lb-img-area');
+    if (imgArea) imgArea.style.cursor = on ? 'crosshair' : '';
+  }
 
   function initAnnotation() {
-    var canvas = document.getElementById('lb-canvas');
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
+    // ── "Add Note" button ──
+    var addBtn = document.getElementById('annot-add');
+    if (addBtn) {
+      addBtn.addEventListener('click', function() { setAddMode(!addMode); });
+    }
 
-    document.getElementById('pen-freehand').addEventListener('click', function() {
-      if (penMode === 'freehand') { penMode = null; } else { penMode = 'freehand'; }
-      updatePenUI();
-    });
-    document.getElementById('pen-rect').addEventListener('click', function() {
-      if (penMode === 'rect') { penMode = null; } else { penMode = 'rect'; }
-      updatePenUI();
-    });
+    // ── Undo button ──
     document.getElementById('pen-undo').addEventListener('click', function() {
       if (!currentTestId || !annotationData[currentTestId] || !annotationData[currentTestId].length) return;
       annotationData[currentTestId].pop();
       if (!annotationData[currentTestId].length) delete annotationData[currentTestId];
-      redraw(); renderAnnotList();
-      if (!annotationData[currentTestId]) { if(selected[currentTestId]){delete selected[currentTestId];selectedCount=Math.max(0,selectedCount-1);updateBar();} }
+      renderCards();
+      renderAnnotList();
+      if (!annotationData[currentTestId]) {
+        if (selected[currentTestId]) { delete selected[currentTestId]; selectedCount=Math.max(0,selectedCount-1); updateBar(); }
+      }
       renderGrid();
     });
 
-    function updatePenUI() {
-      document.getElementById('pen-freehand').classList.toggle('active', penMode==='freehand');
-      document.getElementById('pen-rect').classList.toggle('active', penMode==='rect');
-      canvas.classList.toggle('drawing', !!penMode);
-      var label = document.getElementById('pen-mode-label');
-      if (penMode==='freehand') label.textContent = 'Draw freely on the image';
-      else if (penMode==='rect') label.textContent = 'Draw a rectangle';
-      else label.textContent = 'Click a tool to annotate';
-    }
-
-    // Convert screen mouse coords to canvas pixel coords (handles CSS transform zoom)
-    function canvasCoords(e) {
-      var r = canvas.getBoundingClientRect();
-      // getBoundingClientRect includes CSS transform (zoom), but canvas.width is unscaled.
-      // Divide by actual rendered size to get normalized 0..1, then multiply by canvas pixel size.
-      return { x: (e.clientX - r.left) / r.width * canvas.width, y: (e.clientY - r.top) / r.height * canvas.height };
-    }
-
-    // Mouse events
-    canvas.addEventListener('mousedown', function(e) {
-      if (!penMode) return;
-      isDrawing = true;
-      var p = canvasCoords(e);
-      drawStart = {x:p.x, y:p.y};
-      currentPath = [{x:p.x/canvas.width, y:p.y/canvas.height}];
-    });
-
-    canvas.addEventListener('mousemove', function(e) {
-      if (!isDrawing) return;
-      var p = canvasCoords(e);
-      if (penMode === 'freehand') {
-        currentPath.push({x:p.x/canvas.width, y:p.y/canvas.height});
-        redraw();
-        ctx.strokeStyle = 'rgba(255,107,107,0.9)';
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        currentPath.forEach(function(pt,i) {
-          var px=pt.x*canvas.width, py=pt.y*canvas.height;
-          if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-        });
-        ctx.stroke();
-      } else if (penMode === 'rect') {
-        redraw();
-        ctx.strokeStyle = 'rgba(255,107,107,0.8)';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([6,3]);
-        ctx.strokeRect(drawStart.x, drawStart.y, p.x-drawStart.x, p.y-drawStart.y);
-        ctx.setLineDash([]);
-      }
-    });
-
-    canvas.addEventListener('mouseup', function(e) {
-      if (!isDrawing) return;
-      isDrawing = false;
-      var p = canvasCoords(e);
-      var annot = null;
-      if (penMode === 'freehand' && currentPath.length > 2) {
-        // Compute bounding box from points for /sg-visual-fix compatibility
-        var xs = currentPath.map(function(p){return p.x;});
-        var ys = currentPath.map(function(p){return p.y;});
-        annot = {type:'freehand', points:currentPath.slice(), x1:Math.min.apply(null,xs), y1:Math.min.apply(null,ys), x2:Math.max.apply(null,xs), y2:Math.max.apply(null,ys), note:''};
-      } else if (penMode === 'rect' && Math.abs(p.x-drawStart.x) > 5 && Math.abs(p.y-drawStart.y) > 5) {
-        annot = {type:'rect', x1:drawStart.x/canvas.width, y1:drawStart.y/canvas.height, x2:p.x/canvas.width, y2:p.y/canvas.height, note:''};
-      }
-      currentPath = [];
-      if (annot) {
-        // Ask for note
-        pendingAnnot = annot;
-        editingIndex = null;
-        showNoteInput();
-      } else {
-        redraw();
-      }
-    });
-
-    function redraw() {
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      (annotationData[currentTestId]||[]).forEach(function(a, idx) {
-        if (a.type === 'freehand') {
-          ctx.strokeStyle = 'rgba(255,107,107,0.9)';
-          ctx.lineWidth = 3;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.beginPath();
-          a.points.forEach(function(p,i) {
-            var px=p.x*canvas.width, py=p.y*canvas.height;
-            if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-          });
-          ctx.stroke();
-          // Draw number label near first point
-          if (a.points.length) {
-            var fp = a.points[0];
-            drawLabel(ctx, idx+1, fp.x*canvas.width, fp.y*canvas.height - 12);
-          }
-        } else if (a.type === 'rect') {
-          var x1=a.x1*canvas.width, y1=a.y1*canvas.height, x2=a.x2*canvas.width, y2=a.y2*canvas.height;
-          ctx.strokeStyle = 'rgba(255,107,107,0.9)'; ctx.lineWidth = 3;
-          ctx.strokeRect(x1,y1,x2-x1,y2-y1);
-          ctx.fillStyle = 'rgba(255,107,107,0.08)';
-          ctx.fillRect(x1,y1,x2-x1,y2-y1);
-          drawLabel(ctx, idx+1, x1, y1-12);
-        }
-      });
-    }
-
-    function drawLabel(ctx, num, x, y) {
-      ctx.font = 'bold 14px system-ui';
-      var text = '#'+num;
-      var w = ctx.measureText(text).width+8;
-      ctx.fillStyle = 'rgba(255,107,107,0.9)';
-      ctx.fillRect(x, y-14, w, 20);
-      ctx.fillStyle = 'white';
-      ctx.fillText(text, x+4, y+2);
-    }
-
-    // Redo entire page button
+    // ── Redo page button ──
     document.getElementById('pen-redo').addEventListener('click', function() {
       if (!currentTestId) return;
       if (redoFlags[currentTestId]) {
@@ -747,30 +802,347 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       renderGrid();
     });
 
-    // Expose for lightbox
+    // ── Double-click on image = auto AddNote ──
+    var imgContainer = document.getElementById('lb-img-container');
+    if (imgContainer) {
+      imgContainer.addEventListener('dblclick', function(e) {
+        if (!currentTestId) return;
+        if (e.target.closest('.annot-card') || e.target.closest('.annot-pin')) return;
+        if (!addMode) setAddMode(true);
+        // Place pin at double-click position
+        var img = document.getElementById('lb-img');
+        var r = img.getBoundingClientRect();
+        var px = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        var py = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+        var cardX = Math.min(0.95, px + 0.04);
+        var cardY = Math.max(0, py - 0.20);
+        pendingAnnot = { type:'card', severity: pendingSeverity, pinX:px, pinY:py, cardX:cardX, cardY:cardY, note:'' };
+        editingIndex = null;
+        showNoteInput();
+      });
+
+      // ── Click or drag on image to place pin/zone ──
+      var _dragStart = null;
+      var _dragZoneEl = null;
+      var DRAG_THRESHOLD = 8; // px — below this = point click, above = rectangle zone
+
+      imgContainer.addEventListener('pointerdown', function(e) {
+        if (!addMode || !currentTestId) return;
+        if (e.target.closest('.annot-card') || e.target.closest('.annot-pin')) return;
+        var img = document.getElementById('lb-img');
+        var r = img.getBoundingClientRect();
+        _dragStart = { clientX: e.clientX, clientY: e.clientY, imgRect: r };
+        // Prevent text selection during drag
+        e.preventDefault();
+      });
+
+      imgContainer.addEventListener('pointermove', function(e) {
+        if (!_dragStart || !addMode) return;
+        var dx = e.clientX - _dragStart.clientX;
+        var dy = e.clientY - _dragStart.clientY;
+        var dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < DRAG_THRESHOLD) return;
+        // Show zone rectangle preview
+        var r = _dragStart.imgRect;
+        if (!_dragZoneEl) {
+          _dragZoneEl = document.createElement('div');
+          _dragZoneEl.className = 'annot-zone';
+          _dragZoneEl.style.borderColor = sevColor(pendingSeverity);
+          _dragZoneEl.style.background = sevColor(pendingSeverity);
+          imgContainer.appendChild(_dragZoneEl);
+        }
+        var x1 = Math.min(_dragStart.clientX, e.clientX) - r.left;
+        var y1 = Math.min(_dragStart.clientY, e.clientY) - r.top;
+        var w = Math.abs(dx);
+        var h = Math.abs(dy);
+        _dragZoneEl.style.left = (x1/r.width*100)+'%';
+        _dragZoneEl.style.top = (y1/r.height*100)+'%';
+        _dragZoneEl.style.width = (w/r.width*100)+'%';
+        _dragZoneEl.style.height = (h/r.height*100)+'%';
+      });
+
+      imgContainer.addEventListener('pointerup', function(e) {
+        if (!_dragStart || !addMode || !currentTestId) return;
+        var r = _dragStart.imgRect;
+        var dx = e.clientX - _dragStart.clientX;
+        var dy = e.clientY - _dragStart.clientY;
+        var dist = Math.sqrt(dx*dx + dy*dy);
+
+        // Clean up zone preview
+        if (_dragZoneEl) { _dragZoneEl.remove(); _dragZoneEl = null; }
+
+        if (dist < DRAG_THRESHOLD) {
+          // ── Point click → single pin ──
+          var px = (_dragStart.clientX - r.left) / r.width;
+          var py = (_dragStart.clientY - r.top) / r.height;
+          px = Math.max(0, Math.min(1, px));
+          py = Math.max(0, Math.min(1, py));
+          var cardX = Math.min(0.95, px + 0.04);
+          var cardY = Math.max(0, py - 0.20);
+          pendingAnnot = { type:'card', severity: pendingSeverity, pinX:px, pinY:py, cardX:cardX, cardY:cardY, note:'' };
+        } else {
+          // ── Drag → rectangle zone ──
+          var x1 = (Math.min(_dragStart.clientX, e.clientX) - r.left) / r.width;
+          var y1 = (Math.min(_dragStart.clientY, e.clientY) - r.top) / r.height;
+          var x2 = (Math.max(_dragStart.clientX, e.clientX) - r.left) / r.width;
+          var y2 = (Math.max(_dragStart.clientY, e.clientY) - r.top) / r.height;
+          x1=Math.max(0,Math.min(1,x1)); y1=Math.max(0,Math.min(1,y1));
+          x2=Math.max(0,Math.min(1,x2)); y2=Math.max(0,Math.min(1,y2));
+          var cx = (x1+x2)/2, cy = (y1+y2)/2;
+          var cardX = Math.min(0.95, x2 + 0.02);
+          var cardY = Math.max(0, y1 - 0.05);
+          pendingAnnot = { type:'card', severity: pendingSeverity, pinX:cx, pinY:cy, zoneX1:x1, zoneY1:y1, zoneX2:x2, zoneY2:y2, cardX:cardX, cardY:cardY, note:'' };
+        }
+        _dragStart = null;
+        editingIndex = null;
+        showNoteInput();
+      });
+    }
+
     window._annotSetup = function(testId) {
       currentTestId = testId;
-      updatePenUI();
-      // Update redo button state
+      setAddMode(false);
       var redoBtn = document.getElementById('pen-redo');
       if (redoBtn) redoBtn.classList.toggle('active', !!redoFlags[testId]);
-      var img = document.getElementById('lb-img');
-      function sizeCanvas() {
-        canvas.width = (img.naturalWidth || img.clientWidth) || 800;
-        canvas.height = (img.naturalHeight || img.clientHeight) || 500;
-        if (!isDrawing) redraw();
-      }
-      if (img.complete && img.naturalWidth) requestAnimationFrame(sizeCanvas);
-      else img.addEventListener('load', function(){ requestAnimationFrame(sizeCanvas); }, {once:true});
+      renderCards();
       renderAnnotList();
     };
-    window._annotRedraw = redraw;
+    // Keep legacy compat
+    window._annotRedraw = renderCards;
     window._annotRenderList = renderAnnotList;
+  }
+
+  // ── Render annotation cards + pins + leader lines ──
+  function renderCards() {
+    var container = document.getElementById('lb-img-container');
+    if (!container) return;
+    // Remove existing cards, pins, and zones
+    var existing = container.querySelectorAll('.annot-card,.annot-pin,.annot-zone');
+    for (var i=0; i<existing.length; i++) container.removeChild(existing[i]);
+    // Clear SVG lines
+    var svg = document.getElementById('annot-lines-svg');
+    if (svg) svg.textContent = '';
+
+    var annots = annotationData[currentTestId] || [];
+    var img = document.getElementById('lb-img');
+    var iw = img.clientWidth || img.offsetWidth || 800;
+    var ih = img.clientHeight || img.offsetHeight || 500;
+
+    annots.forEach(function(a, idx) {
+      if (a.type !== 'card') return;
+      var color = sevColor(a.severity || 'critical');
+
+      // ── Zone rectangle (if dragged) ──
+      if (a.zoneX1 !== undefined) {
+        var zone = document.createElement('div');
+        zone.className = 'annot-zone';
+        zone.style.cssText = 'left:'+(a.zoneX1*100)+'%;top:'+(a.zoneY1*100)+'%;width:'+((a.zoneX2-a.zoneX1)*100)+'%;height:'+((a.zoneY2-a.zoneY1)*100)+'%;border-color:'+color+';background:'+color+';pointer-events:none;opacity:.15';
+        container.appendChild(zone);
+      }
+
+      // ── Pin ──
+      var pin = document.createElement('div');
+      pin.className = 'annot-pin';
+      pin.style.cssText = 'left:' + (a.pinX*100) + '%;top:' + (a.pinY*100) + '%;background:' + color;
+
+      // Pin dragging — moves pin + zone + card together
+      (function(annot, pinEl, idx) {
+        var dragging = false;
+        var startX, startY, startPinX, startPinY;
+        var startZone = null, startCardX, startCardY;
+        var zoneEl = null;
+        pinEl.addEventListener('pointerdown', function(e) {
+          dragging = true;
+          startX = e.clientX; startY = e.clientY;
+          startPinX = annot.pinX; startPinY = annot.pinY;
+          startCardX = annot.cardX; startCardY = annot.cardY;
+          if (annot.zoneX1 !== undefined) {
+            startZone = { x1:annot.zoneX1, y1:annot.zoneY1, x2:annot.zoneX2, y2:annot.zoneY2 };
+            // Find THIS annotation's zone element (zones are rendered in order before pins)
+            var zones = pinEl.parentElement.querySelectorAll('.annot-zone');
+            // Match by position
+            for (var zi=0; zi<zones.length; zi++) {
+              var zl = parseFloat(zones[zi].style.left);
+              if (Math.abs(zl - annot.zoneX1*100) < 0.1) { zoneEl = zones[zi]; break; }
+            }
+          }
+          pinEl.setPointerCapture(e.pointerId);
+          e.stopPropagation();
+        });
+        pinEl.addEventListener('pointermove', function(e) {
+          if (!dragging) return;
+          var imgEl = document.getElementById('lb-img');
+          var w = imgEl.clientWidth || 800;
+          var h = imgEl.clientHeight || 500;
+          var dx = (e.clientX - startX) / w;
+          var dy = (e.clientY - startY) / h;
+          annot.pinX = Math.max(0, Math.min(1, startPinX + dx));
+          annot.pinY = Math.max(0, Math.min(1, startPinY + dy));
+          annot.cardX = Math.max(0, Math.min(0.95, startCardX + dx));
+          annot.cardY = Math.max(0, Math.min(0.95, startCardY + dy));
+          pinEl.style.left = (annot.pinX*100)+'%';
+          pinEl.style.top = (annot.pinY*100)+'%';
+          // Move zone with pin
+          if (startZone && zoneEl) {
+            annot.zoneX1 = Math.max(0, Math.min(1, startZone.x1 + dx));
+            annot.zoneY1 = Math.max(0, Math.min(1, startZone.y1 + dy));
+            annot.zoneX2 = Math.max(0, Math.min(1, startZone.x2 + dx));
+            annot.zoneY2 = Math.max(0, Math.min(1, startZone.y2 + dy));
+            zoneEl.style.left = (annot.zoneX1*100)+'%';
+            zoneEl.style.top = (annot.zoneY1*100)+'%';
+            zoneEl.style.width = ((annot.zoneX2-annot.zoneX1)*100)+'%';
+            zoneEl.style.height = ((annot.zoneY2-annot.zoneY1)*100)+'%';
+          }
+          // Move card visually
+          var cardEl = pinEl.parentElement.querySelector('.annot-card[data-idx="'+annot._idx+'"]');
+          if (cardEl) {
+            cardEl.style.left = (annot.cardX*100)+'%';
+            cardEl.style.top = (annot.cardY*100)+'%';
+            updateLeaderLine(annot, cardEl);
+          }
+          e.stopPropagation();
+        });
+        pinEl.addEventListener('pointerup', function(e) {
+          if (dragging) { dragging = false; zoneEl = null; renderCards(); }
+          e.stopPropagation();
+        });
+      })(a, pin, idx);
+
+      container.appendChild(pin);
+
+      // ── Card ──
+      var card = document.createElement('div');
+      card.className = 'annot-card';
+      a._idx = idx;
+      card.setAttribute('data-idx', idx);
+      card.style.cssText = 'left:' + (a.cardX*100) + '%;top:' + (a.cardY*100) + '%;border-left-color:' + color;
+
+      // Header
+      var hdr = document.createElement('div'); hdr.className = 'annot-card-header';
+      var dot = document.createElement('span'); dot.className='annot-card-dot'; dot.style.background=color;
+      var numEl = document.createElement('span'); numEl.className='annot-card-num'; numEl.textContent='#'+(idx+1);
+      var sevEl = document.createElement('span'); sevEl.className='annot-card-sev-label'; sevEl.style.color=color;
+      sevEl.textContent = (a.severity||'critical').charAt(0).toUpperCase()+(a.severity||'critical').slice(1);
+      var delBtn = document.createElement('button'); delBtn.className='annot-card-del'; delBtn.textContent='\u00d7';
+      (function(index) {
+        delBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          annotationData[currentTestId].splice(index, 1);
+          if (!annotationData[currentTestId].length) delete annotationData[currentTestId];
+          renderCards(); renderAnnotList(); renderGrid();
+          if (!annotationData[currentTestId] && selected[currentTestId]) {
+            delete selected[currentTestId]; selectedCount=Math.max(0,selectedCount-1); updateBar();
+          }
+        });
+      })(idx);
+      hdr.appendChild(dot); hdr.appendChild(numEl); hdr.appendChild(sevEl); hdr.appendChild(delBtn);
+      card.appendChild(hdr);
+
+      // Body
+      var body = document.createElement('div'); body.className='annot-card-body';
+      body.textContent = a.note || '(no description)';
+      card.appendChild(body);
+
+      // Double-click to edit
+      (function(index) {
+        card.addEventListener('dblclick', function(e) {
+          e.stopPropagation();
+          editingIndex = index;
+          // Restore severity picker to match existing annotation
+          var existSev = annotationData[currentTestId][index].severity || 'critical';
+          pendingSeverity = existSev;
+          var btns = document.querySelectorAll('#severity-picker .sev-btn');
+          for (var b=0; b<btns.length; b++) {
+            btns[b].classList.toggle('active', btns[b].getAttribute('data-sev') === existSev);
+          }
+          showNoteInput(annotationData[currentTestId][index].note || '');
+        });
+      })(idx);
+
+      // Dragging via pointer events
+      (function(annot, cardEl) {
+        var dragging = false;
+        var startX, startY, startCardX, startCardY;
+
+        cardEl.addEventListener('pointerdown', function(e) {
+          if (e.target.classList.contains('annot-card-del')) return;
+          dragging = true;
+          startX = e.clientX; startY = e.clientY;
+          startCardX = annot.cardX; startCardY = annot.cardY;
+          cardEl.setPointerCapture(e.pointerId);
+          e.stopPropagation();
+        });
+
+        cardEl.addEventListener('pointermove', function(e) {
+          if (!dragging) return;
+          var imgEl = document.getElementById('lb-img');
+          var w = imgEl.clientWidth || 800;
+          var h = imgEl.clientHeight || 500;
+          var dx = (e.clientX - startX) / w;
+          var dy = (e.clientY - startY) / h;
+          var newX = Math.max(0, Math.min(0.95, startCardX + dx));
+          var newY = Math.max(0, Math.min(0.95, startCardY + dy));
+          annot.cardX = newX;
+          annot.cardY = newY;
+          cardEl.style.left = (newX*100) + '%';
+          cardEl.style.top = (newY*100) + '%';
+          updateLeaderLine(annot, cardEl);
+          e.stopPropagation();
+        });
+
+        cardEl.addEventListener('pointerup', function(e) {
+          dragging = false;
+          e.stopPropagation();
+        });
+      })(a, card);
+
+      container.appendChild(card);
+
+      // ── Leader line ──
+      updateLeaderLine(a, card);
+    });
+  }
+
+  function updateLeaderLine(annot, cardEl) {
+    var svg = document.getElementById('annot-lines-svg');
+    if (!svg) return;
+    var img = document.getElementById('lb-img');
+    var iw = img.clientWidth || 800;
+    var ih = img.clientHeight || 500;
+
+    var lineId = 'll-' + (annot._lineId || (annot._lineId = Math.random().toString(36).slice(2)));
+    var existing = svg.querySelector('#' + lineId);
+    if (existing) svg.removeChild(existing);
+
+    var color = sevColor(annot.severity || 'critical');
+    // Pin center in px (relative to container = image size)
+    var px = annot.pinX * iw;
+    var py = annot.pinY * ih;
+    // Card bottom-center in px — approximate: card top-left + half width, full height
+    // We use card percentage positions; card width ~180px, height ~70px
+    var cardW = 180, cardH = 70;
+    var cx = annot.cardX * iw + cardW * 0.5;
+    var cy = annot.cardY * ih + cardH;
+    // Clamp
+    cx = Math.max(0, Math.min(iw, cx));
+    cy = Math.max(0, Math.min(ih, cy));
+
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('id', lineId);
+    line.setAttribute('x1', px);
+    line.setAttribute('y1', py);
+    line.setAttribute('x2', cx);
+    line.setAttribute('y2', cy);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('stroke-dasharray', '5,3');
+    line.setAttribute('opacity', '0.7');
+    svg.appendChild(line);
   }
 
   // ── Note input ──
   var pendingAnnot = null;
-  var editingIndex = null; // null = new annotation; number = editing existing
+  var editingIndex = null;
   function showNoteInput(prefill) {
     document.getElementById('note-overlay').classList.add('visible');
     var input = document.getElementById('note-input');
@@ -780,24 +1152,25 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   function saveAnnotation(note) {
     document.getElementById('note-overlay').classList.remove('visible');
     if (editingIndex !== null) {
-      // Update existing annotation
       if (currentTestId && annotationData[currentTestId] && annotationData[currentTestId][editingIndex] !== undefined) {
         annotationData[currentTestId][editingIndex].note = note || '';
+        annotationData[currentTestId][editingIndex].severity = pendingSeverity;
       }
       editingIndex = null;
-      if (window._annotRedraw) window._annotRedraw();
+      renderCards();
       renderAnnotList();
       renderGrid();
       return;
     }
     if (!pendingAnnot || !currentTestId) return;
     pendingAnnot.note = note || '';
+    pendingAnnot.severity = pendingSeverity;
     if (!annotationData[currentTestId]) annotationData[currentTestId] = [];
     annotationData[currentTestId].push(pendingAnnot);
     if (!selected[currentTestId]) { selected[currentTestId]=true; selectedCount++; updateBar(); }
-    else { saveSession(); }
     pendingAnnot = null;
-    if (window._annotRedraw) window._annotRedraw();
+    setAddMode(false);
+    renderCards();
     renderAnnotList();
     renderGrid();
   }
@@ -820,34 +1193,47 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     section.style.display = 'block';
     list.textContent = '';
     annots.forEach(function(a, i) {
-      var item = document.createElement('div'); item.className = 'annot-item';
-      var num = document.createElement('span'); num.className='annot-item-num'; num.textContent='#'+(i+1);
+      var sev = a.severity || 'critical';
+      var item = document.createElement('div');
+      item.className = 'annot-item sev-' + sev;
+      var num = document.createElement('span'); num.className='annot-item-num';
+      num.style.color = sevColor(sev);
+      num.textContent='#'+(i+1);
       item.appendChild(num);
       var text = document.createElement('div'); text.className='annot-item-text';
       var note = document.createElement('div'); note.className='annot-item-note';
       note.textContent = a.note || '(no description)';
       text.appendChild(note);
       var region = document.createElement('div'); region.className='annot-item-region';
-      region.textContent = a.type === 'rect' ? 'Rectangle' : 'Freehand drawing';
+      region.textContent = sev;
       text.appendChild(region);
       item.appendChild(text);
       var edit = document.createElement('button'); edit.className='annot-item-edit'; edit.textContent='Edit';
       (function(idx) {
         edit.addEventListener('click', function() {
           editingIndex = idx;
+          var existSev = annotationData[currentTestId][idx].severity || 'critical';
+          pendingSeverity = existSev;
+          var btns = document.querySelectorAll('#severity-picker .sev-btn');
+          for (var b=0; b<btns.length; b++) {
+            btns[b].classList.toggle('active', btns[b].getAttribute('data-sev') === existSev);
+          }
           showNoteInput(annotationData[currentTestId][idx].note || '');
         });
       })(i);
       item.appendChild(edit);
       var del = document.createElement('button'); del.className='annot-item-del'; del.textContent='\u2715';
-      del.setAttribute('data-index', i);
-      del.addEventListener('click', function() {
-        var idx = parseInt(this.getAttribute('data-index'), 10);
-        annotationData[currentTestId].splice(idx,1);
-        if(!annotationData[currentTestId].length) delete annotationData[currentTestId];
-        if(window._annotRedraw) window._annotRedraw();
-        renderAnnotList(); renderGrid();
-      });
+      (function(idx) {
+        del.addEventListener('click', function() {
+          annotationData[currentTestId].splice(idx,1);
+          if(!annotationData[currentTestId].length) delete annotationData[currentTestId];
+          renderCards();
+          renderAnnotList(); renderGrid();
+          if (!annotationData[currentTestId] && selected[currentTestId]) {
+            delete selected[currentTestId]; selectedCount=Math.max(0,selectedCount-1); updateBar();
+          }
+        });
+      })(i);
       item.appendChild(del);
       list.appendChild(item);
     });
@@ -855,13 +1241,12 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   // ── Lightbox ──
   var currentLbIndex = -1;
-  var baViewMode = 'after'; // persists across navigation
+  var baViewMode = 'after';
   function getLbList() { return getFiltered().filter(function(t){return t.screenshot;}); }
 
   function openLightbox(id) {
     var t = D.tests.find(function(x){return x.id===id;});
     if (!t) return;
-    // Track nav index
     var list = getLbList ? getLbList() : [];
     for (var li=0;li<list.length;li++){if(list[li].id===id){currentLbIndex=li;break;}}
     var lb = document.getElementById('lightbox');
@@ -887,7 +1272,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var d=document.createElement('span');d.className='lb-step-detail';d.textContent=s.description||s.criteria||s.target||s.url||s.value||'';step.appendChild(d);
       stepsEl.appendChild(step);
     });
-    // Before/After toggle — use persisted baViewMode
     var baSection = document.getElementById('lb-ba');
     if (t.screenshotBefore) {
       baSection.style.display = 'flex';
@@ -905,13 +1289,11 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     } else {
       baSection.style.display = 'none';
     }
-
     lb.classList.add('visible');
     if (typeof resetZoom === 'function') resetZoom();
     if (window._annotSetup) window._annotSetup(id);
   }
 
-  // Before/After buttons
   document.getElementById('lb-ba-after').addEventListener('click', function() {
     var list = getLbList(); var t = list[currentLbIndex]; if(!t) return;
     baViewMode = 'after';
@@ -933,12 +1315,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     renderGrid();
   });
 
-  function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); penMode = null; updatePenUI(); }
+  function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); }
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
-
-  // Click outside detail panel area closes lightbox
   document.getElementById('lb-img-area').addEventListener('click', function(e) {
-    if (penMode) return;
+    if (addMode) return;
     if (e.target === this) closeLightbox();
   });
 
@@ -953,11 +1333,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 
   // ── Keyboard ──
   document.addEventListener('keydown', function(e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key==='Escape') {
-      if (document.getElementById('note-overlay').classList.contains('visible')) { pendingAnnot=null; document.getElementById('note-overlay').classList.remove('visible'); if(window._annotRedraw) window._annotRedraw(); }
+      if (document.getElementById('note-overlay').classList.contains('visible')) { saveAnnotation(''); }
       else if (document.getElementById('lightbox').classList.contains('visible')) closeLightbox();
-      else if (selectedCount>0) { Object.keys(selected).forEach(function(id){delete annotationData[id];delete redoFlags[id];delete revertFlags[id];}); selected={};selectedCount=0;renderGrid();updateBar(); }
+      else if (selectedCount>0) { selected={};selectedCount=0;renderGrid();updateBar(); }
     }
   });
 
@@ -973,27 +1352,38 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       timestamp: new Date().toISOString(),
       tests: ids.map(function(id) {
         var e = {test: id};
-        if (annotationData[id]) e.annotations = annotationData[id];
+        if (annotationData[id]) {
+          // Convert card annotations to fix-manifest format (x1/y1/x2/y2 + note + severity)
+          e.annotations = annotationData[id].map(function(a) {
+            var out = { note: a.note || '', severity: a.severity || 'critical' };
+            if (a.zoneX1 !== undefined) {
+              // Zone rectangle — use exact zone bounds
+              out.x1 = a.zoneX1; out.y1 = a.zoneY1; out.x2 = a.zoneX2; out.y2 = a.zoneY2;
+            } else {
+              // Point pin — create small bounding box around pin (10% of image)
+              out.x1 = Math.max(0, a.pinX - 0.05); out.y1 = Math.max(0, a.pinY - 0.05);
+              out.x2 = Math.min(1, a.pinX + 0.05); out.y2 = Math.min(1, a.pinY + 0.05);
+            }
+            return out;
+          });
+        }
         if (redoFlags[id]) e.redo_entirely = true;
         if (revertFlags[id]) e.revert_to_before = true;
-        // Default: if selected with no annotation and no redo/revert, flag as "improve UI"
         if (!annotationData[id] && !redoFlags[id] && !revertFlags[id]) e.improve_ui = true;
         var t = D.tests.find(function(x){return x.id===id;});
         if (t) { e.name=t.name; e.url=t.url; e.screenshot=t.screenshot; e.steps=t.steps; }
         return e;
       })
     };
-    // Save to server (no download)
     fetch('/save-manifest', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(manifest)
     }).then(function(r){ return r.json(); }).then(function(d) {
       if (d.ok) {
-        clearSession(); // Clear localStorage after successful save
+        clearSession();
         document.getElementById('success-overlay').classList.add('visible');
-        // Auto-dismiss on click (use {once:true} to avoid duplicate listeners)
-        document.getElementById('success-overlay').addEventListener('click', function(){this.classList.remove('visible');}, {once:true});
+        document.getElementById('success-overlay').addEventListener('click', function(){this.classList.remove('visible');});
       }
       else showToast('Error: ' + (d.error||'unknown'));
     }).catch(function(e) {
@@ -1017,35 +1407,25 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   });
 
   document.getElementById('btn-clear').addEventListener('click', function(){
-    // Clear everything — selections, annotations, redo flags, revert flags
-    for (var id in selected) { delete revertFlags[id]; }
     Object.keys(selected).forEach(function(id){ delete annotationData[id]; delete redoFlags[id]; });
     selected={}; selectedCount=0; renderGrid(); updateBar();
   });
 
-  // ── Lightbox navigation (prev/next) ──
+  // ── Lightbox navigation ──
   function navLightbox(dir) {
     var list = getLbList();
     if (!list.length) return;
-    var idx = -1;
-    for (var i = 0; i < list.length; i++) { if (list[i].id === currentTestId) { idx = i; break; } }
-    if (idx === -1) idx = 0; else idx = Math.max(0, Math.min(list.length - 1, idx + dir));
-    currentLbIndex = idx;
-    openLightbox(list[idx].id);
+    currentLbIndex = Math.max(0, Math.min(list.length-1, currentLbIndex + dir));
+    openLightbox(list[currentLbIndex].id);
   }
-
   document.getElementById('lb-prev').addEventListener('click', function(e){e.stopPropagation();navLightbox(-1);});
   document.getElementById('lb-next').addEventListener('click', function(e){e.stopPropagation();navLightbox(1);});
-
-  // Keyboard nav in lightbox
   document.addEventListener('keydown', function(e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (!document.getElementById('lightbox').classList.contains('visible')) return;
     if (document.getElementById('note-overlay').classList.contains('visible')) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); navLightbox(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); navLightbox(1); }
-    else if (e.key === 'f') { e.preventDefault(); document.getElementById('pen-freehand').click(); }
-    else if (e.key === 'r') { e.preventDefault(); document.getElementById('pen-rect').click(); }
+    else if (e.key === 'f') { e.preventDefault(); var addBtn=document.getElementById('annot-add'); if(addBtn) addBtn.click(); }
     else if (e.key === 'z') { e.preventDefault(); document.getElementById('pen-undo').click(); }
     else if (e.key === 'd') { e.preventDefault(); document.getElementById('pen-redo').click(); }
   });
@@ -1056,11 +1436,10 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     detail.classList.toggle('collapsed');
     this.textContent = detail.classList.contains('collapsed') ? '\u25B8' : '\u25C2';
     this.style.right = detail.classList.contains('collapsed') ? '0' : '240px';
-    // Resize canvas after panel toggle
-    setTimeout(function(){ if(window._annotSetup && currentTestId) window._annotSetup(currentTestId); }, 250);
+    setTimeout(function(){ if(typeof renderCards === 'function') renderCards(); }, 250);
   });
 
-  // ── Zoom (mouse wheel on image) ──
+  // ── Zoom ──
   var zoomLevel = 1;
   var zoomMin = 1, zoomMax = 4;
   document.getElementById('lb-img-area').addEventListener('wheel', function(e) {
@@ -1070,10 +1449,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     zoomLevel = Math.max(zoomMin, Math.min(zoomMax, zoomLevel + delta));
     var container = document.getElementById('lb-img-container');
     container.style.transform = zoomLevel === 1 ? '' : 'scale('+zoomLevel+')';
-    // Resize canvas to match
-    setTimeout(function(){ if(window._annotSetup && currentTestId) window._annotSetup(currentTestId); }, 100);
+    setTimeout(function(){ if(typeof renderCards === 'function') renderCards(); }, 100);
   }, {passive:false});
-  // Reset zoom when opening a new test
   function resetZoom() {
     zoomLevel = 1;
     var container = document.getElementById('lb-img-container');
@@ -1081,7 +1458,7 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
   }
 
   // ── localStorage persistence ──
-  var STORAGE_KEY = 'visual-review-session';
+  var STORAGE_KEY = 'shipguard-visual-session';
   function saveSession() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -1096,7 +1473,6 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
       var s = JSON.parse(raw);
-      // Expire after 24h
       if (Date.now() - s.savedAt > 86400000) { localStorage.removeItem(STORAGE_KEY); return false; }
       selected = s.selected || {};
       selectedCount = Object.keys(selected).length;
@@ -1107,10 +1483,8 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     } catch(e) { return false; }
   }
   function clearSession() { try { localStorage.removeItem(STORAGE_KEY); } catch(e) {} }
-  // Auto-save on changes
   var _origUpdateBar = updateBar;
   updateBar = function() { _origUpdateBar(); saveSession(); };
-  // Show restore banner if session exists — don't auto-restore, wait for click
   (function() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -1126,518 +1500,503 @@ var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
     if (loadSession()) { renderGrid(); updateBar(); showToast('Session restored (' + selectedCount + ' selections)'); }
     this.classList.remove('visible');
   });
-  // Save before unload
   window.addEventListener('beforeunload', saveSession);
-  // Clear session after successful validate — handled in validate click
 
   // ── Clear all annotations for current test ──
   document.getElementById('lb-annot-clear').addEventListener('click', function() {
     if (!currentTestId) return;
     delete annotationData[currentTestId];
-    if (window._annotRedraw) window._annotRedraw();
+    renderCards();
     renderAnnotList();
     renderGrid();
+    if (selected[currentTestId] && !redoFlags[currentTestId]) {
+      delete selected[currentTestId]; selectedCount=Math.max(0,selectedCount-1); updateBar();
+    }
   });
 
-  // ── Audit Tab ──
-  var activeTab = 'visual';
-  var auditSevFilter = 'all';
-  var auditCatFilter = 'all';
-  var auditQuery = '';
-
-  var SEV_COLORS = {critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#6b7280'};
-  var SEV_ORDER = ['critical','high','medium','low'];
-
-  function switchTab(tab) {
-    activeTab = tab;
-    var layout = document.getElementById('layout');
-    var toolbar = document.getElementById('toolbar');
-    var auditLayout = document.getElementById('audit-layout');
-    var auditToolbar = document.getElementById('audit-toolbar');
-    var monitorLayout = document.getElementById('monitor-layout');
-    var monitorToolbar = document.getElementById('monitor-toolbar');
-    var actionBar = document.getElementById('action-bar');
-    var tabVisual = document.getElementById('tab-visual');
-    var tabAudit = document.getElementById('tab-audit');
-    var tabMonitor = document.getElementById('tab-monitor');
-    // Hide all
-    layout.style.display = 'none';
-    toolbar.style.display = 'none';
-    auditLayout.style.display = 'none';
-    auditToolbar.style.display = 'none';
-    monitorLayout.style.display = 'none';
-    monitorToolbar.style.display = 'none';
-    actionBar.style.display = 'none';
-    tabVisual.classList.remove('active');
-    tabAudit.classList.remove('active');
-    tabMonitor.classList.remove('active');
-    if (tab === 'visual') {
-      layout.style.display = 'flex';
-      toolbar.style.display = 'flex';
-      actionBar.style.display = '';
-      tabVisual.classList.add('active');
-      renderStats();
-    } else if (tab === 'audit') {
-      auditLayout.style.display = 'block';
-      auditToolbar.style.display = 'flex';
-      tabAudit.classList.add('active');
-      renderAuditStats();
-    } else if (tab === 'monitor') {
-      monitorLayout.style.display = 'block';
-      monitorToolbar.style.display = 'flex';
-      tabMonitor.classList.add('active');
-      renderMonitorTab();
-    }
-  }
-  // Expose for inline onclick
-  window.switchTab = switchTab;
-
-  function renderAuditStats() {
-    if (!D.audit) return;
-    var s = D.audit.summary;
-    var sev = s.by_severity || {};
-    var el = document.getElementById('stats');
-    el.textContent = '';
-    var items = [
-      ['stat-total', s.total_bugs + ' bugs'],
-      ['audit-badge-critical', (sev.critical || 0) + ' critical'],
-      ['audit-badge-high', (sev.high || 0) + ' high'],
-      ['audit-badge-medium', (sev.medium || 0) + ' medium'],
-      ['audit-badge-low', (sev.low || 0) + ' low']
-    ];
-    items.forEach(function(item) {
-      var span = document.createElement('span');
-      span.className = 'stat ' + item[0];
-      span.textContent = item[1];
-      el.appendChild(span);
-    });
-    // Fixed count
-    var fixedCount = D.audit.bugs.filter(function(b){return b.fix_applied;}).length;
-    var fixSpan = document.createElement('span');
-    fixSpan.className = 'stat stat-pass';
-    fixSpan.textContent = fixedCount + ' fixed';
-    el.appendChild(fixSpan);
-
-    var metaEl = document.getElementById('meta');
-    metaEl.textContent = s.files_audited + ' files audited, ' + s.files_modified + ' modified';
-  }
-
-  function renderAuditFilters() {
-    if (!D.audit) return;
-    if (!D.audit.summary || !D.audit.summary.by_category) return;
-    var sevEl = document.getElementById('audit-sev-filters');
-    var catEl = document.getElementById('audit-cat-filters');
-    sevEl.textContent = '';
-    catEl.textContent = '';
-
-    // Severity filters
-    var sevs = ['all'].concat(SEV_ORDER);
-    sevs.forEach(function(sev) {
-      var btn = document.createElement('button');
-      btn.className = 'filter-btn' + (sev === auditSevFilter ? ' active' : '');
-      btn.textContent = sev === 'all' ? 'All severities' : sev;
-      btn.addEventListener('click', function() { filterAuditSeverity(sev); });
-      sevEl.appendChild(btn);
-    });
-
-    // Category filters — build from data
-    var cats = Object.keys(D.audit.summary.by_category).sort();
-    var catList = ['all'].concat(cats);
-    catList.forEach(function(cat) {
-      var btn = document.createElement('button');
-      btn.className = 'filter-btn' + (cat === auditCatFilter ? ' active' : '');
-      btn.textContent = cat === 'all' ? 'All categories' : cat;
-      btn.addEventListener('click', function() { filterAuditCategory(cat); });
-      catEl.appendChild(btn);
-    });
-  }
-
-  function filterAuditSeverity(sev) {
-    auditSevFilter = sev;
-    renderAuditFilters();
-    applyAuditFilters();
-  }
-
-  function filterAuditCategory(cat) {
-    auditCatFilter = cat;
-    renderAuditFilters();
-    applyAuditFilters();
-  }
-
-  function applyAuditFilters() {
-    if (!D.audit) return;
-    var bugs = D.audit.bugs.filter(function(b) {
-      if (auditSevFilter !== 'all' && b.severity !== auditSevFilter) return false;
-      if (auditCatFilter !== 'all' && b.category !== auditCatFilter) return false;
-      if (auditQuery) {
-        var q = auditQuery;
-        if (b.title.toLowerCase().indexOf(q) === -1 &&
-            b.file.toLowerCase().indexOf(q) === -1 &&
-            b.id.toLowerCase().indexOf(q) === -1 &&
-            b.description.toLowerCase().indexOf(q) === -1) return false;
-      }
-      return true;
-    });
-    // Sort: critical first, then high, medium, low
-    bugs.sort(function(a, b) {
-      var ai = SEV_ORDER.indexOf(a.severity);
-      var bi = SEV_ORDER.indexOf(b.severity);
-      if (ai !== bi) return ai - bi;
-      return a.file.localeCompare(b.file);
-    });
-    renderAuditGrid(bugs);
-  }
-
-  function renderAuditGrid(bugs) {
-    var grid = document.getElementById('audit-grid');
-    grid.textContent = '';
-    if (!bugs.length) {
-      var e = document.createElement('div');
-      e.className = 'empty';
-      e.textContent = 'No bugs match the current filters.';
-      grid.appendChild(e);
-      return;
-    }
-    bugs.forEach(function(bug, idx) {
-      var card = document.createElement('div');
-      card.className = 'audit-card sev-' + bug.severity;
-      card.style.animationDelay = (Math.min(idx, 7) * 0.04) + 's';
-
-      // Header row: title + badges
-      var header = document.createElement('div');
-      header.className = 'audit-card-header';
-      var title = document.createElement('div');
-      title.className = 'audit-card-title';
-      title.textContent = bug.title;
-      header.appendChild(title);
-      var badges = document.createElement('div');
-      badges.className = 'audit-card-badges';
-      // Severity badge
-      var sevBadge = document.createElement('span');
-      sevBadge.className = 'audit-badge-sev audit-badge-' + bug.severity;
-      sevBadge.textContent = bug.severity;
-      badges.appendChild(sevBadge);
-      // Fixed/Unfixed badge
-      var fixBadge = document.createElement('span');
-      fixBadge.className = 'audit-badge-fix ' + (bug.fix_applied ? 'audit-badge-fixed' : 'audit-badge-unfixed');
-      fixBadge.textContent = bug.fix_applied ? 'Fixed' : 'Unfixed';
-      badges.appendChild(fixBadge);
-      // Category badge
-      var catBadge = document.createElement('span');
-      catBadge.className = 'audit-badge-cat';
-      catBadge.textContent = bug.category;
-      badges.appendChild(catBadge);
-      header.appendChild(badges);
-      card.appendChild(header);
-
-      // File + line
-      var file = document.createElement('div');
-      file.className = 'audit-card-file';
-      file.textContent = bug.file + ':' + bug.line;
-      card.appendChild(file);
-
-      // Description (hidden until expanded)
-      var desc = document.createElement('div');
-      desc.className = 'audit-card-desc';
-      desc.textContent = bug.description;
-      card.appendChild(desc);
-
-      // Bug ID + commit
-      var idLine = document.createElement('div');
-      idLine.className = 'audit-card-id';
-      var idText = bug.id;
-      if (bug.fix_applied && bug.fix_commit) {
-        idText += ' \u2014 commit: ' + bug.fix_commit;
-      }
-      idLine.textContent = idText;
-      card.appendChild(idLine);
-
-      // Click to expand/collapse description
-      card.addEventListener('click', function() {
-        card.classList.toggle('expanded');
-      });
-
-      grid.appendChild(card);
-    });
-  }
-
-  function exportAuditCSV() {
-    if (!D.audit) return;
-    var rows = [['id','severity','category','file','line','title','description','fix_applied','fix_commit']];
-    function csvEsc(s) { return String(s).replace(/"/g, '""'); }
-    D.audit.bugs.forEach(function(b) {
-      rows.push([
-        csvEsc(b.id), csvEsc(b.severity), csvEsc(b.category), csvEsc(b.file), String(b.line),
-        csvEsc(b.title), csvEsc(b.description), b.fix_applied ? 'true' : 'false', csvEsc(b.fix_commit || '')
-      ]);
-    });
-    var csv = rows.map(function(r) {
-      return r.map(function(cell) { return '"' + cell + '"'; }).join(',');
-    }).join('\n');
-    var blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'audit-bugs-' + Date.now() + '.csv';
-    a.click();
-    showToast('CSV downloaded');
-  }
-
-  function initAuditTab() {
-    if (!D.audit) return;
-    // Show tab buttons
-    document.getElementById('header-tabs').classList.add('visible');
-    // Wire search
-    document.getElementById('audit-search').addEventListener('input', function(e) {
-      auditQuery = e.target.value.toLowerCase();
-      applyAuditFilters();
-    });
-    // Wire CSV export
-    document.getElementById('audit-export-csv').addEventListener('click', exportAuditCSV);
-    // Initial render of filters and grid
-    renderAuditFilters();
-    applyAuditFilters();
-  }
-
-  // ── Monitor tab ──
-  var monitorData = null;
-  var monitorPollTimer = null;
-  var monitorDiscoveryTimer = null;
-
-  function fmtDuration(ms) {
-    if (!ms || ms <= 0) return '0s';
-    var s = Math.floor(ms / 1000);
-    var m = Math.floor(s / 60);
-    s = s % 60;
-    return m > 0 ? m + 'm ' + s + 's' : s + 's';
-  }
-
-  function fmtTokens(n) {
-    if (!n) return '0';
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return Math.round(n / 1000) + 'K';
-    return String(n);
-  }
-
-  function renderMonitorStats() {
-    var el = document.getElementById('monitor-stats');
-    el.textContent = '';
-    if (!monitorData) return;
-    var t = monitorData.totals || {};
-    var items = [
-      [fmtDuration(t.wall_clock_ms), 'Duration'],
-      [fmtTokens(t.tokens), 'Tokens'],
-      ['~$' + (t.estimated_cost_usd || 0).toFixed(2), 'Est. Cost'],
-      [String(t.bugs_found || 0), 'Bugs Found'],
-      [String((monitorData.agents || []).length), 'Agents'],
-    ];
-    items.forEach(function(item) {
-      var div = document.createElement('div');
-      div.className = 'monitor-stat';
-      var valDiv = document.createElement('div');
-      valDiv.className = 'monitor-stat-value';
-      valDiv.textContent = item[0];
-      var lblDiv = document.createElement('div');
-      lblDiv.className = 'monitor-stat-label';
-      lblDiv.textContent = item[1];
-      div.appendChild(valDiv);
-      div.appendChild(lblDiv);
-      el.appendChild(div);
-    });
-    // Also update header stats when on monitor tab
-    var headerStats = document.getElementById('stats');
-    headerStats.textContent = '';
-    [
-      ['stat-total', fmtDuration(t.wall_clock_ms)],
-      ['stat-pass', fmtTokens(t.tokens) + ' tokens'],
-      ['stat-rate', '~$' + (t.estimated_cost_usd || 0).toFixed(2)],
-      ['stat-fail', (t.bugs_found || 0) + ' bugs'],
-    ].forEach(function(s) {
-      var span = document.createElement('span');
-      span.className = 'stat ' + s[0];
-      span.textContent = s[1];
-      headerStats.appendChild(span);
-    });
-  }
-
-  function renderGantt() {
-    var container = document.getElementById('monitor-gantt');
-    container.textContent = '';
-    if (!monitorData || !monitorData.agents || !monitorData.agents.length) {
-      container.innerHTML = '<div class="empty">No agent data yet.</div>';
-      return;
-    }
-    var agents = monitorData.agents;
-    var auditStart = new Date(monitorData.started_at).getTime();
-    var now = Date.now();
-    var auditEnd = monitorData.ended_at ? new Date(monitorData.ended_at).getTime() : now;
-    var totalSpan = Math.max(auditEnd - auditStart, 1000);
-
-    agents.forEach(function(a) {
-      var row = document.createElement('div');
-      row.className = 'gantt-row';
-
-      // Label: zone_id + first path
-      var label = document.createElement('div');
-      label.className = 'gantt-label';
-      var pathText = (a.paths && a.paths[0]) ? a.paths[0] : '';
-      var zoneSpan = document.createElement('span');
-      zoneSpan.className = 'gantt-label-zone';
-      zoneSpan.textContent = a.zone_id || a.agent_id || '?';
-      label.appendChild(zoneSpan);
-      label.appendChild(document.createTextNode(' ' + pathText));
-      row.appendChild(label);
-
-      // Track + bar
-      var track = document.createElement('div');
-      track.className = 'gantt-track';
-      var bar = document.createElement('div');
-      // Map API status "started" to CSS class "running" (animated pulse)
-      var barStatus = a.status === 'started' ? 'running' : (a.status || 'pending');
-      bar.className = 'gantt-bar gantt-bar-' + barStatus;
-      var barStart = a.started_at ? new Date(a.started_at).getTime() - auditStart : 0;
-      var barEnd = a.ended_at ? new Date(a.ended_at).getTime() - auditStart : (a.status === 'started' ? now - auditStart : barStart);
-      var leftPct = Math.max(0, (barStart / totalSpan) * 100);
-      var widthPct = Math.max(0.5, ((barEnd - barStart) / totalSpan) * 100);
-      bar.style.left = leftPct + '%';
-      bar.style.width = Math.min(widthPct, 100 - leftPct) + '%';
-      track.appendChild(bar);
-
-      // Overflow icon
-      if (a.status === 'overflow') {
-        var icon = document.createElement('span');
-        icon.className = 'gantt-overflow-icon';
-        icon.textContent = ' \u26A1';
-        icon.title = 'Context overflow \u2014 re-split into ' + (a.overflow_into || []).join(', ');
-        track.appendChild(icon);
-      }
-      row.appendChild(track);
-
-      // Right label: bugs + cost
-      var right = document.createElement('div');
-      right.className = 'gantt-right';
-      if (a.status === 'completed' || a.status === 'failed' || a.status === 'overflow') {
-        right.textContent = (a.bugs_found || 0) + ' bugs  $' + (a.estimated_cost_usd || 0).toFixed(2);
-      } else if (a.status === 'started') {
-        right.textContent = 'running\u2026';
-      } else {
-        right.textContent = 'pending';
-      }
-      row.appendChild(right);
-
-      container.appendChild(row);
-    });
-
-    // Legend
-    var legend = document.createElement('div');
-    legend.className = 'gantt-legend';
-    [
-      ['var(--primary)', 'running'],
-      ['var(--pass)', 'completed'],
-      ['var(--fail)', 'failed'],
-      ['var(--stale)', 'overflow'],
-    ].forEach(function(item) {
-      var el = document.createElement('div');
-      el.className = 'gantt-legend-item';
-      el.innerHTML = '<span class="gantt-legend-dot" style="background:' + item[0] + '"></span>' + item[1];
-      legend.appendChild(el);
-    });
-    container.appendChild(legend);
-  }
-
-  function renderMonitorFooter() {
-    var el = document.getElementById('monitor-footer');
-    if (!monitorData) { el.textContent = ''; return; }
-    var agents = monitorData.agents || [];
-    var completed = agents.filter(function(a) { return a.status === 'completed'; }).length;
-    var failed = agents.filter(function(a) { return a.status === 'failed'; }).length;
-    var total = agents.length;
-    var text = '';
-    if (monitorData.status === 'running') {
-      text = 'Audit in progress \u2014 ' + completed + '/' + total + ' agents completed';
-    } else if (monitorData.status === 'completed') {
-      text = 'Completed \u2014 ' + total + ' agents, ' + (monitorData.round_count || 1) + ' round(s), ' + fmtDuration(monitorData.totals ? monitorData.totals.wall_clock_ms : 0);
-    } else if (monitorData.status === 'failed') {
-      text = 'Audit failed \u2014 ' + completed + ' completed, ' + failed + ' failed';
-    }
-    el.textContent = '';
-    var span = document.createElement('span');
-    span.textContent = text;
-    el.appendChild(span);
-    // Link to Code Audit tab if audit data exists
-    if (D.audit) {
-      var link = document.createElement('span');
-      link.className = 'monitor-footer-link';
-      link.textContent = 'View Code Audit results \u2192';
-      link.addEventListener('click', function() { switchTab('audit'); });
-      el.appendChild(link);
-    }
-  }
-
-  function renderMonitorTab() {
-    renderMonitorStats();
-    renderGantt();
-    renderMonitorFooter();
-  }
-
-  function pollMonitor() {
-    fetch('/api/monitor').then(function(r) {
-      if (!r.ok) return null;
-      return r.json();
-    }).then(function(data) {
-      if (!data) return;
-      monitorData = data;
-      if (activeTab === 'monitor') renderMonitorTab();
-      // Stop polling when audit is done
-      if (data.status !== 'running' && monitorPollTimer) {
-        clearInterval(monitorPollTimer);
-        monitorPollTimer = null;
-      }
-    }).catch(function() { /* server unreachable — ignore */ });
-  }
-
-  function activateMonitorTab(data) {
-    monitorData = data;
-    document.getElementById('tab-monitor').style.display = '';
-    document.getElementById('header-tabs').classList.add('visible');
-    // Stop discovery polling once tab is active
-    if (monitorDiscoveryTimer) { clearInterval(monitorDiscoveryTimer); monitorDiscoveryTimer = null; }
-    // Start live polling if audit is still running
-    if (monitorPollTimer) clearInterval(monitorPollTimer);
-    if (data.status === 'running') {
-      monitorPollTimer = setInterval(pollMonitor, 3000);
-    }
-  }
-
-  function probeMonitor() {
-    fetch('/api/monitor').then(function(r) {
-      if (!r.ok) return null;
-      return r.json();
-    }).then(function(data) {
-      if (data) activateMonitorTab(data);
-    }).catch(function() { /* server unreachable — keep trying */ });
-  }
-
-  function initMonitorTab() {
-    // Probe once immediately
-    fetch('/api/monitor').then(function(r) {
-      if (!r.ok) return null;
-      return r.json();
-    }).then(function(data) {
-      if (data) {
-        activateMonitorTab(data);
-      } else {
-        // No data yet — keep probing every 5s (page may be open before audit starts)
-        monitorDiscoveryTimer = setInterval(probeMonitor, 5000);
-      }
-    }).catch(function() {
-      // Server not reachable — probe periodically in case it starts later
-      monitorDiscoveryTimer = setInterval(probeMonitor, 5000);
-    });
-  }
-
   // ── Init ──
-  renderStats(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation(); initAuditTab(); initMonitorTab();
+  renderStats(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation();
 })(__VISUAL_DATA__);
+
+// ════════════════ MAIN TAB SWITCH ════════════════
+function switchMainTab(tab) {
+  document.getElementById('main-tab-visual').classList.toggle('active', tab === 'visual');
+  document.getElementById('main-tab-audit').classList.toggle('active', tab === 'audit');
+  document.getElementById('visual-view').style.display = tab === 'visual' ? '' : 'none';
+  document.getElementById('audit-view').style.display = tab === 'audit' ? 'block' : 'none';
+  // Legacy alias support
+  if (tab === 'audit') loadAuditData();
+}
+
+// backward-compat alias used by old code
+function switchTab(tab) { switchMainTab(tab); }
+
+// ════════════════ SUB-TAB SWITCH ════════════════
+function switchSubTab(tab) {
+  ['overview','bugs','routes','agents'].forEach(function(t) {
+    document.getElementById('sub-tab-'+t).classList.toggle('active', t === tab);
+    document.getElementById('panel-'+t).classList.toggle('visible', t === tab);
+  });
+}
+
+// ════════════════ CODE AUDIT (MISSION CONTROL) ════════════════
+// Security note: All data comes from trusted local JSON files generated by audit agents.
+// All user-visible strings are set via textContent — never innerHTML with dynamic data.
+var _auditData = null;
+var _auditFilter = 'all';
+var _auditRouteFilter = null;  // route prefix filter from Routes sub-tab click
+var _auditPollTimer = null;
+
+function loadAuditData() {
+  fetch('/audit-results.json')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.bugs && data.bugs.length > 0) {
+        _auditData = data;
+        stopAuditPoll();
+        renderAuditComplete(data);
+      } else {
+        loadAuditMonitor();
+      }
+    })
+    .catch(function() { loadAuditMonitor(); });
+}
+
+function loadAuditMonitor() {
+  fetch('/audit-monitor.json')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(monitor) {
+      if (!monitor || !monitor.agents) {
+        showAuditEmpty();
+        return;
+      }
+      if (monitor.status === 'running') {
+        renderAuditLive(monitor);
+        startAuditPoll();
+      } else if (monitor.status === 'completed') {
+        loadAuditData();
+      } else {
+        showAuditEmpty();
+      }
+    })
+    .catch(function() { showAuditEmpty(); });
+}
+
+function startAuditPoll() {
+  if (_auditPollTimer) return;
+  _auditPollTimer = setInterval(loadAuditData, 3000);
+}
+
+function stopAuditPoll() {
+  if (_auditPollTimer) { clearInterval(_auditPollTimer); _auditPollTimer = null; }
+}
+
+function showAuditEmpty() {
+  document.getElementById('mc-progress-box').style.display = 'none';
+  document.getElementById('mc-stat-row').style.display = 'none';
+  document.getElementById('mc-summary-line').style.display = 'none';
+  document.getElementById('mc-dist-section').style.display = 'none';
+  document.getElementById('mc-empty').style.display = 'block';
+  document.getElementById('audit-status-badge').style.display = 'none';
+}
+
+function updateAuditBadge(val) {
+  var badge = document.getElementById('audit-tab-badge');
+  badge.className = 'main-tab-badge';
+  if (val === 'live') {
+    badge.classList.add('main-tab-badge-live');
+    badge.textContent = 'LIVE';
+  } else if (typeof val === 'number' && val > 0) {
+    badge.classList.add('main-tab-badge-bugs');
+    badge.textContent = val + ' bugs';
+  } else {
+    badge.textContent = '';
+  }
+}
+
+function renderAuditLive(monitor) {
+  document.getElementById('mc-empty').style.display = 'none';
+  document.getElementById('mc-stat-row').style.display = 'none';
+  document.getElementById('mc-summary-line').style.display = 'none';
+  document.getElementById('mc-dist-section').style.display = 'none';
+
+  var badge = document.getElementById('audit-status-badge');
+  badge.style.display = 'inline-flex';
+  badge.className = 'live';
+  badge.textContent = '';
+  var t = document.createTextNode('AUDIT LIVE');
+  badge.appendChild(t);
+
+  var agents = Object.values(monitor.agents || {});
+  var done = agents.filter(function(a) { return a.status === 'completed'; }).length;
+  var total = agents.length;
+  var bugs = agents.reduce(function(s, a) { return s + (a.bugs_found || 0); }, 0);
+  var pct = total > 0 ? Math.round(done / total * 100) : 0;
+  var round = monitor.round_count || 1;
+
+  document.getElementById('mc-progress-box').style.display = 'block';
+  document.getElementById('mc-progress-fill').style.width = pct + '%';
+  document.getElementById('mc-progress-title').textContent = done + '/' + total + ' agents  \u2022  Round ' + round + ' Depth';
+  document.getElementById('mc-progress-label').textContent = bugs > 0 ? bugs + ' bugs found so far' : 'Scanning\u2026';
+
+  // Agents sub-tab pod grid
+  var grid = document.getElementById('mc-pod-grid');
+  grid.textContent = '';
+  agents.sort(function(a, b) {
+    var ai = a.agent_id || a.zone_id || '';
+    var bi = b.agent_id || b.zone_id || '';
+    return ai.localeCompare(bi);
+  }).forEach(function(a) {
+    grid.appendChild(makePod(a));
+  });
+  document.getElementById('sub-tab-agents-count').textContent = total || '';
+
+  updateAuditBadge(bugs > 0 ? bugs : 'live');
+}
+
+function makePod(a) {
+  var pod = document.createElement('div');
+  var st = a.status;
+  var cls = st === 'completed' ? 'done' : (st === 'running' || st === 'started') ? 'running' : st === 'failed' ? 'failed' : 'pending';
+  pod.className = 'mc-pod ' + cls;
+  var idEl = document.createElement('div');
+  idEl.className = 'mc-pod-id';
+  idEl.textContent = a.agent_id || a.zone_id || '?';
+  pod.appendChild(idEl);
+  var stEl = document.createElement('div');
+  stEl.className = 'mc-pod-status';
+  if (st === 'completed') stEl.textContent = '\u2713 ' + (a.bugs_found || 0) + ' bugs';
+  else if (st === 'running' || st === 'started') stEl.textContent = 'running\u2026';
+  else if (st === 'failed') stEl.textContent = '\u2717 failed';
+  else stEl.textContent = 'pending';
+  pod.appendChild(stEl);
+  if (a.duration_s) {
+    var dur = document.createElement('div');
+    dur.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px';
+    dur.textContent = a.duration_s + 's';
+    pod.appendChild(dur);
+  }
+  return pod;
+}
+
+function renderAuditComplete(data) {
+  document.getElementById('mc-empty').style.display = 'none';
+  document.getElementById('mc-progress-box').style.display = 'none';
+
+  var badge = document.getElementById('audit-status-badge');
+  badge.style.display = 'inline-flex';
+  badge.className = 'complete';
+  badge.textContent = 'COMPLETE';
+
+  var s = data.summary;
+
+  // Sub-tab counts
+  document.getElementById('sub-tab-bugs-count').textContent = s.total_bugs || '';
+  document.getElementById('sub-tab-routes-count').textContent = (data.impacted_routes || []).length || '';
+
+  // ── Overview: Stat cards ──
+  var statRow = document.getElementById('mc-stat-row');
+  statRow.textContent = '';
+  statRow.style.display = 'flex';
+  [
+    {n: s.total_bugs, l: 'Total Bugs', c: 'total', sev: null},
+    {n: s.by_severity.critical || 0, l: 'Critical', c: 'critical', sev: 'critical'},
+    {n: s.by_severity.high || 0, l: 'High', c: 'high', sev: 'high'},
+    {n: s.by_severity.medium || 0, l: 'Medium', c: 'medium', sev: 'medium'},
+    {n: s.by_severity.low || 0, l: 'Low', c: 'low', sev: 'low'},
+    {n: s.files_modified || 0, l: 'Files Fixed', c: 'fixed inert', sev: null},
+    {n: s.files_audited || 0, l: 'Files Audited', c: 'audited inert', sev: null}
+  ].forEach(function(item) {
+    var card = document.createElement('div');
+    card.className = 'mc-stat ' + item.c;
+    var num = document.createElement('div');
+    num.className = 'mc-stat-num';
+    num.textContent = item.n;
+    var lbl = document.createElement('div');
+    lbl.className = 'mc-stat-label';
+    lbl.textContent = item.l;
+    card.appendChild(num);
+    card.appendChild(lbl);
+    if (item.sev) {
+      (function(sev) {
+        card.addEventListener('click', function() {
+          _auditRouteFilter = null;
+          _auditFilter = sev;
+          switchSubTab('bugs');
+          renderBugFilters(data);
+          renderBugTable(data);
+        });
+      })(item.sev);
+    }
+    statRow.appendChild(card);
+  });
+
+  // ── Overview: Summary line ──
+  var summaryEl = document.getElementById('mc-summary-line');
+  summaryEl.style.display = 'block';
+  summaryEl.textContent = '';
+  var parts = [];
+  if (data.mode) parts.push(data.mode.charAt(0).toUpperCase() + data.mode.slice(1) + ' audit');
+  if (data.rounds) parts.push(data.rounds + ' rounds');
+  if (data.agents) parts.push(data.agents + ' agents');
+  if (s.files_audited) parts.push(s.files_audited.toLocaleString() + ' files');
+  summaryEl.textContent = parts.join(' \u2014 ');
+
+  // ── Overview: Severity distribution bar ──
+  var distSection = document.getElementById('mc-dist-section');
+  distSection.style.display = 'block';
+  var distBar = document.getElementById('mc-dist-bar');
+  distBar.textContent = '';
+  var distLegend = document.getElementById('mc-dist-legend');
+  distLegend.textContent = '';
+  var total = s.total_bugs || 1;
+  var sevs = [
+    {key:'critical', color:'var(--red)', label:'Critical'},
+    {key:'high', color:'var(--orange)', label:'High'},
+    {key:'medium', color:'var(--blue)', label:'Medium'},
+    {key:'low', color:'var(--muted)', label:'Low'}
+  ];
+  sevs.forEach(function(sv) {
+    var count = s.by_severity[sv.key] || 0;
+    if (!count) return;
+    var pct = (count / total * 100).toFixed(1);
+    var seg = document.createElement('div');
+    seg.className = 'mc-dist-seg';
+    seg.style.cssText = 'width:' + pct + '%;background:' + sv.color;
+    distBar.appendChild(seg);
+    var li = document.createElement('div');
+    li.className = 'mc-dist-legend-item';
+    var dot = document.createElement('div');
+    dot.className = 'mc-dist-dot';
+    dot.style.background = sv.color;
+    var txt = document.createElement('span');
+    txt.textContent = sv.label + ' ' + pct + '%';
+    li.appendChild(dot);
+    li.appendChild(txt);
+    distLegend.appendChild(li);
+  });
+
+  // ── Bugs sub-tab ──
+  renderBugFilters(data);
+  renderBugTable(data);
+
+  // ── Routes sub-tab ──
+  var rtb = document.getElementById('mc-routes-tbody');
+  rtb.textContent = '';
+  (data.impacted_routes || []).forEach(function(r) {
+    var tr = document.createElement('tr');
+    tr.className = 'route-row';
+
+    var td1 = document.createElement('td');
+    var code = document.createElement('code');
+    code.style.cssText = 'font-family:monospace;font-size:12px;color:var(--blue)';
+    code.textContent = r.route;
+    td1.appendChild(code);
+
+    var td2 = document.createElement('td');
+    var sev = document.createElement('span');
+    sev.className = 'mc-sev mc-sev-' + (r.severity || 'low').toLowerCase();
+    sev.textContent = r.severity;
+    td2.appendChild(sev);
+
+    var td3 = document.createElement('td');
+    td3.style.cssText = 'font-size:12px;color:var(--muted)';
+    var routeBugCount = (data.bugs || []).filter(function(b) {
+      return b.file && r.route !== '(cross-cutting)' && (b.file.indexOf(r.route.replace(/^\//, '').replace(/\//g, '/')) !== -1);
+    }).length;
+    td3.textContent = routeBugCount > 0 ? String(routeBugCount) : '';
+
+    var td4 = document.createElement('td');
+    td4.style.fontSize = '12px';
+    td4.textContent = (r.reason || '').substring(0, 120);
+
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+
+    // Click route row → filter bugs sub-tab
+    (function(route) {
+      tr.addEventListener('click', function() {
+        _auditRouteFilter = route;
+        _auditFilter = 'all';
+        switchSubTab('bugs');
+        renderBugFilters(data);
+        renderBugTable(data);
+      });
+    })(r.route);
+
+    rtb.appendChild(tr);
+  });
+
+  // ── Agents sub-tab ──
+  var agentGrid = document.getElementById('mc-pod-grid');
+  agentGrid.textContent = '';
+  // Derive agent info from bugs (zone IDs from bug IDs like r1-z01-001)
+  var agentMap = {};
+  (data.bugs || []).forEach(function(b) {
+    if (!b.id) return;
+    var m = b.id.match(/^r\d+-([^-]+)/);
+    if (!m) return;
+    var zid = m[1];
+    if (!agentMap[zid]) agentMap[zid] = {id: zid, count: 0};
+    agentMap[zid].count++;
+  });
+  var agentKeys = Object.keys(agentMap).sort();
+  agentKeys.forEach(function(zid) {
+    var a = agentMap[zid];
+    var pod = document.createElement('div');
+    pod.className = 'mc-pod done';
+    var idEl = document.createElement('div');
+    idEl.className = 'mc-pod-id';
+    idEl.textContent = zid;
+    pod.appendChild(idEl);
+    var stEl = document.createElement('div');
+    stEl.className = 'mc-pod-status';
+    stEl.textContent = '\u2713 ' + a.count + ' bugs';
+    pod.appendChild(stEl);
+    agentGrid.appendChild(pod);
+  });
+  document.getElementById('sub-tab-agents-count').textContent = agentKeys.length || (data.agents || '');
+
+  // Bug search filter
+  var searchInput = document.getElementById('bug-search');
+  searchInput.addEventListener('input', function() {
+    renderBugTable(data);
+  });
+
+  updateAuditBadge(s.total_bugs);
+}
+
+function renderBugFilters(data) {
+  var filtersEl = document.getElementById('mc-bug-filter-btns');
+  filtersEl.textContent = '';
+  ['all', 'critical', 'high', 'medium', 'low'].forEach(function(sev) {
+    var btn = document.createElement('button');
+    btn.className = 'filter-btn' + (_auditFilter === sev ? ' active' : '');
+    var count = sev === 'all'
+      ? data.bugs.length
+      : data.bugs.filter(function(b) { return (b.severity || '').toLowerCase() === sev; }).length;
+    btn.textContent = (sev.charAt(0).toUpperCase() + sev.slice(1)) + ' (' + count + ')';
+    btn.addEventListener('click', function() {
+      _auditFilter = sev;
+      _auditRouteFilter = null;
+      renderBugFilters(data);
+      renderBugTable(data);
+    });
+    filtersEl.appendChild(btn);
+  });
+  if (_auditRouteFilter) {
+    var clearBtn = document.createElement('button');
+    clearBtn.className = 'filter-btn active';
+    clearBtn.style.background = 'var(--blue)';
+    clearBtn.textContent = 'Route: ' + _auditRouteFilter + ' \u00d7';
+    clearBtn.addEventListener('click', function() {
+      _auditRouteFilter = null;
+      renderBugFilters(data);
+      renderBugTable(data);
+    });
+    filtersEl.appendChild(clearBtn);
+  }
+}
+
+function renderBugTable(data) {
+  var sevOrder = {critical: 0, high: 1, medium: 2, low: 3};
+  var btb = document.getElementById('mc-bugs-tbody');
+  btb.textContent = '';
+
+  var searchQuery = '';
+  var searchInput = document.getElementById('bug-search');
+  if (searchInput) searchQuery = searchInput.value.toLowerCase();
+
+  var bugs = data.bugs;
+  if (_auditFilter !== 'all') {
+    bugs = bugs.filter(function(b) { return (b.severity || '').toLowerCase() === _auditFilter; });
+  }
+  if (_auditRouteFilter) {
+    var rf = _auditRouteFilter;
+    bugs = bugs.filter(function(b) {
+      if (!b.file) return false;
+      var routeSlug = rf.replace(/^\//, '').replace(/[()]/g, '');
+      return b.file.indexOf(routeSlug) !== -1;
+    });
+  }
+  if (searchQuery) {
+    bugs = bugs.filter(function(b) {
+      return (b.title || '').toLowerCase().indexOf(searchQuery) !== -1
+        || (b.file || '').toLowerCase().indexOf(searchQuery) !== -1
+        || (b.id || '').toLowerCase().indexOf(searchQuery) !== -1
+        || (b.category || '').toLowerCase().indexOf(searchQuery) !== -1;
+    });
+  }
+
+  bugs.slice().sort(function(a, b) {
+    return (sevOrder[(a.severity||'').toLowerCase()] || 9) - (sevOrder[(b.severity||'').toLowerCase()] || 9);
+  }).forEach(function(bug) {
+    btb.appendChild(makeBugRow(bug));
+  });
+}
+
+function makeBugRow(bug) {
+  var tr = document.createElement('tr');
+  var sev = (bug.severity || 'low').toLowerCase();
+  tr.className = 'sev-' + sev;
+
+  var td1 = document.createElement('td');
+  td1.style.cssText = 'font-size:11px;white-space:nowrap;color:var(--muted)';
+  td1.textContent = bug.id || '';
+  tr.appendChild(td1);
+
+  var td2 = document.createElement('td');
+  var sevSpan = document.createElement('span');
+  sevSpan.className = 'mc-sev mc-sev-' + sev;
+  sevSpan.textContent = sev;
+  td2.appendChild(sevSpan);
+  tr.appendChild(td2);
+
+  var td3 = document.createElement('td');
+  var catSpan = document.createElement('span');
+  catSpan.className = 'mc-cat';
+  catSpan.textContent = bug.category || '';
+  td3.appendChild(catSpan);
+  tr.appendChild(td3);
+
+  var td4 = document.createElement('td');
+  td4.className = 'mc-file';
+  td4.textContent = (bug.file || '').replace(/^apps\//, '');
+  tr.appendChild(td4);
+
+  var td5 = document.createElement('td');
+  td5.style.cssText = 'font-size:12px;color:var(--muted);white-space:nowrap';
+  td5.textContent = bug.line ? String(bug.line) : '';
+  tr.appendChild(td5);
+
+  var td6 = document.createElement('td');
+  td6.style.maxWidth = '320px';
+  td6.textContent = bug.title || '';
+  tr.appendChild(td6);
+
+  var td7 = document.createElement('td');
+  var fixSpan = document.createElement('span');
+  fixSpan.style.color = bug.fix_applied ? 'var(--green)' : 'var(--red)';
+  fixSpan.textContent = bug.fix_applied ? '\u2713' : '\u2717';
+  td7.appendChild(fixSpan);
+  tr.appendChild(td7);
+
+  return tr;
+}
+
+// ── Auto-load on page open (audit tab is default) ──
+(function() {
+  loadAuditData();
+  fetch('/audit-results.json')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.bugs && data.bugs.length > 0) updateAuditBadge(data.summary.total_bugs);
+    }).catch(function(){});
+  fetch('/audit-monitor.json')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.status === 'running') updateAuditBadge('live');
+    }).catch(function(){});
+})();
 </script>
 </body>
 </html>
