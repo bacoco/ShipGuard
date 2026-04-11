@@ -749,7 +749,7 @@ function setTheme(t) {
       }
       if (t.screenshot) {
         var img = document.createElement('img'); img.className='thumb';
-        img.src = t.screenshot.replace('screenshots/','thumbs/');
+        img.src = 'thumbs/' + t.screenshot.split('/').pop();
         img.alt = t.name; img.loading='lazy';
         img.onerror = function(){this.src=t.screenshot;};
         card.appendChild(img);
@@ -851,7 +851,8 @@ function setTheme(t) {
     }
 
     // ── Undo button ──
-    document.getElementById('pen-undo').addEventListener('click', function() {
+    var penUndo = document.getElementById('pen-undo');
+    if (penUndo) penUndo.addEventListener('click', function() {
       if (!currentTestId || !annotationData[currentTestId] || !annotationData[currentTestId].length) return;
       annotationData[currentTestId].pop();
       if (!annotationData[currentTestId].length) delete annotationData[currentTestId];
@@ -864,7 +865,8 @@ function setTheme(t) {
     });
 
     // ── Redo page button ──
-    document.getElementById('pen-redo').addEventListener('click', function() {
+    var penRedo = document.getElementById('pen-redo');
+    if (penRedo) penRedo.addEventListener('click', function() {
       if (!currentTestId) return;
       if (redoFlags[currentTestId]) {
         delete redoFlags[currentTestId];
@@ -1001,9 +1003,6 @@ function setTheme(t) {
     if (svg) svg.textContent = '';
 
     var annots = annotationData[currentTestId] || [];
-    var img = document.getElementById('lb-img');
-    var iw = img.clientWidth || img.offsetWidth || 800;
-    var ih = img.clientHeight || img.offsetHeight || 500;
 
     annots.forEach(function(a, idx) {
       if (a.type !== 'card') return;
@@ -1028,6 +1027,8 @@ function setTheme(t) {
         var startX, startY, startPinX, startPinY;
         var startZone = null, startCardX, startCardY;
         var zoneEl = null;
+        // r1-z02-018: cache lb-img reference once, avoid repeated getElementById on every pointermove
+        var lbImgEl = document.getElementById('lb-img');
         pinEl.addEventListener('pointerdown', function(e) {
           dragging = true;
           startX = e.clientX; startY = e.clientY;
@@ -1048,7 +1049,7 @@ function setTheme(t) {
         });
         pinEl.addEventListener('pointermove', function(e) {
           if (!dragging) return;
-          var imgEl = document.getElementById('lb-img');
+          var imgEl = lbImgEl;
           var w = imgEl.clientWidth || 800;
           var h = imgEl.clientHeight || 500;
           var dx = (e.clientX - startX) / w;
@@ -1197,7 +1198,9 @@ function setTheme(t) {
     var py = annot.pinY * ih;
     // Card bottom-center in px — approximate: card top-left + half width, full height
     // We use card percentage positions; card width ~180px, height ~70px
-    var cardW = 180, cardH = 70;
+    var cardEl = annot._cardEl;
+    var cardW = cardEl ? cardEl.offsetWidth : 180; // approximate — matches CSS .ann-card width/height
+    var cardH = cardEl ? cardEl.offsetHeight : 70; // approximate — matches CSS .ann-card width/height
     var cx = annot.cardX * iw + cardW * 0.5;
     var cy = annot.cardY * ih + cardH;
     // Clamp
@@ -1324,7 +1327,7 @@ function setTheme(t) {
   function openLightbox(id) {
     var t = D.tests.find(function(x){return x.id===id;});
     if (!t) return;
-    var list = getLbList ? getLbList() : [];
+    var list = getLbList();
     for (var li=0;li<list.length;li++){if(list[li].id===id){currentLbIndex=li;break;}}
     var lb = document.getElementById('lightbox');
     var img = document.getElementById('lb-img');
@@ -1411,7 +1414,13 @@ function setTheme(t) {
   // ── Keyboard ──
   document.addEventListener('keydown', function(e) {
     if (e.key==='Escape') {
-      if (document.getElementById('note-overlay').classList.contains('visible')) { saveAnnotation(''); }
+      if (document.getElementById('note-overlay').classList.contains('visible')) {
+        // r1-z02-008: cancel annotation instead of saving empty string
+        document.getElementById('note-overlay').style.display = 'none';
+        document.getElementById('note-overlay').classList.remove('visible');
+        pendingAnnot = null;
+        editingIndex = null;
+      }
       else if (document.getElementById('lightbox').classList.contains('visible')) closeLightbox();
       else if (selectedCount>0) { selected={};selectedCount=0;renderGrid();updateBar(); }
     }
@@ -1456,7 +1465,7 @@ function setTheme(t) {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(manifest)
-    }).then(function(r){ return r.json(); }).then(function(d) {
+    }).then(function(r){ if (!r.ok) throw new Error('Save failed: ' + r.status); return r.json(); }).then(function(d) {
       if (d.ok) {
         clearSession();
         document.getElementById('success-overlay').classList.add('visible');
@@ -1627,10 +1636,15 @@ var _auditFilter = 'all';
 var _auditRouteFilter = null;  // route prefix filter from Routes sub-tab click
 var _auditPollTimer = null;
 
+var _auditLoadInProgress = false;
 function loadAuditData() {
+  // r1-z02-010: guard against re-entrant calls that would create a loop
+  if (_auditLoadInProgress) return;
+  _auditLoadInProgress = true;
   fetch('/audit-results.json')
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(data) {
+      _auditLoadInProgress = false;
       if (data && data.bugs && data.bugs.length > 0) {
         _auditData = data;
         stopAuditPoll();
@@ -1639,7 +1653,7 @@ function loadAuditData() {
         loadAuditMonitor();
       }
     })
-    .catch(function() { loadAuditMonitor(); });
+    .catch(function() { _auditLoadInProgress = false; loadAuditMonitor(); });
 }
 
 function loadAuditMonitor() {
@@ -1769,6 +1783,8 @@ function renderAuditComplete(data) {
   badge.textContent = 'COMPLETE';
 
   var s = data.summary;
+  // r1-z02-005: guard against missing by_severity
+  var sev = (s && s.by_severity) || {};
 
   // Sub-tab counts
   document.getElementById('sub-tab-bugs-count').textContent = s.total_bugs || '';
@@ -1780,10 +1796,10 @@ function renderAuditComplete(data) {
   statRow.style.display = 'flex';
   [
     {n: s.total_bugs, l: 'Total Bugs', c: 'total', sev: null},
-    {n: s.by_severity.critical || 0, l: 'Critical', c: 'critical', sev: 'critical'},
-    {n: s.by_severity.high || 0, l: 'High', c: 'high', sev: 'high'},
-    {n: s.by_severity.medium || 0, l: 'Medium', c: 'medium', sev: 'medium'},
-    {n: s.by_severity.low || 0, l: 'Low', c: 'low', sev: 'low'},
+    {n: sev.critical || 0, l: 'Critical', c: 'critical', sev: 'critical'},
+    {n: sev.high || 0, l: 'High', c: 'high', sev: 'high'},
+    {n: sev.medium || 0, l: 'Medium', c: 'medium', sev: 'medium'},
+    {n: sev.low || 0, l: 'Low', c: 'low', sev: 'low'},
     {n: s.files_modified || 0, l: 'Files Fixed', c: 'fixed inert', sev: null},
     {n: s.files_audited || 0, l: 'Files Audited', c: 'audited inert', sev: null}
   ].forEach(function(item) {
@@ -1837,7 +1853,7 @@ function renderAuditComplete(data) {
     {key:'low', color:'var(--muted)', label:'Low'}
   ];
   sevs.forEach(function(sv) {
-    var count = s.by_severity[sv.key] || 0;
+    var count = sev[sv.key] || 0;
     if (!count) return;
     var pct = (count / total * 100).toFixed(1);
     var seg = document.createElement('div');
@@ -2368,9 +2384,17 @@ function recRunSelected() {
 
 function recCopyCommand() {
   var pre = document.getElementById('rec-run-command');
-  if (pre && navigator.clipboard) {
-    navigator.clipboard.writeText(pre.textContent);
-  }
+  if (!pre || !navigator.clipboard) return;
+  var text = pre.textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    // success — nothing needed, command is now in clipboard
+  }).catch(function() {
+    // fallback: select the text for manual copy
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
 }
 
 function recCloseModal() {

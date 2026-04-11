@@ -45,13 +45,15 @@ function yamlParse(text) {
       }
       if (val === '' || val === '|' || val === '>') {
         // Empty value — could be an array or a nested object; decide on next line
+        // Known limitation: block scalars (| and >) are not supported.
+        // ShipGuard manifests don't use them — all values are inline.
         currentKey = key;
         result[key] = null; // placeholder; will be set to [] or {} on first child line
         continue;
       }
       if (val === 'true') { result[key] = true; currentKey = key; continue; }
       if (val === 'false') { result[key] = false; currentKey = key; continue; }
-      if (/^\d+$/.test(val)) { result[key] = parseInt(val); currentKey = key; continue; }
+      if (/^-?\d+(\.\d+)?$/.test(val)) { result[key] = parseFloat(val); currentKey = key; continue; }
       result[key] = val;
       currentKey = key;
       continue;
@@ -77,7 +79,7 @@ function yamlParse(text) {
           currentObj[leadKeyMatch[1]] = propVal === '' ? null
             : propVal === 'true' ? true
             : propVal === 'false' ? false
-            : /^\d+$/.test(propVal) ? parseInt(propVal)
+            : /^-?\d+(\.\d+)?$/.test(propVal) ? parseFloat(propVal)
             : propVal;
           currentArray.push(currentObj);
         } else {
@@ -96,7 +98,7 @@ function yamlParse(text) {
           const val = propMatch[2].replace(/^["']|["']$/g, '').trim();
           if (val === 'true') currentObj[propMatch[1]] = true;
           else if (val === 'false') currentObj[propMatch[1]] = false;
-          else if (/^\d+$/.test(val)) currentObj[propMatch[1]] = parseInt(val);
+          else if (/^-?\d+(\.\d+)?$/.test(val)) currentObj[propMatch[1]] = parseFloat(val);
           else currentObj[propMatch[1]] = val;
           continue;
         }
@@ -426,7 +428,8 @@ const PID_FILE = join(RESULTS_DIR, '.server.pid');
 // --stop: kill existing server
 if (process.argv.includes('--stop')) {
   if (existsSync(PID_FILE)) {
-    const pid = parseInt(readFileSync(PID_FILE, 'utf8').trim());
+    const pid = parseInt(readFileSync(PID_FILE, 'utf8').trim(), 10);
+    if (isNaN(pid)) { console.error('Invalid PID file'); process.exit(1); }
     try { process.kill(pid); } catch { /* already dead */ }
     writeFileSync(PID_FILE, '', 'utf8');
     console.log(`Server stopped (PID ${pid}).`);
@@ -474,6 +477,7 @@ if (process.argv.includes('--serve')) {
     });
   }
 
+  // Wildcard CORS: intentional — server is localhost-only, not exposed to network
   const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' };
 
   const server = http.createServer(async (req, res) => {
@@ -565,9 +569,10 @@ if (process.argv.includes('--serve')) {
       req.on('data', chunk => {
         bodySize += chunk.length;
         if (bodySize > MAX_BODY) {
-          req.destroy();
-          res.writeHead(413, { 'Content-Type': 'application/json' });
+          // r1-z02-012: send response BEFORE destroying — headers must be sent first
+          res.writeHead(413, { 'Content-Type': 'application/json', ...CORS });
           res.end(JSON.stringify({ error: 'Payload too large (max 5 MB)' }));
+          req.destroy();
           return;
         }
         body += chunk;
