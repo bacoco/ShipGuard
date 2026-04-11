@@ -1,140 +1,192 @@
-![ShipGuard](docs/screenshots/hero-banner.jpg)
-
 # ShipGuard
 
-**AI-powered code audit + visual E2E testing. Zero tests written.**
+![ShipGuard — Agentic AI Audit & Visual Regression](docs/screenshots/hero-banner.jpg)
 
-You push code. You don't know what you broke. ShipGuard dispatches parallel AI agents to find bugs in your code, then visually verifies the impacted pages with real browser screenshots. No test files to write, no test infrastructure to maintain.
+**AI-powered code audit + visual testing for Claude Code.**
+
+Two independent superpowers. Use one or both.
+
+> ⚠️ **Token Usage**
+> Code audits are token-intensive. A `standard` audit (10 agents) on a medium codebase uses ~2M tokens. `deep` (15 agents, 2 rounds) can use 5M+. `paranoid` (20 agents, 3 rounds) can exceed 10M tokens. Monitor your usage.
 
 ---
 
-## Install
+## Code Audit
 
-ShipGuard is a Claude Code plugin. Add it in one line:
-
-```
-claude plugin add bacoco/shipguard
-```
-
-**Requires:** `agent-browser` CLI
+Dispatch parallel AI agents to audit your entire codebase. Each agent reviews a non-overlapping zone, finds bugs, fixes them, and produces structured JSON. Watch progress in real-time on the Mission Control dashboard.
 
 ```bash
+/sg-code-audit deep
+```
+
+### Modes
+
+| Mode | Agents | Rounds | Coverage |
+|------|--------|--------|----------|
+| quick | 5 | 1 | Surface scan |
+| standard | 10 | 1 | Full codebase (default) |
+| deep | 15 | 2 | Surface + runtime behavior |
+| paranoid | 20 | 3 | Surface + runtime + edge cases & security |
+
+### Multi-round depth
+
+- **R1** — Null refs, missing guards, type mismatches
+- **R2** — Race conditions, async pitfalls, state management
+- **R3** — Edge cases, injection, auth bypass, data leaks
+
+### Smart Scope
+
+By default, ShipGuard detects what changed and asks whether to limit the audit:
+
+```
+/sg-code-audit       # "12 files changed since main. Audit only what changed?"
+```
+
+Override with flags:
+
+| Flag | Effect |
+|------|--------|
+| `--all` | Force full scope, skip the question |
+| `--diff=<ref>` | Use a specific base reference |
+| `--focus=path/` | Restrict to a directory |
+| `--report-only` | Find bugs but do not fix them |
+
+Flags combine freely: `/sg-code-audit deep --focus=src/ --report-only`
+
+### Live Dashboard
+
+At startup, the audit offers to open the Mission Control dashboard. The **Code Audit** tab shows real-time agent pods (running/done/pending), severity heatmap, bug table filterable by severity and free-text search. Polls every 3s during active audit.
+
+![Code Audit — Dark Mode](docs/screenshots/code-audit-dark.png)
+
+![Bugs filtered by Critical](docs/screenshots/bugs-critical.png)
+
+### Output
+
+Results are written to `audit-results.json`:
+
+- `summary` — totals by severity and category
+- `bugs[]` — file, line, severity, description, fix status
+- `impacted_routes[]` — UI routes affected (consumed by `/sg-visual-run --from-audit`)
+
+### Supported languages
+
+Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
+
+---
+
+## Visual Testing
+
+Agent-browser E2E testing with LLM-powered assertions. Discover routes, generate tests, run them, review screenshots, annotate problems, auto-fix.
+
+![Visual Tests — Screenshot Grid](docs/screenshots/visual-tests.png)
+
+```bash
+/sg-visual-run I changed the sidebar
+```
+
+### Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/sg-visual-discover` | Scan codebase, generate YAML test manifests per route |
+| `/sg-visual-run [what]` | Execute manifests — natural language or flags |
+| `/sg-visual-review` | Launch interactive screenshot review dashboard |
+| `/sg-visual-fix` | Auto-fix bugs annotated in the review dashboard |
+| `/sg-visual-review-stop` | Stop the review server |
+
+### Smart Annotations (Gemini-style)
+
+The review dashboard uses **draggable annotation cards** to mark visual bugs on screenshots. Click anywhere on a screenshot to place a pin, then describe the problem.
+
+**How it works:**
+1. Open a screenshot in the lightbox
+2. **Double-click** anywhere on the image — a pin appears instantly (or click **+ Add Note** first)
+3. **Click** = point pin. **Drag** = rectangle zone selection (highlights the problem area)
+4. Choose severity + type your note → a card appears connected to the pin
+5. **Drag the pin** to reposition — zone, card, and leader line all move together
+6. **Drag the card** separately to reposition just the label
+7. **Double-click** a card to edit text/severity, click X to delete
+8. Click **Validate & Generate Report** when done → produces `fix-manifest.json` with zone coordinates
+9. Run `/sg-visual-fix` → AI reads your annotations + zone coords, traces to source code, fixes automatically
+
+**Severity colors:**
+
+| Color | Level | When to use |
+|-------|-------|-------------|
+| 🔴 Red | **Critical** | Broken layout, missing content, crash |
+| 🟠 Orange | **High** | Wrong alignment, color mismatch, bad spacing |
+| 🔵 Blue | **Medium** | Minor visual inconsistency, polish needed |
+| ⚪ Gray | **Info** | Suggestion, not a bug |
+
+![Smart Annotations — Draggable Cards](docs/screenshots/smart-annotations.png)
+
+### sg-visual-run options
+
+```bash
+/sg-visual-run                                  # Interactive — choose scope
+/sg-visual-run I changed the sidebar, check it  # Natural language
+/sg-visual-run --from-audit                     # Test audit-impacted routes
+/sg-visual-run --regressions                    # Re-run previously failed tests
+/sg-visual-run --all                            # Full suite
+```
+
+`--from-audit` reads `impacted_routes` from `audit-results.json` — a natural bridge between the two features.
+
+### Discover options
+
+```bash
+/sg-visual-discover                    # Current project
+/sg-visual-discover --all              # Full discovery
+/sg-visual-discover --refresh-existing # Regenerate existing manifests
+```
+
+Supports Next.js (App Router & Pages Router), React Router, Vue, Angular.
+
+---
+
+## Compatibility
+
+Built for **Claude Code**. Partial support for other AI CLIs:
+
+| Feature | Claude Code | Codex CLI / Gemini CLI |
+|---------|------------|----------------------|
+| Code Audit (parallel) | ✅ Full | ❌ Requires Agent tool |
+| Visual Testing | ✅ Full | ✅ agent-browser is CLI-independent |
+| Review Dashboard | ✅ Full | ✅ Pure Node.js |
+| Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
+
+The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
+
+Community adapters welcome.
+
+---
+
+## Quick Start
+
+```bash
+# Install
+claude plugin add bacoco/shipguard
 npm install -g agent-browser && agent-browser install --with-deps
-```
 
-Restart Claude Code. The `/sg-*` commands are ready.
-
----
-
-## The flow
-
-### Step 1 -- Find the bugs
-
-```
+# Audit your code
 /sg-code-audit
+
+# Test your UI
+/sg-visual-run
 ```
 
-ShipGuard detects what changed since your base branch and proposes a focused audit. Parallel agents scan the impacted files and their direct importers. Each bug is classified by severity and category. Fixes are applied automatically in isolated git worktrees.
+## Configuration
 
-![Code Audit — bugs found by severity](docs/screenshots/code-audit-bugs.png)
+Create `visual-tests/_config.yaml`:
 
-When the audit starts, ShipGuard offers to open a live dashboard at **http://localhost:8888**. While agents work in parallel, the Monitor tab shows a real-time Gantt timeline: which agent is running, which finished, how many tokens each consumed, how many bugs each found, and the estimated cost. If an agent overflows its context, you see the re-split happen live.
-
-![Monitor — live Gantt timeline of audit agents](docs/screenshots/monitor-tab-gantt.png)
-
-### Step 2 -- Discover what to test
-
+```yaml
+base_url: "http://localhost:3000"
+credentials:
+  username: "testuser"
+  password: "testpass"
+build_command: "docker compose up -d --build frontend"  # optional
 ```
-/sg-visual-discover
-```
-
-Before running any visual test, ShipGuard scans your entire application: routes, pages, navigation tree, auth flows, feature flags. It generates YAML test manifests automatically -- one per user journey. You review the generated manifests, adjust if needed, and you're ready to test.
-
-This is the foundation: without discovery, you don't know what your app looks like. With discovery, you have a complete map of every testable page.
-
-![Discover — scan routes and generate test manifests](docs/screenshots/discover-output.png)
-
-### Step 3 -- Run visual tests
-
-```
-/sg-visual-run --from-audit
-```
-
-The impacted routes from the audit are opened in a real browser. Each page is screenshotted and compared to expected behavior. You can also run all tests, only regressions, or describe what to test in natural language.
-
-![Visual Tests — screenshot grid with pass/fail results](docs/screenshots/visual-tests-grid.png)
-
-### Step 4 -- Review in the dashboard
-
-```
-/sg-visual-review
-```
-
-All results in one page at **http://localhost:8888** -- three tabs: **Visual Tests** (screenshots), **Code Audit** (bugs), and **Monitor** (the Gantt timeline from step 1). Filter by severity, category, status. Search. Export CSV.
-
-### Step 5 -- Annotate problems visually
-
-Click any screenshot to open it full-screen. Draw rectangles around broken areas, circle UI problems with the freehand pen, or flag a page for complete redo. Add a text note describing what's wrong.
-
-![Annotate — draw on screenshots and describe problems](docs/screenshots/annotation-with-note.png)
-
-The annotation is the key: you mark what's broken, in your own words. No need to write code or selectors.
-
-### Step 6 -- Let the AI fix it
-
-```
-/sg-visual-fix
-```
-
-Click **Validate & Generate Report** in the dashboard. Then run `/sg-visual-fix`. The AI reads every annotation you drew, traces each problem to the exact source file, fixes it, and captures before/after screenshots to prove the fix worked.
-
----
-
-## Skills
-
-| Skill | What it does |
-|-------|-------------|
-| `/sg-code-audit` | Dispatch parallel agents to find and fix bugs across your repo |
-| `/sg-visual-discover` | Scan your app and generate YAML test manifests automatically |
-| `/sg-visual-run` | Run visual tests with agent-browser -- scripted or natural language |
-| `/sg-visual-review` | Interactive dashboard -- screenshots + code audit in one page |
-| `/sg-visual-fix` | Read annotated screenshots, trace bugs to source, fix and verify |
-| `/sg-visual-review-stop` | Stop the review dashboard server |
-
----
-
-## Code Audit Modes
-
-| Mode | Agents | Rounds | What it finds |
-|------|--------|--------|---------------|
-| `quick` | 5 | 1 | Known patterns, lint-like issues |
-| `standard` | 10 | 1 | Broader coverage, standard audit |
-| `deep` | 15 | 2 | + runtime behavior, race conditions |
-| `paranoid` | 20 | 3 | + edge cases, security, logic errors |
-
-```
-/sg-code-audit paranoid
-```
-
----
-
-## How it works
-
-Tests are YAML manifests that describe what the user sees -- not how the DOM is structured. When a CSS class changes, selector-based tests break. These don't.
-
-1. **Code audit** -- Parallel agents scan your codebase for bugs, grouped by severity
-2. **Discovery** -- ShipGuard scans the app and maps every route, page, and user journey
-3. **Visual testing** -- Real browser sessions screenshot every impacted page
-4. **Human review** -- Annotate problems directly on screenshots with pen tools and notes
-5. **AI fix** -- The AI reads annotations, traces to source code, fixes, and shows before/after
-
----
-
-## Proven at scale
-
-112 routes. 16 backend services. 6 authentication flows. Next.js, React, Vue, Angular -- any framework with detectable routes. Handles JWT auth, feature flags, file uploads, multi-step workflows, responsive layouts.
-
----
 
 ## License
 
