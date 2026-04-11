@@ -57,9 +57,9 @@ Flags combine freely: `/sg-code-audit deep --focus=src/ --report-only`
 
 At startup, the audit offers to open the Mission Control dashboard. The **Code Audit** tab shows real-time agent pods (running/done/pending), severity heatmap, bug table filterable by severity and free-text search. Polls every 3s during active audit.
 
-![Code Audit — Dark Mode](screenshots/code-audit-dark.png)
+![Code Audit — Dark Mode](screenshots/code-audit-dark.jpg)
 
-![Bugs filtered by Critical](screenshots/bugs-critical.png)
+![Bugs filtered by Critical](screenshots/bugs-critical.jpg)
 
 ### Output
 
@@ -79,7 +79,7 @@ Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JV
 
 Agent-browser E2E testing with LLM-powered assertions. Discover routes, generate tests, run them, review screenshots, annotate problems, auto-fix.
 
-![Visual Tests — Screenshot Grid](screenshots/visual-tests.png)
+![Visual Tests — Screenshot Grid](screenshots/visual-tests.jpg)
 
 ```bash
 /sg-visual-run I changed the sidebar
@@ -119,7 +119,7 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 | 🔵 Blue | **Medium** | Minor visual inconsistency, polish needed |
 | ⚪ Gray | **Info** | Suggestion, not a bug |
 
-![Smart Annotations — Draggable Cards](screenshots/smart-annotations.png)
+![Smart Annotations — Draggable Cards](screenshots/smart-annotations.jpg)
 
 ### sg-visual-run options
 
