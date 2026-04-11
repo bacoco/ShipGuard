@@ -4,7 +4,7 @@
  * Opens a Playwright Chromium with a recording toolbar.
  * Usage: node visual-tests/sg-record.mjs <url> [--name <name>] [--storage <auth.json>] [--save-storage <path>]
  */
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { actionsToYaml } from './lib/actions-to-yaml.mjs';
@@ -23,10 +23,17 @@ function getFlag(name) {
   return args[idx + 1];
 }
 
-// First non-flag arg = URL (skip values that follow --flags)
+// Known flags that take a value (others are boolean)
+const FLAGS_WITH_VALUE = new Set(['name', 'storage', 'save-storage']);
+
+// First non-flag arg = URL
 let url = null;
 for (let i = 0; i < args.length; i++) {
-  if (args[i].startsWith('--')) { i++; continue; } // skip flag + its value
+  if (args[i].startsWith('--')) {
+    const flagName = args[i].slice(2);
+    if (FLAGS_WITH_VALUE.has(flagName)) i++; // skip the value only for flags that take one
+    continue;
+  }
   url = args[i];
   break;
 }
@@ -112,6 +119,7 @@ function stepDetail(step) {
 function askQuestion(prompt) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.on('close', () => resolve('')); // handles SIGINT / stream end
     rl.question(prompt, (answer) => {
       rl.close();
       resolve(answer.trim());
@@ -188,9 +196,13 @@ async function main() {
     }, 500);
 
     context.on('close', () => {
-      stopped = true;
-      clearInterval(pollId);
-      resolve();
+      // Give bridge events 200ms to flush before resolving
+      // (stop event carries the authoritative step list)
+      setTimeout(() => {
+        stopped = true;
+        clearInterval(pollId);
+        resolve();
+      }, 200);
     });
   });
 
@@ -228,8 +240,9 @@ async function main() {
   // Generate YAML
   const yaml = actionsToYaml(allSteps, { name, baseUrl });
 
-  // Write manifest
+  // Write manifest (ensure directory exists)
   const manifestDir = join(__dirname, 'manifests');
+  mkdirSync(manifestDir, { recursive: true });
   const outPath = join(manifestDir, `recorded-${name}.yaml`);
   writeFileSync(outPath, yaml);
 

@@ -1604,6 +1604,7 @@ function switchMainTab(tab) {
     if (view) view.style.display = t === tab ? (t === 'visual' ? '' : 'block') : 'none';
   });
   if (tab === 'audit') loadAuditData();
+  else stopAuditPoll(); // stop polling when switching away from audit tab
   if (tab === 'recorded') renderRecordedGrid();
 }
 
@@ -2064,11 +2065,15 @@ function renderAuditComplete(data) {
   });
   document.getElementById('sub-tab-agents-count').textContent = agentKeys.length || (data.agents || '');
 
-  // Bug search filter
+  // Bug search filter — register once, not on every poll call
   var searchInput = document.getElementById('bug-search');
-  searchInput.addEventListener('input', function() {
-    renderBugTable(data);
-  });
+  if (!searchInput._auditListenerBound) {
+    searchInput._auditListenerBound = true;
+    searchInput.addEventListener('input', function() {
+      if (window._lastAuditData) renderBugTable(window._lastAuditData);
+    });
+  }
+  window._lastAuditData = data;
 
   updateAuditBadge(s.total_bugs);
 }
@@ -2192,18 +2197,9 @@ function makeBugRow(bug) {
 }
 
 // ── Auto-load on page open (audit tab is default) ──
+// Single call — loadAuditData handles badge updates internally
 (function() {
   loadAuditData();
-  fetch('/audit-results.json')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
-      if (data && data.bugs && data.bugs.length > 0) updateAuditBadge(data.summary.total_bugs);
-    }).catch(function(){});
-  fetch('/audit-monitor.json')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
-      if (data && data.status === 'running') updateAuditBadge('live');
-    }).catch(function(){});
 })();
 
 // ════════════════ RECORDED TESTS ════════════════
@@ -2314,7 +2310,7 @@ function renderRecordedGrid() {
 
     // Hover effect
     card.addEventListener('mouseenter', function() { card.style.borderColor = 'var(--accent)'; card.style.transform = 'translateY(-2px)'; card.style.boxShadow = '0 4px 16px rgba(0,0,0,.2)'; });
-    card.addEventListener('mouseleave', function() { card.style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)'; card.style.transform = ''; card.style.boxShadow = ''; });
+    card.addEventListener('mouseleave', function() { card.style.borderColor = !!recSelected[rec.id] ? 'var(--accent)' : 'var(--border)'; card.style.transform = ''; card.style.boxShadow = ''; });
 
     grid.appendChild(card);
   });
