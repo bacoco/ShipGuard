@@ -88,6 +88,26 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .mc-dist-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
 .mc-dist-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
 
+/* ── Overview: section headers ── */
+.mc-section-header{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
+
+/* ── Overview: top bugs table ── */
+.mc-top-bugs-table td{padding:7px 12px}
+.mc-top-bugs-table tr{cursor:pointer}
+.mc-top-bugs-table tr:hover td{background:var(--secondary)}
+
+/* ── Overview: category bar chart ── */
+.mc-cat-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+.mc-cat-label{width:180px;color:var(--muted);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.mc-cat-track{flex:1;height:10px;background:var(--secondary);border-radius:5px;overflow:hidden}
+.mc-cat-fill{height:100%;border-radius:5px;transition:.4s}
+.mc-cat-count{width:32px;text-align:right;color:var(--fg);font-weight:700;flex-shrink:0}
+
+/* ── Overview: about box ── */
+.mc-about-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;font-size:13px;color:var(--muted);line-height:1.6}
+.mc-about-box strong{color:var(--fg)}
+.mc-about-box code{background:var(--secondary);padding:1px 7px;border-radius:4px;color:var(--accent);font-size:12px}
+
 /* ── Bugs sub-tab ── */
 .mc-bug-filters-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
 .filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:.2s}
@@ -397,6 +417,26 @@ body.light #bug-search{background:var(--surface)}
     <div id="mc-dist-section" style="display:none">
       <div class="mc-dist-bar" id="mc-dist-bar"></div>
       <div class="mc-dist-legend" id="mc-dist-legend"></div>
+    </div>
+
+    <!-- Top 5 Critical Bugs -->
+    <div id="mc-top-bugs-section" style="display:none;margin-top:24px">
+      <div class="mc-section-header" id="mc-top-bugs-header"></div>
+      <table class="mc-table mc-top-bugs-table" id="mc-top-bugs-table">
+        <thead><tr><th>Severity</th><th>File</th><th>Line</th><th>Title</th></tr></thead>
+        <tbody id="mc-top-bugs-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Category Breakdown -->
+    <div id="mc-cat-section" style="display:none;margin-top:28px">
+      <div class="mc-section-header" id="mc-cat-header"></div>
+      <div id="mc-cat-chart"></div>
+    </div>
+
+    <!-- About ShipGuard -->
+    <div id="mc-about-section" style="display:none;margin-top:28px">
+      <div class="mc-about-box" id="mc-about-box"></div>
     </div>
 
     <!-- Empty state -->
@@ -1775,6 +1815,135 @@ function renderAuditComplete(data) {
     li.appendChild(txt);
     distLegend.appendChild(li);
   });
+
+  // ── Overview: Top 5 Critical Bugs ──
+  var topBugsSection = document.getElementById('mc-top-bugs-section');
+  var topBugsTbody = document.getElementById('mc-top-bugs-tbody');
+  topBugsTbody.textContent = '';
+  var sevOrder = {critical:0, high:1, medium:2, low:3};
+  var sortedBugs = (data.bugs || []).slice().sort(function(a, b) {
+    return (sevOrder[(a.severity||'low').toLowerCase()] || 3) - (sevOrder[(b.severity||'low').toLowerCase()] || 3);
+  });
+  var top5 = sortedBugs.slice(0, 5);
+  if (top5.length) {
+    var topHeader = document.getElementById('mc-top-bugs-header');
+    topHeader.textContent = 'Top ' + top5.length + ' Highest-Severity Bugs';
+    topBugsSection.style.display = 'block';
+    top5.forEach(function(bug) {
+      var tr = document.createElement('tr');
+      tr.className = 'sev-' + (bug.severity || 'low').toLowerCase();
+      var sev = (bug.severity || 'low').toLowerCase();
+
+      var td1 = document.createElement('td');
+      var badge = document.createElement('span');
+      badge.className = 'mc-sev mc-sev-' + sev;
+      badge.textContent = bug.severity || 'low';
+      td1.appendChild(badge);
+
+      var td2 = document.createElement('td');
+      var fileCode = document.createElement('code');
+      fileCode.className = 'mc-file';
+      var fname = (bug.file || '');
+      fileCode.textContent = fname.length > 40 ? '\u2026' + fname.slice(-38) : fname;
+      fileCode.title = fname;
+      td2.appendChild(fileCode);
+
+      var td3 = document.createElement('td');
+      td3.style.cssText = 'font-size:12px;color:var(--muted);white-space:nowrap';
+      td3.textContent = bug.line || '';
+
+      var td4 = document.createElement('td');
+      td4.style.fontSize = '13px';
+      td4.textContent = bug.title || bug.description || '';
+
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+      (function(bugSev) {
+        tr.addEventListener('click', function() {
+          _auditRouteFilter = null;
+          _auditFilter = bugSev;
+          switchSubTab('bugs');
+          renderBugFilters(data);
+          renderBugTable(data);
+        });
+      })(sev);
+      topBugsTbody.appendChild(tr);
+    });
+  }
+
+  // ── Overview: Category Breakdown ──
+  var catSection = document.getElementById('mc-cat-section');
+  var catChart = document.getElementById('mc-cat-chart');
+  catChart.textContent = '';
+  var byCategory = s.by_category || {};
+  // Build from bugs if summary missing
+  if (!Object.keys(byCategory).length) {
+    (data.bugs || []).forEach(function(b) {
+      var cat = b.category || b.type || 'other';
+      byCategory[cat] = (byCategory[cat] || 0) + 1;
+    });
+  }
+  var catEntries = Object.keys(byCategory).map(function(k) { return {k: k, v: byCategory[k]}; });
+  catEntries.sort(function(a, b) { return b.v - a.v; });
+  // Cap to top 10, merge rest into "other"
+  if (catEntries.length > 10) {
+    var top10 = catEntries.slice(0, 10);
+    var restSum = catEntries.slice(10).reduce(function(s, e) { return s + e.v; }, 0);
+    if (restSum > 0) top10.push({k: 'other (' + (catEntries.length - 10) + ' more)', v: restSum});
+    catEntries = top10;
+  }
+  if (catEntries.length) {
+    var catHeader = document.getElementById('mc-cat-header');
+    catHeader.textContent = 'Bug Category Breakdown';
+    catSection.style.display = 'block';
+    var maxCat = catEntries[0].v || 1;
+    var catColors = ['var(--accent)','var(--blue)','var(--orange)','var(--green)','var(--red)','#818cf8','#06b6d4','#a78bfa'];
+    catEntries.forEach(function(entry, idx) {
+      var row = document.createElement('div');
+      row.className = 'mc-cat-row';
+
+      var lbl = document.createElement('div');
+      lbl.className = 'mc-cat-label';
+      lbl.textContent = entry.k;
+      lbl.title = entry.k;
+
+      var track = document.createElement('div');
+      track.className = 'mc-cat-track';
+      var fill = document.createElement('div');
+      fill.className = 'mc-cat-fill';
+      fill.style.cssText = 'width:' + (entry.v / maxCat * 100).toFixed(1) + '%;background:' + (catColors[idx % catColors.length]);
+      track.appendChild(fill);
+
+      var cnt = document.createElement('div');
+      cnt.className = 'mc-cat-count';
+      cnt.textContent = entry.v;
+
+      row.appendChild(lbl); row.appendChild(track); row.appendChild(cnt);
+      catChart.appendChild(row);
+    });
+  }
+
+  // ── Overview: About ShipGuard ──
+  var aboutSection = document.getElementById('mc-about-section');
+  var aboutBox = document.getElementById('mc-about-box');
+  aboutBox.textContent = '';
+  aboutSection.style.display = 'block';
+
+  var aboutTitle = document.createElement('div');
+  aboutTitle.style.cssText = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px';
+  aboutTitle.textContent = 'About ShipGuard';
+  aboutBox.appendChild(aboutTitle);
+
+  var aboutText = document.createElement('p');
+  var ab1 = document.createTextNode('ShipGuard dispatches parallel AI agents to audit your codebase and visually debug your UI. Mark bugs on screenshots — the AI fixes the code. Run ');
+  var ab2 = document.createElement('code');
+  ab2.textContent = '/sg-code-audit';
+  var ab3 = document.createTextNode(' for code analysis or ');
+  var ab4 = document.createElement('code');
+  ab4.textContent = '/sg-visual-run';
+  var ab5 = document.createTextNode(' for visual E2E debugging.');
+  aboutText.appendChild(ab1); aboutText.appendChild(ab2); aboutText.appendChild(ab3);
+  aboutText.appendChild(ab4); aboutText.appendChild(ab5);
+  aboutBox.appendChild(aboutText);
 
   // ── Bugs sub-tab ──
   renderBugFilters(data);
