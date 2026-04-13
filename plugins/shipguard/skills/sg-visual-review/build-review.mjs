@@ -249,8 +249,9 @@ function extractUrl(steps) {
 }
 
 function getScreenshotMtime(id, slug, steps) {
-  const candidates = [`${slug}.png`, id.replace(/\//g, '-') + '.png'];
+  const candidates = [];
   for (const s of steps) { if (s.screenshot) candidates.push(s.screenshot); }
+  candidates.push(`${slug}.png`, id.replace(/\//g, '-') + '.png');
   for (const c of candidates) {
     const p = join(SCREENSHOTS_DIR, c);
     if (existsSync(p)) return statSync(p).mtimeMs;
@@ -259,10 +260,11 @@ function getScreenshotMtime(id, slug, steps) {
 }
 
 function findBeforeScreenshot(id, slug, steps) {
-  const candidates = [`${slug}-before.png`, id.replace(/\//g, '-') + '-before.png'];
+  const candidates = [];
   for (const s of steps) {
     if (s.screenshot) candidates.push(s.screenshot.replace('.png', '-before.png'));
   }
+  candidates.push(`${slug}-before.png`, id.replace(/\//g, '-') + '-before.png');
   for (const c of candidates) {
     if (existsSync(join(SCREENSHOTS_DIR, c))) return `screenshots/${c}`;
   }
@@ -270,13 +272,13 @@ function findBeforeScreenshot(id, slug, steps) {
 }
 
 function findScreenshot(id, slug, steps) {
-  const candidates = [
-    `${slug}.png`,
-    id.replace(/\//g, '-') + '.png',
-  ];
+  const candidates = [];
+  // Manifest screenshot field takes priority over slug/id patterns
   for (const s of steps) {
     if (s.screenshot) candidates.push(s.screenshot);
   }
+  candidates.push(`${slug}.png`);
+  candidates.push(id.replace(/\//g, '-') + '.png');
   for (const c of candidates) {
     if (existsSync(join(SCREENSHOTS_DIR, c))) return `screenshots/${c}`;
   }
