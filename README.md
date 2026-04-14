@@ -2,13 +2,13 @@
 
 ![ShipGuard — Agentic AI Audit & Visual Regression](docs/screenshots/hero-banner.jpg)
 
-**Ship with confidence.** ShipGuard finds bugs before your users do.
+**Ship with confidence.** ShipGuard finds bugs before your users do — and gets smarter every time.
 
-Three AI-powered modules. Use one, two, or all three. No test files to write.
+Four AI-powered modules. Use one, two, or all four. No test files to write.
 
 <table>
 <tr>
-<td width="33%" valign="top">
+<td width="50%" valign="top">
 
 ### 📸 Visual E2E Debugger
 
@@ -19,7 +19,20 @@ Auto-discover routes, generate tests, mark bugs on screenshots — **AI traces t
 ```
 
 </td>
-<td width="33%" valign="top">
+<td width="50%" valign="top">
+
+### 🔍 Code Audit
+
+Parallel AI agents scan your entire codebase, find bugs, and **fix them automatically**. Race conditions, auth gaps, silent exceptions, resource leaks.
+
+```
+/sg-code-audit
+```
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
 ### 🎬 Macro Recorder
 
@@ -30,14 +43,14 @@ Record your browser interactions and **turn them into replayable tests**. Like E
 ```
 
 </td>
-<td width="33%" valign="top">
+<td width="50%" valign="top">
 
-### 🔍 Code Audit
+### 🧠 Self-Improving Engine
 
-Parallel AI agents scan your entire codebase, find bugs, and **fix them automatically**. Race conditions, auth gaps, silent exceptions, resource leaks.
+ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new techniques. Each audit is better than the last.
 
 ```
-/sg-code-audit
+/sg-improve
 ```
 
 </td>
@@ -52,22 +65,6 @@ npm install -g agent-browser && agent-browser install --with-deps
 ```
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)
-
-### 🧠 Self-Improving — ShipGuard learns from every run
-
-After each session, run `/sg-improve` to extract what worked and what didn't. ShipGuard remembers:
-
-- **Zone sizing** — directories that overflow get smaller zones next time
-- **Bug patterns** — codebase-specific patterns get added to the checklist
-- **Noise filters** — low-value findings get batched automatically
-- **Infra timing** — how long services take to rebuild, which ports to use
-
-Generic improvements are filed as GitHub issues so the whole community benefits. Project-specific learnings stay local in `.shipguard/learnings.yaml`.
-
-```
-Audit 1: hooks/ overflows at 172 files → sg-improve saves max_files: 80
-Audit 2: sg-code-audit reads the hint → splits into 2 zones → no overflow ✓
-```
 
 > ⚠️ **Token Usage** — Code audits are token-intensive. `standard` (10 agents) ≈ 2M tokens. `deep` (15 agents, 2 rounds) ≈ 5M+. `paranoid` (20 agents, 3 rounds) can exceed 10M.
 
@@ -88,13 +85,10 @@ Mark bugs directly on screenshots. The AI traces each annotation to source code 
 | Command | What it does |
 |---------|-------------|
 | `/sg-visual-discover` | Scan codebase, generate YAML test manifests per route |
-| `/sg-record <url>` | Record browser interactions as replayable test manifests |
 | `/sg-visual-run [what]` | Execute manifests — natural language or flags |
 | `/sg-visual-review` | Launch interactive screenshot review dashboard |
 | `/sg-visual-fix` | Auto-fix bugs annotated in the review dashboard |
 | `/sg-visual-review-stop` | Stop the review server |
-| `/sg-improve` | Post-session retrospective — extract learnings, save locally, file GitHub issues |
-| `/sg-scout [url]` | Scan GitHub for techniques to improve ShipGuard |
 
 ### Smart Annotations (Gemini-style)
 
@@ -132,7 +126,7 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 /sg-visual-run --all                            # Full suite
 ```
 
-`--from-audit` reads `impacted_routes` from `audit-results.json` — a natural bridge between the two features.
+`--from-audit` reads `impacted_routes` from `audit-results.json` — a natural bridge between Code Audit and Visual Debugger.
 
 ### Discover options
 
@@ -257,49 +251,50 @@ Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JV
 
 ---
 
-## Self-Improving Feedback Loop
+## Self-Improving Engine
 
-Every session teaches ShipGuard something. `/sg-improve` captures those lessons automatically.
+The other three modules find bugs, test UI, and record flows. This module makes them **get better over time**.
+
+No ML model. No fine-tuning. Just structured memory and adaptive prompts — each run accumulates knowledge that the next run uses automatically.
+
+### `/sg-improve` — Learn from sessions
+
+After each audit or test session, extract what worked and what didn't.
 
 ```bash
 /sg-improve              # Full loop — local learnings + GitHub issue
 /sg-improve --local-only # Save learnings locally, skip GitHub
 /sg-improve --dry-run    # Preview what would be saved
+/sg-improve --rollback   # Undo the last sg-improve (safety net)
+/sg-improve --history    # List all snapshots
 ```
 
-### How it works
+**What gets learned:**
 
-1. **Reads structured data** — `audit-results.json`, zone JSONs, git log, regressions
-2. **Extracts signals** — context overflows, retry counts, merge failures, noise patterns, high-value finds
-3. **Classifies** — project-specific (saves locally) vs generic (files GitHub issue)
-4. **Saves locally** — `.shipguard/learnings.yaml` with zone hints, audit patterns, noise filters
-5. **Files upstream** — GitHub issue on `bacoco/ShipGuard` with deduplication (comments on existing issues instead of creating duplicates)
-
-### What gets learned
-
-| Learning type | Example | Used by |
-|---------------|---------|---------|
-| Zone sizing | "hooks/ needs max 80 files per zone" | `sg-code-audit` zone discovery |
-| Bug patterns | ".first() without None guard → critical" | Agent checklist injection |
+| Learning | Example | Used by |
+|----------|---------|---------|
+| Zone sizing | "hooks/ needs max 80 files per zone" | Code Audit zone discovery |
+| Bug patterns | "`.first()` without None guard → critical" | Agent checklist injection |
 | Noise filters | "f-string loggers → batch into single entry" | Agent prompt |
-| Infra timing | "api-synthesia needs 4 min to start" | Post-audit rebuild wait |
+| Infra timing | "api-synthesia needs 4 min to start" | Post-audit rebuild |
 | Success patterns | "worktree isolation works — don't change" | What NOT to touch |
+| Coding mistakes | `mistakes.md` — error journal read at every session | All development |
 
-### The reinforcement loop
+**The reinforcement loop:**
 
 ```
-Run 1 → learns → Run 2 is smarter → learns more → Run 3 is even smarter
+Run 1: hooks/ overflows at 172 files → sg-improve saves max_files: 80
+Run 2: sg-code-audit reads the hint → splits into 2 zones → no overflow ✓
+
+Run 1: .first() crashes found 5 times → sg-improve saves audit_hint
+Run 2: agents see the pattern in their checklist → catch it on first scan ✓
 ```
 
-No ML model, no fine-tuning — just structured memory and adaptive prompts. Each audit on your project accumulates knowledge in `.shipguard/learnings.yaml`. The next `/sg-code-audit` reads it and adjusts zone sizes, patterns, and noise thresholds automatically.
+**Built-in safety:** Every `/sg-improve` run takes a snapshot before modifying anything. If the changes make things worse, `/sg-improve --rollback` restores the previous state instantly.
 
-Generic insights flow upstream via GitHub issues. When multiple users report the same friction, it becomes a ShipGuard improvement that benefits everyone.
+### `/sg-scout` — Learn from the ecosystem
 
----
-
-## GitHub Intelligence
-
-Scan the ecosystem for techniques that could make ShipGuard better.
+Scan GitHub for techniques that could make ShipGuard better.
 
 ```bash
 /sg-scout                                # Full scan — find relevant repos
@@ -307,9 +302,16 @@ Scan the ecosystem for techniques that could make ShipGuard better.
 /sg-scout --topic=self-improving         # Focus on auto-optimization
 ```
 
-ShipGuard scouts GitHub for code audit tools, debugging plugins, evaluation frameworks, and self-improving agent patterns. Each finding is scored on impact, novelty, applicability, and effort. High-scoring ideas become GitHub issues. All findings accumulate in `docs/scout-reports/techniques-library.md`.
+Each technique is scored on **impact, novelty, applicability, and effort**. High-scoring ideas become GitHub issues on `bacoco/ShipGuard`. All findings accumulate in `docs/scout-reports/techniques-library.md`.
 
-Inspired by [eval-robuste](https://github.com/Alexmacapple/alex-claude-skill/tree/main/eval-robuste) (statistical evaluation with confidence intervals) and [self-improving-agent-skills](https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/awesome_agent_skills/self-improving-agent-skills) (Executor/Analyst/Mutator optimization loop).
+**Two feedback paths:**
+
+| Path | What flows | Who benefits |
+|------|-----------|--------------|
+| **Local** (`.shipguard/`) | Zone hints, patterns, noise filters, mistakes | Your project |
+| **Upstream** (GitHub issues) | Generic improvements, techniques | Everyone using ShipGuard |
+
+Inspired by [eval-robuste](https://github.com/Alexmacapple/alex-claude-skill/tree/main/eval-robuste) and [self-improving-agent-skills](https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/awesome_agent_skills/self-improving-agent-skills).
 
 ---
 
@@ -324,6 +326,7 @@ Built for **Claude Code**. Partial support for other AI CLIs:
 | Macro Recorder | ✅ Full | ✅ Playwright is CLI-independent |
 | Review Dashboard | ✅ Full | ✅ Pure Node.js |
 | Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
+| Self-Improving Engine | ✅ Full | ✅ gh CLI is universal |
 
 The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
 
@@ -346,6 +349,9 @@ npm install -g agent-browser && agent-browser install --with-deps
 
 # Run all tests
 /sg-visual-run
+
+# Learn from the session
+/sg-improve
 ```
 
 ## Configuration
