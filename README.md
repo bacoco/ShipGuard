@@ -93,6 +93,8 @@ Mark bugs directly on screenshots. The AI traces each annotation to source code 
 | `/sg-visual-review` | Launch interactive screenshot review dashboard |
 | `/sg-visual-fix` | Auto-fix bugs annotated in the review dashboard |
 | `/sg-visual-review-stop` | Stop the review server |
+| `/sg-improve` | Post-session retrospective — extract learnings, save locally, file GitHub issues |
+| `/sg-scout [url]` | Scan GitHub for techniques to improve ShipGuard |
 
 ### Smart Annotations (Gemini-style)
 
@@ -292,6 +294,22 @@ Run 1 → learns → Run 2 is smarter → learns more → Run 3 is even smarter
 No ML model, no fine-tuning — just structured memory and adaptive prompts. Each audit on your project accumulates knowledge in `.shipguard/learnings.yaml`. The next `/sg-code-audit` reads it and adjusts zone sizes, patterns, and noise thresholds automatically.
 
 Generic insights flow upstream via GitHub issues. When multiple users report the same friction, it becomes a ShipGuard improvement that benefits everyone.
+
+---
+
+## GitHub Intelligence
+
+Scan the ecosystem for techniques that could make ShipGuard better.
+
+```bash
+/sg-scout                                # Full scan — find relevant repos
+/sg-scout https://github.com/owner/repo  # Deep-dive on one repo
+/sg-scout --topic=self-improving         # Focus on auto-optimization
+```
+
+ShipGuard scouts GitHub for code audit tools, debugging plugins, evaluation frameworks, and self-improving agent patterns. Each finding is scored on impact, novelty, applicability, and effort. High-scoring ideas become GitHub issues. All findings accumulate in `docs/scout-reports/techniques-library.md`.
+
+Inspired by [eval-robuste](https://github.com/Alexmacapple/alex-claude-skill/tree/main/eval-robuste) (statistical evaluation with confidence intervals) and [self-improving-agent-skills](https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/awesome_agent_skills/self-improving-agent-skills) (Executor/Analyst/Mutator optimization loop).
 
 ---
 
