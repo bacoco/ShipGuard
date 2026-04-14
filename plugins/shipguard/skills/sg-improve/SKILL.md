@@ -2,7 +2,7 @@
 name: sg-improve
 description: Auto-improve ShipGuard from real session learnings. Run this after any /sg-code-audit, /sg-visual-run, or debugging session. Analyzes what worked, what broke, and what was slow — saves project-specific learnings locally (zone sizing, patterns, infra timing) and files generic improvements as GitHub issues. The local learnings feed back into the next audit run automatically. Trigger on "sg-improve", "improve shipguard", "ameliore shipguard", "shipguard feedback", "session insights", "retex", "retrospective", "what did we learn".
 context: conversation
-argument-hint: "[--local-only] [--github-only] [--dry-run]"
+argument-hint: "[--local-only] [--github-only] [--dry-run] [--rollback]"
 ---
 
 # /sg-improve — Self-Improving Feedback Loop
@@ -35,6 +35,96 @@ Session (audit, visual-run, debug)
 | `/sg-improve --local-only` | Save learnings locally, skip GitHub |
 | `/sg-improve --github-only` | File GitHub issue only, skip local |
 | `/sg-improve --dry-run` | Show what would be saved/filed, write nothing |
+| `/sg-improve --rollback` | Revert to the previous snapshot (undo last sg-improve run) |
+| `/sg-improve --history` | List all snapshots with dates and summary |
+
+---
+
+## Phase 0 — Snapshot (Safety Net)
+
+Before touching ANY file, take a snapshot. This is the rollback point.
+
+### What gets snapshotted
+
+Every file that sg-improve might modify:
+
+```
+.shipguard/
+  learnings.yaml      ← zone hints, audit hints, noise filters, session history
+  mistakes.md         ← coding error journal
+```
+
+### How snapshots work
+
+```bash
+# Create snapshot directory
+mkdir -p .shipguard/history/{timestamp}
+
+# Copy current state
+cp .shipguard/learnings.yaml .shipguard/history/{timestamp}/learnings.yaml 2>/dev/null
+cp .shipguard/mistakes.md    .shipguard/history/{timestamp}/mistakes.md 2>/dev/null
+
+# Write metadata
+cat > .shipguard/history/{timestamp}/meta.yaml << EOF
+timestamp: "{ISO 8601}"
+trigger: "sg-improve"
+mode: "{flags used}"
+audit_bugs: {count from audit-results.json or "unknown"}
+files_snapshotted:
+  - learnings.yaml
+  - mistakes.md
+EOF
+```
+
+Use `{timestamp}` = `YYYYMMDD-HHMMSS` (e.g., `20260414-073000`).
+
+### Retention
+
+Keep the last **5 snapshots**. When creating the 6th, delete the oldest. The user can override with `--keep-all` to never prune.
+
+### --rollback
+
+When the user runs `/sg-improve --rollback`:
+
+1. List snapshots: `ls -1t .shipguard/history/` (newest first)
+2. Show the user the most recent snapshot with its metadata:
+   ```
+   Last sg-improve run: 2026-04-14 07:30:00
+   Audit bugs at time: 79
+   Files modified: learnings.yaml, mistakes.md
+   Rollback? (oui/non)
+   ```
+3. If confirmed:
+   ```bash
+   cp .shipguard/history/{latest}/learnings.yaml .shipguard/learnings.yaml
+   cp .shipguard/history/{latest}/mistakes.md    .shipguard/mistakes.md
+   rm -rf .shipguard/history/{latest}
+   ```
+4. Print: `Rolled back to state before {timestamp}. The changes from that sg-improve run are undone.`
+
+### --history
+
+Show all snapshots:
+
+```
+ShipGuard improve history:
+
+  #1  2026-04-14 07:30  79 bugs  learnings.yaml + mistakes.md  (latest)
+  #2  2026-04-13 22:30  47 bugs  learnings.yaml
+  #3  2026-04-12 15:00  23 bugs  learnings.yaml
+
+  Rollback: /sg-improve --rollback
+  Rollback to specific: /sg-improve --rollback=#2
+```
+
+### --rollback=#N
+
+Rollback to a specific snapshot (not just the latest):
+
+1. Find snapshot `#N` in the history
+2. Restore its files
+3. Delete all snapshots newer than `#N` (they're now invalid)
+4. Print: `Rolled back to state #N ({date}). {M} newer snapshots removed.`
 
 ---
 
@@ -430,6 +520,7 @@ Audit 2: agents batch into "42 f-string calls in 12 files" → cleaner report �
 
 ## Final Checklist
 
+- [ ] **Snapshot taken BEFORE any modification** (Phase 0)
 - [ ] audit-results.json read (if exists)
 - [ ] Zone JSONs scanned for overflow indicators
 - [ ] Git log checked for audit commits and reverts
