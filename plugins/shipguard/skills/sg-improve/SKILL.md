@@ -343,6 +343,60 @@ If the conversation doesn't contain evidence of `/sg-code-audit`, `/sg-visual-ru
 
 ---
 
+## Phase 4b — Mistakes File (Coding Memory)
+
+In addition to `learnings.yaml` (machine-readable, audit-focused), maintain a **human-readable mistakes file** that Claude reads at every coding session — not just during audits.
+
+Write to `{repo_root}/.shipguard/mistakes.md`. This file is referenced from the project's `CLAUDE.md` so that Claude Code loads it at session start.
+
+### Format
+
+```markdown
+# Erreurs à ne pas répéter
+
+## {Language}
+
+### {Rule title}
+\```{language}
+# ❌ Bad pattern
+bad_code_here()
+
+# ✅ Good pattern
+good_code_here()
+\```
+*{Where found, when, how many instances}*
+```
+
+### What goes in mistakes.md
+
+Only **real bugs found in THIS project** — not generic best practices. Each entry must have:
+1. A bad pattern (code that was actually written and caused a bug)
+2. The fix (what it should have been)
+3. Context (which files, how many instances, what broke)
+
+### Update Rules
+
+1. Read the existing file first — don't overwrite
+2. For each `critical` or `high` severity bug from the audit:
+   - Check if a similar pattern already exists in mistakes.md
+   - If yes: update the instance count and add the new file to the context
+   - If no: add a new entry under the appropriate language section
+3. Don't add `low` severity bugs (too noisy for a coding reference)
+4. Keep entries concise — one screen of code max per entry
+5. Add a "last updated" date at the bottom
+
+### How it's consumed
+
+The project's `CLAUDE.md` should reference this file:
+```markdown
+## Erreurs Recurrentes
+**Cahier d'erreurs complet : `.shipguard/mistakes.md`** — LIRE ce fichier au debut de chaque session.
+```
+
+This means every Claude Code session — not just audits — benefits from accumulated knowledge. When a developer asks Claude to write a new hook, Claude already knows "don't use `|| []` in Zustand selectors" because it read mistakes.md at session start.
+
+---
+
 ## How sg-code-audit Consumes Learnings
 
 For the feedback loop to work, `/sg-code-audit` must read `.shipguard/learnings.yaml` at startup. Here's the integration point (to be added to sg-code-audit Phase 3 — Discover Zones):
@@ -382,6 +436,7 @@ Audit 2: agents batch into "42 f-string calls in 12 files" → cleaner report �
 - [ ] Conversation scanned for error/performance/quality/success signals
 - [ ] Each signal classified (project-specific / generic / both)
 - [ ] `.shipguard/learnings.yaml` created or merged (unless `--github-only`)
+- [ ] `.shipguard/mistakes.md` updated with critical/high bug patterns (unless `--github-only`)
 - [ ] Existing GitHub issues checked for duplicates (unless `--local-only`)
 - [ ] GitHub issue created or existing issue commented (unless `--local-only`)
 - [ ] Summary displayed with concrete "next run will..." predictions
