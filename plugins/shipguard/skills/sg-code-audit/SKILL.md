@@ -214,6 +214,15 @@ Print to user: `Detected: {detected_languages joined by ", "}. CLAUDE.md: {"foun
 
 Split the codebase into non-overlapping zones, one per agent. Zones must not share files — each source file belongs to exactly one zone.
 
+### Step 0: Check for previously skipped zones
+
+If `{results_dir}/_skipped_zones.json` exists from a previous audit:
+1. Read the skipped zones list
+2. These zones will be **prioritized** — they go first in the dispatch queue
+3. For each skipped zone, reduce `max_files` by 30% from the previous run's count (to avoid the same overflow)
+4. Print: `Found {N} zones skipped in previous audit — prioritizing them with smaller sizes`
+5. Delete `_skipped_zones.json` (it will be recreated if zones fail again)
+
 **If `scope_mode == "diff"`:**
 
 Zone discovery operates on the `scope_files` list instead of the full repo. Since these files may be scattered across many directories, use a simplified zone strategy:
@@ -243,18 +252,41 @@ This produces lines like `   42 ./src/routes` — directory path with file count
 
 **IMPORTANT:** Use `sort` (not `sort -u`) before `uniq -c` so that duplicate directory paths from different files are counted correctly. With `sort -u`, each directory appears only once, making every count 1.
 
+### Step 1.5: Read learnings (if available)
+
+If `{repo_root}/.shipguard/learnings.yaml` exists, read it:
+- `zone_hints`: for each hint, store `{path → max_files}` as override thresholds
+- `audit_hints`: collect patterns to inject into agent prompts (Phase 4)
+- `noise_filters`: collect patterns to batch in agent prompts (Phase 4)
+- Print: `Loaded {N} zone hints, {M} audit hints, {K} noise filters from .shipguard/learnings.yaml`
+
+If the file doesn't exist, skip silently.
+
 ### Step 2: Apply splitting rules
 
-Process the directory list:
+Process the directory list. Use **token-weighted thresholds** instead of raw file counts to account for file complexity:
 
-- **Directory with <= 30 files** --> 1 zone (assign the whole directory)
-- **Directory with 31-80 files** --> split by its immediate subdirectories. Re-run the count on children:
+```
+For each directory, estimate zone weight:
+  file_weight = max(1, file_line_count / 50)   # a 200-line file weighs 4, a 10-line file weighs 1
+  zone_weight = sum(file_weight for each file)
+  
+  Approximate: sample the first 5 files in each directory with `wc -l` to estimate average weight.
+  estimated_zone_weight = file_count * avg_weight
+```
+
+**If a directory path matches a learnings zone_hint**, use `hint.max_files` as the hard cap instead of the default thresholds below.
+
+Default thresholds (when no learnings override):
+
+- **Directory with estimated_weight <= 40** --> 1 zone
+- **Directory with estimated_weight 41-100** --> split by immediate subdirectories. Re-run the count on children:
   ```bash
   find {dir} -maxdepth 2 \( -name '*.py' -o -name '*.ts' -o -name '*.tsx' -o -name '*.go' -o -name '*.rs' -o -name '*.java' -o -name '*.kt' \) | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn
   ```
   Each child directory becomes a separate zone.
-- **Directory with 80+ files** --> split by sub-subdirectories (depth 3). Each sub-subdirectory becomes a zone.
-- **Infra files** --> always 1 dedicated zone. Collect files matching `Dockerfile*`, `docker-compose*`, `*.yml`, and `*.yaml` in the repo root or `infra/` directory into a single zone.
+- **Directory with estimated_weight > 100** --> split by sub-subdirectories (depth 3). Each sub-subdirectory becomes a zone.
+- **Infra files** --> always 1 dedicated zone. Collect files matching `Dockerfile*`, `docker-compose*`, `*.yml`, `*.yaml`, `.env*`, `Makefile`, `*.toml`, `.github/workflows/*` in the repo root or `infra/` directory into a single zone.
 
 ### Step 3: Merge small zones
 
@@ -427,7 +459,11 @@ If you use a category NOT in the table (including underscore variants), the dash
 
 ## Output Format
 
-After auditing all files in your scope, write your findings to a JSON file at: {results_dir}/zone-{zone.id}-r{round_number}.json
+After auditing all files in your scope, write your findings to a JSON file at EXACTLY this path — do not use any other filename:
+
+**{results_dir}/zone-{zone.id}-r{round_number}.json**
+
+The aggregation phase depends on this exact naming convention. Using a different filename (e.g., adding descriptive suffixes) will cause your results to be lost.
 
 The JSON MUST follow this exact schema:
 
@@ -511,11 +547,23 @@ For each zone, dispatch an agent:
 - **model:** sonnet (fast, cost-effective for audit work)
 - **run_in_background:** true
 
-Store all dispatched agent handles for tracking.
+**Staggered dispatch:** Do not launch all agents in the same instant. Dispatch in batches of 3-5 agents per message to reduce API burst load. This prevents 529 overload errors caused by 10+ agents all requesting context simultaneously.
+
+**Dispatch log:** Maintain an in-memory dispatch log to track agent IDs per zone:
+
+```json
+[
+  {"zone_id": "z01", "agent_id": "a1234", "status": "running", "dispatched_at": "...", "retry": 0},
+  {"zone_id": "z01", "agent_id": "a1234", "status": "superseded", "reason": "retry after 529"},
+  {"zone_id": "z01", "agent_id": "a5678", "status": "running", "dispatched_at": "...", "retry": 1}
+]
+```
+
+When a retry is dispatched, mark the original agent as `superseded`. When collecting results in Phase 5, if multiple completions arrive for the same zone, use the result from the **most recent** agent_id (highest retry count). Discard earlier results.
 
 **Note on worktrees:** The Agent tool with `isolation: worktree` automatically creates a temporary git worktree and branch. The branch name is returned in the agent's result as `branch`. Store it for the merge phase.
 
-Print to user: `Round {round_number}: Dispatched {agent_count} agents. Waiting for completion...`
+Print to user: `Round {round_number}: Dispatched {agent_count} agents (batches of {batch_size}). Waiting for completion...`
 
 ### Monitor: report agent starts
 
@@ -549,9 +597,18 @@ As each background agent completes, process its result.
    - Validate that the JSON parses correctly and has the required fields
    - Store the parsed results
    - Print to user: `Zone {zone.id} complete: {N} bugs found`
-4. **If the output indicates an error (not context overflow):**
+4. **If the output indicates an API overload (529, "overloaded_error"):**
+   - This zone's agent hit API capacity limits. Retry with exponential backoff:
+     - Retry 1: wait 30 seconds, then re-dispatch
+     - Retry 2: wait 60 seconds
+     - Retry 3: wait 120 seconds
+   - After 3 retries, mark as `failed` and add to `_skipped_zones.json` (see below)
+   - Print to user: `Zone {zone.id} API overload — retry {N}/3 in {delay}s`
+   - Track retry count per zone to avoid duplicate agent waste (see dispatch log)
+5. **If the output indicates any other error:**
    - Log the error
    - Print to user: `Zone {zone.id} failed: {error summary}`
+   - Add to `_skipped_zones.json` for the next audit run to retry
    - Do NOT retry — move on
 
 ### Monitor: report agent completion
@@ -642,6 +699,81 @@ After all merges:
    ...
    These zone branches are preserved for manual merge.
    ```
+
+---
+
+## Phase 5.5 — Post-Merge Validation
+
+After all worktree merges complete (or after the clean tree check if no merges happened), validate that the merged code is syntactically correct. Audit fixes can introduce regressions — bad indentation from merge, wrong imports from copy-paste, broken syntax from adjacent edits.
+
+### Step 1: Identify modified files
+
+```bash
+git diff --name-only HEAD~{number_of_merged_zones} HEAD
+```
+
+This gives the list of files modified by the merge commits.
+
+### Step 2: Run language-specific syntax checks
+
+For each modified file:
+
+**Python (.py):**
+```bash
+python3 -c "import ast; ast.parse(open('{file}').read()); print('OK')"
+```
+
+**TypeScript/JavaScript (.ts, .tsx, .js, .jsx):**
+```bash
+# Quick syntax check — only if tsconfig.json exists in repo
+npx tsc --noEmit --pretty 2>&1 | head -20
+```
+Run once for the whole project (not per-file). If `tsconfig.json` doesn't exist, skip.
+
+**Go (.go):**
+```bash
+go build ./... 2>&1 | head -10
+```
+Run once if `go.mod` exists. Skip otherwise.
+
+### Step 3: Handle failures
+
+If ANY syntax check fails:
+
+1. **Log** the file path and error message: `Post-merge syntax error: {file}:{line} — {error}`
+2. **Revert** the offending merge commit:
+   ```bash
+   git revert HEAD --no-edit   # if the last merge caused the error
+   ```
+   If multiple merges happened and you can identify which one caused the error (from the file path → zone mapping), revert only that merge.
+3. **Mark** the zone as `fix-reverted` in the results
+4. **Add** to `_skipped_zones.json` so the next audit retries this zone
+5. **Continue** to Phase 6 — the other zones' fixes are still valid
+
+Print to user:
+```
+Post-merge validation: {N} files checked, {M} errors found
+  ⚠ {file}:{line} — {error_type}: {message}
+  → Reverted merge for zone {zone_id}. Fix needs manual review.
+```
+
+If all checks pass: `Post-merge validation: {N} files checked — all clean ✓`
+
+### Step 4: Write _skipped_zones.json
+
+For any zones that failed (context overflow, API overload after 3 retries, merge conflict, syntax error after merge), persist them for the next audit:
+
+```json
+{
+  "skipped": [
+    {"zone_id": "z01", "paths": ["src/hooks/"], "reason": "api_overload", "retries": 3, "date": "2026-04-14"},
+    {"zone_id": "z03a", "paths": ["src/components/chat/"], "reason": "syntax_error_after_merge", "file": "chat-tab.tsx", "date": "2026-04-14"}
+  ],
+  "timestamp": "{ISO 8601}"
+}
+```
+
+Write to `{results_dir}/_skipped_zones.json`. At the start of the next audit (Phase 3), if this file exists, prioritize these zones (smaller sizes, first in queue) and delete the file after successful completion.
 
 ---
 
