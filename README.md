@@ -53,6 +53,22 @@ npm install -g agent-browser && agent-browser install --with-deps
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)
 
+### 🧠 Self-Improving — ShipGuard learns from every run
+
+After each session, run `/sg-improve` to extract what worked and what didn't. ShipGuard remembers:
+
+- **Zone sizing** — directories that overflow get smaller zones next time
+- **Bug patterns** — codebase-specific patterns get added to the checklist
+- **Noise filters** — low-value findings get batched automatically
+- **Infra timing** — how long services take to rebuild, which ports to use
+
+Generic improvements are filed as GitHub issues so the whole community benefits. Project-specific learnings stay local in `.shipguard/learnings.yaml`.
+
+```
+Audit 1: hooks/ overflows at 172 files → sg-improve saves max_files: 80
+Audit 2: sg-code-audit reads the hint → splits into 2 zones → no overflow ✓
+```
+
 > ⚠️ **Token Usage** — Code audits are token-intensive. `standard` (10 agents) ≈ 2M tokens. `deep` (15 agents, 2 rounds) ≈ 5M+. `paranoid` (20 agents, 3 rounds) can exceed 10M.
 
 ---
@@ -236,6 +252,46 @@ Results are written to `audit-results.json`:
 ### Supported languages
 
 Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
+
+---
+
+## Self-Improving Feedback Loop
+
+Every session teaches ShipGuard something. `/sg-improve` captures those lessons automatically.
+
+```bash
+/sg-improve              # Full loop — local learnings + GitHub issue
+/sg-improve --local-only # Save learnings locally, skip GitHub
+/sg-improve --dry-run    # Preview what would be saved
+```
+
+### How it works
+
+1. **Reads structured data** — `audit-results.json`, zone JSONs, git log, regressions
+2. **Extracts signals** — context overflows, retry counts, merge failures, noise patterns, high-value finds
+3. **Classifies** — project-specific (saves locally) vs generic (files GitHub issue)
+4. **Saves locally** — `.shipguard/learnings.yaml` with zone hints, audit patterns, noise filters
+5. **Files upstream** — GitHub issue on `bacoco/ShipGuard` with deduplication (comments on existing issues instead of creating duplicates)
+
+### What gets learned
+
+| Learning type | Example | Used by |
+|---------------|---------|---------|
+| Zone sizing | "hooks/ needs max 80 files per zone" | `sg-code-audit` zone discovery |
+| Bug patterns | ".first() without None guard → critical" | Agent checklist injection |
+| Noise filters | "f-string loggers → batch into single entry" | Agent prompt |
+| Infra timing | "api-synthesia needs 4 min to start" | Post-audit rebuild wait |
+| Success patterns | "worktree isolation works — don't change" | What NOT to touch |
+
+### The reinforcement loop
+
+```
+Run 1 → learns → Run 2 is smarter → learns more → Run 3 is even smarter
+```
+
+No ML model, no fine-tuning — just structured memory and adaptive prompts. Each audit on your project accumulates knowledge in `.shipguard/learnings.yaml`. The next `/sg-code-audit` reads it and adjusts zone sizes, patterns, and noise thresholds automatically.
+
+Generic insights flow upstream via GitHub issues. When multiple users report the same friction, it becomes a ShipGuard improvement that benefits everyone.
 
 ---
 

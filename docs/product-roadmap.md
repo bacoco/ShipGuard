@@ -2,20 +2,23 @@
 
 ## Shipped in v2.0.0
 
+### Core Capabilities
+- **Parallel agent dispatch with worktree isolation** -- each agent works in its own git worktree, no file conflicts
+- **Multi-round audit** -- R1 surface (lint-like patterns) / R2 depth (runtime behavior) / R3 edge cases (security, logic)
+- **Unified dashboard** -- Visual Tests tab (screenshots, annotations, lightbox) + Code Audit tab (bug cards, severity filters, CSV export) + Monitor tab (live Gantt timeline of audit agents)
+- **Code-to-visual handoff** -- `sg-visual-run --from-audit` reads `impacted_routes` from audit results and runs only matching visual tests
+- **Self-improving feedback loop** -- `sg-improve` extracts session learnings, saves project-specific zone hints/patterns/noise filters to `.shipguard/learnings.yaml`, files generic improvements as GitHub issues. Next `sg-code-audit` reads learnings and adjusts automatically.
+- **7 language checklists** -- Python, TypeScript/React, Next.js, Infrastructure, Go, Rust, JVM
+
 ### Skills
 - `sg-code-audit` -- parallel AI codebase audit (find + fix bugs)
 - `sg-visual-run` -- execute visual test manifests with hybrid scripted+LLM assertions
 - `sg-visual-review` -- interactive HTML dashboard (Visual Tests + Code Audit tabs)
 - `sg-visual-discover` -- codebase exploration to generate YAML test manifests
 - `sg-visual-fix` -- process annotated screenshots, trace to source, implement fixes
+- `sg-record` -- record browser interactions as replayable YAML test manifests
+- `sg-improve` -- self-improving feedback loop (learnings + GitHub issues)
 - `sg-visual-review-stop` -- stop the review HTTP server
-
-### Core Capabilities
-- **Parallel agent dispatch with worktree isolation** -- each agent works in its own git worktree, no file conflicts
-- **Multi-round audit** -- R1 surface (lint-like patterns) / R2 depth (runtime behavior) / R3 edge cases (security, logic)
-- **Unified dashboard** -- Visual Tests tab (screenshots, annotations, lightbox) + Code Audit tab (bug cards, severity filters, CSV export) + Monitor tab (live Gantt timeline of audit agents)
-- **Code-to-visual handoff** -- `sg-visual-run --from-audit` reads `impacted_routes` from audit results and runs only matching visual tests
-- **7 language checklists** -- Python, TypeScript/React, Next.js, Infrastructure, Go, Rust, JVM
 
 ### Modes
 | Mode | Agents | Rounds |
@@ -47,5 +50,8 @@ A reusable workflow that runs `sg-code-audit` on PRs and posts a summary comment
 ### Severity confidence scores
 Each bug gets a confidence score (0-1) based on pattern match strength, cross-file corroboration, and checklist specificity. Allows filtering out low-confidence findings.
 
-### Custom checklist injection
-Users provide a `checklists/custom.md` file with project-specific patterns. These are merged with the built-in language checklists during agent prompt construction.
+### ~~Custom checklist injection~~ — PARTIALLY SHIPPED
+`sg-improve` saves project-specific patterns to `.shipguard/learnings.yaml` → `sg-code-audit` injects them into agent prompts automatically. Manual `checklists/custom.md` still planned for static overrides.
+
+### Cross-session learning analytics
+Dashboard view showing learning accumulation over time: how many overflows were prevented by zone hints, how many bugs were caught by learned patterns, noise reduction trends. Requires session_history data from `.shipguard/learnings.yaml`.
