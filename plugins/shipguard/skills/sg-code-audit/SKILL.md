@@ -47,11 +47,16 @@ curl -s --max-time 2 http://localhost:8888/health
   - If they differ → another project's server is running. Try ports 8889, 8890 with `--port=` (same health check + results_dir comparison). If none match, treat as "not running" and go to Step 2.
 - **Connection refused / timeout:** Server not running. Go to Step 2.
 
-### Step 2: Ask user
+### Step 2: Monitor decision
 
 If no matching server found:
 
-> "Voulez-vous suivre l'avancement de l'audit en temps réel dans un tableau de bord ? (oui/non)"
+**Default: monitor OFF.** Most solo developers don't need a real-time dashboard for a 10-minute audit.
+
+- If `--monitor` flag was passed → proceed to start the server (skip the question)
+- If mode is `deep` or `paranoid` (estimated >15 min) → ask the user:
+  > "This audit may take 15+ min. Monitor progress in a dashboard? (oui/non)"
+- Otherwise → set `monitor_active = false`, skip silently
 
 - **oui:**
   1. Check if `visual-tests/build-review.mjs` exists. If not, bootstrap from the plugin directory:
@@ -96,6 +101,17 @@ Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and 
 1. Extract the first positional argument (after the command name). Match against `quick`, `standard`, `deep`, `paranoid`. Default: `standard`.
 2. Extract `--focus=<path>` flag. If present, store the path. If not, scope is the entire repo.
 3. Check for `--report-only` flag. If present, set `fix_mode = false`. Default: `fix_mode = true`.
+3b. Check for `--model=<model>` flag. Values: `haiku`, `sonnet`, `auto`. Default: `auto`.
+   - `auto`: use haiku for R1 (bulk surface scan, cheap), sonnet for R2/R3 (deeper reasoning)
+   - `haiku`: all rounds use haiku (fast, catches everything, more noise)
+   - `sonnet`: all rounds use sonnet (current behavior)
+   
+   When using haiku for R1, add this instruction to the agent prompt:
+   ```
+   Report ALL instances of every pattern you find, regardless of how minor you think they are.
+   The severity field exists for post-filtering — your job is to find, not to pre-filter.
+   Do not self-censor bulk patterns like missing env guards, key={index}, or f-string loggers.
+   ```
 4. Parse scope flags:
    - Check for `--all` flag. If present, set `scope_mode = "full"`.
    - Check for `--diff=<ref>` flag. If present, set `scope_mode = "diff"` and `scope_ref = <ref>`.
@@ -123,9 +139,11 @@ Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and 
    d. If diff is NOT empty ({N} files changed), ask the user:
       > "I detected {N} files changed since `{base}`. What scope?"
       >
-      > 1. **Only what changed** — {N} files + their importers
-      > 2. **Full codebase** — everything
+      > 1. **Only what changed** — {N} files + importers (~{estimated_time_diff} min)
+      > 2. **Full codebase** — {total_file_count} files (~{estimated_time_full} min)
       > 3. **Different base** — specify a branch or commit
+      >
+      > Estimate times: diff mode ≈ ceil(diff_files / 30) minutes, full mode ≈ ceil(total_files / 200) × round_count minutes.
       >
       > If the user picks 1 → set `scope_mode = "diff"` and `scope_ref = {base}`
       > If the user picks 2 → set `scope_mode = "full"`
@@ -182,7 +200,8 @@ A 34-file project in `standard` mode gets `min(10, ceil(34/7))` = **5** agents, 
    - If `visual-tests/_results/` exists in the repo → use it (co-located with visual test results for `/sg-visual-review` handoff)
    - Otherwise → create `.code-audit-results/` at repo root and use it
    - Store as `results_dir` (absolute path). All zone JSON files and the final `audit-results.json` go here.
-10. Print to user: `Code audit: {mode} mode ({agent_count} agents, {round_count} round(s)){", focus: " + focus_path if set}{", report-only" if not fix_mode}{", scope: diff vs " + scope_ref + " (" + total_in_scope + " files)" if scope_mode == "diff"}`
+10. Print to user: `Code audit: {mode} mode ({agent_count} agents, {round_count} round(s)){", model: " + model_strategy}{", focus: " + focus_path if set}{", report-only" if not fix_mode}{", scope: diff vs " + scope_ref + " (" + total_in_scope + " files)" if scope_mode == "diff"}`
+11. **Compute prompt hash:** After Phase 2 (when checklists are known), compute a SHA256 hash of the prompt template + activated checklists + learnings audit_hints. Store as `prompt_hash` and include in `audit-results.json`. This allows `sg-improve` to detect when the audit prompt changes and invalidate old baselines in `learnings.yaml` session_history.
 
 ---
 
@@ -286,7 +305,7 @@ Default thresholds (when no learnings override):
   ```
   Each child directory becomes a separate zone.
 - **Directory with estimated_weight > 100** --> split by sub-subdirectories (depth 3). Each sub-subdirectory becomes a zone.
-- **Infra files** --> always 1 dedicated zone. Collect files matching `Dockerfile*`, `docker-compose*`, `*.yml`, `*.yaml`, `.env*`, `Makefile`, `*.toml`, `.github/workflows/*` in the repo root or `infra/` directory into a single zone.
+- **Infra files** --> always 1 **mandatory dedicated zone**, even in `quick` mode. Collect files matching `Dockerfile*`, `docker-compose*`, `*.yml`, `*.yaml`, `.env*`, `.env.example`, `Makefile`, `*.toml` (pyproject.toml, Cargo.toml), `*.cfg`, `.github/workflows/*`, `.gitlab-ci.yml` in the repo root, `infra/`, or `deploy/` directories into a single zone. In `deep`/`paranoid` modes, the infra zone gets its own R2 round with a specialized focus: env var consistency (variables referenced in code vs declared in compose), port mapping verification (code defaults vs compose ports), and healthcheck coverage (services without healthchecks).
 
 ### Step 3: Merge small zones
 
@@ -493,6 +512,19 @@ The JSON MUST follow this exact schema:
 
 Increment the bug counter sequentially: r{round_number}-{zone.id}-001, r{round_number}-{zone.id}-002, etc.
 
+## Output Validation Contract
+
+The zone JSON MUST pass these checks. If any check fails, the agent should fix and rewrite:
+
+1. **JSON parseable** — valid JSON syntax
+2. **Required fields present** — `zone`, `round`, `bugs` (array)
+3. **Each bug has required fields** — `id`, `severity`, `category`, `file`, `line`, `title`, `description`, `fix_applied`
+4. **Severity is one of** — `critical`, `high`, `medium`, `low` (lowercase, no other values)
+5. **Category is one of** — the 15 valid categories listed above (hyphens, no underscores)
+6. **Bug ID format** — `r{round}-{zone_id}-{NNN}` (sequential)
+
+If the collecting phase (Phase 5) receives a zone JSON that fails validation, retry the agent ONCE with this message appended to the prompt: "Your previous output was malformed: {validation_error}. Rewrite the JSON file with correct format."
+
 ## Self-Validation (REQUIRED before writing JSON)
 
 Before writing your zone JSON file, re-read every `category` and `severity` value in your bugs array. Compare each one character-by-character against the tables above. Common LLM mistake: writing `error_handling` instead of `error-handling`, or `silent_exception` instead of `silent-exception`. All categories use **hyphens** (`-`), never underscores (`_`). Fix any mismatches before writing the file.
@@ -517,10 +549,32 @@ Do NOT modify any source files. Report all bugs with `"fix_applied": false` and 
 {IF round_number > 1}
 ## Previous Round Context
 
-A previous audit round already found and fixed bugs. Your job in round {round_number}:
-1. Verify that previously applied fixes are correct (check for regressions introduced by fixes)
+A previous audit round found bugs in these categories: {list of categories from round N-1 results}.
+
+Your job in round {round_number}:
+1. Verify that previously applied fixes are correct (check for regressions INTRODUCED by the fixes themselves — wrong indentation, copy-paste errors, broken imports)
 2. Find DEEPER issues that the surface scan missed
-3. Do NOT re-report bugs that were already found and fixed — focus on NEW findings
+3. **Re-check known patterns in YOUR zone** — previous fixes may have been incomplete or only applied to other zones. If you find an instance of a known pattern, report it even if the same pattern was found elsewhere.
+{END IF}
+
+{IF learnings_audit_hints exist}
+## Project-Specific Patterns (from .shipguard/learnings.yaml)
+
+These patterns have been found in previous audits of this specific codebase. Check for them explicitly:
+
+{For each audit_hint:}
+- **{pattern}** ({severity}) — {note}
+{END FOR}
+{END IF}
+
+{IF learnings_noise_filters exist}
+## Noise Reduction
+
+For these patterns, report ONE summary entry with the total count instead of individual bugs:
+
+{For each noise_filter with action "batch":}
+- **{pattern}** — report as: "N instances of {pattern} across M files" with file list in description
+{END FOR}
 {END IF}
 
 ## Working Directory
@@ -544,7 +598,10 @@ For each zone, dispatch an agent:
 - **Tool:** Agent
 - **prompt:** The filled prompt template above
 - **isolation:** worktree
-- **model:** sonnet (fast, cost-effective for audit work)
+- **model:** determined by `--model` flag and round number:
+  - `auto` (default): `haiku` for R1, `sonnet` for R2/R3
+  - `haiku`: always `haiku`
+  - `sonnet`: always `sonnet`
 - **run_in_background:** true
 
 **Staggered dispatch:** Do not launch all agents in the same instant. Dispatch in batches of 3-5 agents per message to reduce API burst load. This prevents 529 overload errors caused by 10+ agents all requesting context simultaneously.
@@ -692,6 +749,7 @@ After all merges:
 1. **First, collect ALL zone JSONs from ALL worktrees** (including zones in `skipped_merges` whose worktrees were not merged). Read and store each zone JSON before any cleanup.
 2. Clean up worktrees: `git worktree remove {worktree_path} --force` for each worktree
 3. Clean up branches: `git branch -d {agent.branch}` for each merged branch (skip branches in `skipped_merges` — the user needs them)
+   Also clean any stale worktree branches from previous runs: `git branch --list 'worktree-*' | xargs git branch -d 2>/dev/null`
 4. If `skipped_merges` is not empty, report to user:
    ```
    Merge conflicts in {N} zones — manual resolution required:
@@ -868,8 +926,11 @@ Merge all zone results into a single aggregated file:
     "files_modified": <count of unique files with fix_applied: true>,
     "duration_ms": <total wall-clock time from Phase 1 start to Phase 6>
   },
-  "impacted_routes": [
+  "impacted_ui_routes": [
     {"route": "<url path>", "reason": "<bug title + file>", "severity": "<highest severity bug for this route>"}
+  ],
+  "impacted_backend": [
+    {"endpoint": "<API path or service name>", "reason": "<bug title + file>", "severity": "<severity>"}
   ],
   "bugs": [<all bugs from all zones and rounds, combined into one array>]
 }
@@ -878,9 +939,13 @@ Merge all zone results into a single aggregated file:
 When `scope_mode == "full"`: `"scope_info": {"mode": "full"}` — no other fields.
 When `scope_mode == "diff"`: include all fields above.
 
-### Step 3: Derive impacted_routes
+### Step 3: Derive impacted routes
 
-For each bug, map its file path to the most likely UI route. Use framework-specific detection (based on what was detected in Phase 2):
+Split bug impacts into two arrays: `impacted_ui_routes` (URL paths that `/sg-visual-run --from-audit` can test) and `impacted_backend` (API endpoints, services, infra that have no visual test). This prevents "uncovered route" noise for things that can't have visual tests.
+
+For each bug, first classify: is the file a **frontend** file (under `src/app/`, `src/pages/`, `src/components/`, `public/`) or a **backend** file (Python routes, services, Dockerfiles, config)? Frontend bugs go to `impacted_ui_routes`, backend bugs go to `impacted_backend`.
+
+For frontend bugs, map the file path to the most likely UI route. Use framework-specific detection (based on what was detected in Phase 2):
 
 1. **Next.js App Router:** If the repo has `app/` directory structure:
    - Glob `**/app/**/page.tsx` and `**/app/**/page.ts`

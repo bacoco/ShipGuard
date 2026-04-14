@@ -27,7 +27,7 @@ Before entering any mode, check for scope override flags:
 1. Check for `--all` flag. If present → run full suite and skip the interactive menu.
 2. Check for `--diff=<ref>` flag. If present → use that ref for "only what changed" logic and skip the interactive menu.
 3. If BOTH `--all` and `--diff` are present → error: `Cannot use --all and --diff together.`
-4. Check for `--from-audit` flag. If present → read `impacted_routes` from `audit-results.json` and build execution list from matching manifests. `--from-audit` takes priority over `--diff`: if both are present, `--from-audit` wins because it has its own scope from `audit-results.json`.
+4. Check for `--from-audit` flag. If present → read `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json` and build execution list from matching manifests. `--from-audit` takes priority over `--diff`: if both are present, `--from-audit` wins because it has its own scope from `audit-results.json`.
 5. Check for `--regressions` flag. If present → read `_regressions.yaml` and run only those tests; skip the interactive menu.
 6. If no scope flags are present → proceed to Interactive Mode or Natural Language Mode as before.
 
@@ -159,9 +159,26 @@ Collect manifests to run:
 
 **All browser tests run sequentially** in a single browser session. One login, one browser, one agent.
 
-agent-browser uses a single Playwright daemon. Multiple agents trying to control the browser simultaneously causes "Target page, context or browser has been closed" errors — even with `--session` flags. This is not a fixable configuration issue; it's how the daemon works.
+> **CRITICAL: NEVER call multiple `agent-browser` commands in parallel Bash calls.** agent-browser uses a single Playwright daemon. Parallel calls cause all navigations to race to the same page, producing wrong URLs and corrupted screenshots. Even if you use separate Bash tool calls in the same message, they execute concurrently. Always chain browser commands sequentially: one navigation completes before the next begins.
 
 Sequential execution with a single auth is also faster in practice: no re-login overhead, no session conflicts, no retries.
+
+### Session Expiry Detection
+
+After EVERY `agent-browser open {url}`, verify the navigation succeeded:
+
+```
+1. Run: agent-browser get url
+2. Compare actual URL against expected URL
+3. If actual_url != expected_url AND (actual_url == "/" OR actual_url contains "/login"):
+   → Session expired. Re-login:
+     a. Execute _shared/login.yaml steps
+     b. Retry the original navigation
+     c. If still wrong URL after retry: mark test as ERROR
+4. If actual_url matches expected_url: continue normally
+```
+
+This catches silent session expiry — the most common failure mode in long runs (>30 minutes). The redirect happens without error, so without this check the test takes a screenshot of the wrong page and marks it PASS.
 
 ## Progress Reporting
 
