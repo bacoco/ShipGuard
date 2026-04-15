@@ -521,7 +521,7 @@ The zone JSON MUST pass these checks. If any check fails, the agent should fix a
 2. **Required fields present** — `zone`, `round`, `bugs` (array)
 3. **Each bug has required fields** — `id`, `severity`, `category`, `file`, `line`, `title`, `description`, `fix_applied`
 4. **Severity is one of** — `critical`, `high`, `medium`, `low` (lowercase, no other values)
-5. **Category is one of** — the 15 valid categories listed above (hyphens, no underscores)
+5. **Category is one of** — the 16 valid categories listed above (hyphens, no underscores)
 6. **Bug ID format** — `r{round}-{zone_id}-{NNN}` (sequential)
 
 If the collecting phase (Phase 5) receives a zone JSON that fails validation, retry the agent ONCE with this message appended to the prompt: "Your previous output was malformed: {validation_error}. Rewrite the JSON file with correct format."
@@ -536,7 +536,7 @@ Before writing your zone JSON file, re-read every `category` and `severity` valu
 Fix every bug you find using the Edit tool. After fixing all bugs in your scope, commit all fixes with:
 ```
 git add <fixed files>
-git commit -m "audit-r{round_number}({zone_slug}): fix N bugs"
+git commit -m "audit-r{round_number}({zone.id}): fix N bugs"
 ```
 Set `"fix_applied": true` and `"fix_commit": "<actual commit hash>"` for each fixed bug.
 
@@ -1071,6 +1071,7 @@ Merge all zone results into a single aggregated file:
   "repo": "<repository name from git remote or directory name>",
   "timestamp": "<ISO 8601 timestamp, e.g. 2026-04-10T08:30:00Z>",
   "mode": "<quick|standard|deep|paranoid>",
+  "prompt_hash": "<SHA256 hex of prompt template + activated checklists + learnings>",
   "rounds": <round_count>,
   "agents": <actual agents dispatched including re-splits>,
   "scope_info": {
@@ -1162,7 +1163,7 @@ For frontend bugs, map the file path to the most likely UI route. Use framework-
 
 Deduplicate routes: if multiple bugs map to the same route, keep one entry with the highest severity and a combined reason.
 
-If no routes can be derived (no framework, no HTML files, no manifest matches), set `impacted_routes` to an empty array `[]`.
+If no routes can be derived (no framework, no HTML files, no manifest matches), set `impacted_ui_routes` to an empty array `[]`.
 
 ### Step 4: Write results
 
@@ -1320,13 +1321,16 @@ All bugs from all rounds are combined in the final `audit-results.json` bugs arr
   "summary": {
     "total_bugs": 47,
     "by_severity": {"critical": 3, "high": 12, "medium": 22, "low": 10},
-    "by_category": {"security": 5, "race-condition": 8, "silent-exception": 12, "api-guard": 6, "infra": 4, "other": 12},
+    "by_category": {"security": 5, "race-condition": 8, "silent-exception": 12, "api-guard": 6, "resource-leak": 0, "type-mismatch": 0, "dead-code": 2, "infra": 4, "ssr-hydration": 0, "input-validation": 0, "error-handling": 3, "performance": 0, "accessibility": 0, "logic-error": 1, "integration": 2, "other": 9},
     "files_audited": 187,
     "files_modified": 34,
     "duration_ms": 612000
   },
-  "impacted_routes": [
+  "impacted_ui_routes": [
     {"route": "/dashboard", "reason": "Zustand store bug in dashboard-store.ts", "severity": "high"}
+  ],
+  "impacted_backend": [
+    {"endpoint": "POST /dossier/{id}/analyze", "reason": "Missing ownership check in dossier_routes.py", "severity": "critical"}
   ],
   "bugs": [
     {
@@ -1364,6 +1368,6 @@ Before reporting completion to the user, verify:
 - [ ] Diff mode import expansion uses relative paths and documents the noisy fallback
 - [ ] audit-results.json written with correct schema
 - [ ] `scope_info` included in audit-results.json
-- [ ] impacted_routes derived using generic detection (no hardcoded paths)
+- [ ] impacted_ui_routes + impacted_backend derived using generic detection (no hardcoded paths)
 - [ ] Summary printed to terminal
 - [ ] Next steps suggested (/sg-visual-run --from-audit, /sg-visual-review)

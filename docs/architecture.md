@@ -6,7 +6,7 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 6 skills that form a pipeline from analysis to verification to repair.
+ShipGuard is composed of 9 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
@@ -16,6 +16,9 @@ ShipGuard is composed of 6 skills that form a pipeline from analysis to verifica
 | `sg-visual-review` | Build interactive HTML dashboard from test results + audit results | Manifests + screenshots + audit JSON | `review.html` (self-contained) + `fix-manifest.json` |
 | `sg-visual-fix` | Process human annotations -- trace to source, fix, capture before/after | `fix-manifest.json` | Code fixes + before/after screenshots |
 | `sg-visual-review-stop` | Stop the review HTTP server | PID file | Server terminated |
+| `sg-record` | Record browser interactions as replayable YAML test manifests | User browser session | `visual-tests/manifests/recorded-*.yaml` |
+| `sg-improve` | Analyze audit false positives/negatives, refine checklists and prompts | `audit-results.json` + user feedback | Updated `learnings.yaml` + checklist patches |
+| `sg-scout` | Research emerging bug patterns and techniques from external sources | Research query | `techniques-library.md` updates |
 
 ## Data Flow
 
@@ -104,7 +107,7 @@ After all agents in a round complete:
 
 ### Category Taxonomy
 
-15 categories, exactly one per bug: `security`, `race-condition`, `silent-exception`, `api-guard`, `resource-leak`, `type-mismatch`, `dead-code`, `infra`, `ssr-hydration`, `input-validation`, `error-handling`, `performance`, `accessibility`, `logic-error`, `other`.
+16 categories, exactly one per bug: `security`, `race-condition`, `silent-exception`, `api-guard`, `resource-leak`, `type-mismatch`, `dead-code`, `infra`, `ssr-hydration`, `input-validation`, `error-handling`, `performance`, `accessibility`, `logic-error`, `integration`, `other`.
 
 ### JSON Schemas
 
@@ -167,17 +170,25 @@ Bug IDs encode round and zone: `r{round}-{zone_id}-{sequence}`. This avoids coll
       "performance": 0,
       "accessibility": 0,
       "logic-error": 0,
+      "integration": 0,
       "other": 12
     },
     "files_audited": 187,
     "files_modified": 34,
     "duration_ms": 612000
   },
-  "impacted_routes": [
+  "impacted_ui_routes": [
     {
       "route": "/dashboard",
       "reason": "Zustand store bug in dashboard-store.ts",
       "severity": "high"
+    }
+  ],
+  "impacted_backend": [
+    {
+      "endpoint": "POST /dossier/{id}/analyze",
+      "reason": "Missing ownership check in dossier_routes.py",
+      "severity": "critical"
     }
   ],
   "bugs": []

@@ -126,7 +126,7 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 /sg-visual-run --all                            # Full suite
 ```
 
-`--from-audit` reads `impacted_routes` from `audit-results.json` — a natural bridge between Code Audit and Visual Debugger.
+`--from-audit` reads `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json` — a natural bridge between Code Audit and Visual Debugger.
 
 ### Discover options
 
@@ -243,7 +243,8 @@ Results are written to `audit-results.json`:
 
 - `summary` — totals by severity and category
 - `bugs[]` — file, line, severity, description, fix status
-- `impacted_routes[]` — UI routes affected (consumed by `/sg-visual-run --from-audit`)
+- `impacted_ui_routes[]` — UI routes affected (consumed by `/sg-visual-run --from-audit`)
+- `impacted_backend[]` — API endpoints/services affected (reported in dashboard)
 
 ### Supported languages
 

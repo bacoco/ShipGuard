@@ -15,7 +15,7 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 |---------|----------|
 | `/sg-visual-run` | **Interactive** — asks user what to do |
 | `/sg-visual-run <natural language>` | Describe what to test — the skill figures out the rest |
-| `/sg-visual-run --from-audit` | Read `audit-results.json`, extract `impacted_routes`, find matching test manifests, run only those |
+| `/sg-visual-run --from-audit` | Read `audit-results.json`, extract `impacted_ui_routes` (or legacy `impacted_routes`), find matching test manifests, run only those |
 | `/sg-visual-run --diff=main` | Run tests for routes impacted by changes since `main` |
 | `/sg-visual-run --all` | Force full suite (skip scope question) |
 | `/sg-visual-run --regressions` | Re-run tests that failed on the last run (from `_regressions.yaml`) |
@@ -125,7 +125,7 @@ When `--from-audit` is passed:
 `--from-audit` overrides smart scope flags. If `--from-audit` and `--diff=<ref>` are both present, use `--from-audit`.
 
 1. Read `audit-results.json` from the results directory: check `visual-tests/_results/audit-results.json` first, then `{repo_root}/audit-results.json`, then `.code-audit-results/audit-results.json`. Fail with a clear message if not found.
-2. Extract `impacted_routes` array
+2. Extract `impacted_ui_routes` array (fall back to legacy `impacted_routes` if the new field is absent)
 3. For each route, find matching YAML manifests using **pathname matching**:
    - Extract the pathname from `manifest.steps[0].url` by stripping `{base_url}` or any `http(s)://host:port` prefix. E.g., `{base_url}/chat` → `/chat`, `http://localhost:3000/dashboard` → `/dashboard`.
    - Compare the extracted pathname against `impacted_route.route` (which is always a bare path like `/dashboard`, `/chat`, `/dossier/:id`).
@@ -147,7 +147,7 @@ When `--from-audit` is passed:
 
 Collect manifests to run:
 
-1. **If `--from-audit`**: follow the From-Audit Mode flow — read `audit-results.json`, extract `impacted_routes`, match YAML manifests using pathname matching (strip `{base_url}` prefix from `manifest.steps[0].url`, compare pathname against `impacted_route.route`), order by `impacted_route.severity` (critical first; manifest `priority` as secondary sort key)
+1. **If `--from-audit`**: follow the From-Audit Mode flow — read `audit-results.json`, extract `impacted_ui_routes` (or legacy `impacted_routes`), match YAML manifests using pathname matching (strip `{base_url}` prefix from `manifest.steps[0].url`, compare pathname against `impacted_route.route`), order by `impacted_route.severity` (critical first; manifest `priority` as secondary sort key)
 2. **If `--diff=<ref>` or the user picked "Only what changed"**: git diff → route detection → match manifests (see Interactive Mode above), then include regressions
 3. **If natural language provided**: analyze intent, match manifests, generate missing ones
 4. **If `--regressions`**: only from `_regressions.yaml`, ordered by `last_failed` descending
