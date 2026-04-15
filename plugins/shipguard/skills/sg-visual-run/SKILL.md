@@ -493,6 +493,8 @@ New tests generated:
 
 ## agent-browser Reference
 
+### Basic commands (covers ~60% of tests)
+
 | Command | Usage | Example |
 |---------|-------|---------|
 | `open <url>` | Navigate to URL | `agent-browser open http://localhost:3000` |
@@ -507,6 +509,31 @@ New tests generated:
 | `find <text>` | Find element by visible text | `agent-browser find "Submit"` |
 | `get url` | Get current URL | `agent-browser get url` |
 | `close` | Close browser | `agent-browser close` |
+
+### Advanced interactions — see [references/advanced-interactions.md](references/advanced-interactions.md)
+
+`agent-browser` exposes much more than basic click/fill. Before writing a test with complex interactions, **read the advanced reference**. Key patterns covered:
+
+- **Drag-and-drop** for `@dnd-kit` / `react-dnd` / `react-beautiful-dnd` (requires `mouse move` + activation distance — `click` does NOT work)
+- **Hover, right-click, context menus** (for tooltips and submenus)
+- **Keyboard shortcuts** (`press Meta+k`, `press Escape`, `press Control+a`)
+- **Form-specific actions** (`check`/`uncheck`/`select` vs `click`)
+- **Hidden file inputs** upload
+- **Network mocking** (`network route --abort`/`--body` — test error states without backend down)
+- **State manipulation** (`cookies`, `storage local`, Zustand reset, feature flag override)
+- **Device/responsive/env** (`set viewport`, `set device`, `set media dark`, `set offline on`, `set geo`)
+- **Visual regression** (`diff screenshot --baseline`)
+- **Multi-tab workflows** (OAuth popups, `tab new|list|close`)
+- **Console error detection** (`console` + `errors` — catches silent React/ErrorBoundary errors)
+- **Video + trace recording** for flaky test debug
+- **Semantic selectors** (`find role|label|testid` — stable vs `@eN` refs)
+- **Iframe + Shadow DOM** traversal
+- **Auth optimization** (`--session-name`, `--profile`, `--auto-connect`, `auth save/login`)
+- **SPA pitfalls** (portals, debounced inputs, animations, client-side routing, Suspense)
+- **Atomic batch** (`batch --bail`)
+- **Annotated screenshots** (`--annotate` for vision LLMs)
+
+**A test that only uses `click/fill/snapshot` without these tools misses ~80% of real UI bugs.** Always consult the advanced reference before adding a new test manifest.
 
 ## Final Checklist
 
