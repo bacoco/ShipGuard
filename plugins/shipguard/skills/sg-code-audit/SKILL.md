@@ -513,10 +513,17 @@ The JSON MUST follow this exact schema:
       "description": "<detailed explanation of the bug and its impact>",
       "fix_applied": <true if you fixed it, false otherwise>,
       "fix_commit": "<commit hash if fix_applied is true, empty string otherwise>",
-      "confidence": "<high if you verified interprocedural context, medium if you checked the immediate file, low if you could not verify context>"
+      "confidence": "<high if you verified interprocedural context, medium if you checked the immediate file, low if you could not verify context>",
+      "verification_score": null,
+      "verified": null
     }
   ]
 }
+```
+
+**Note:** `verification_score` and `verified` are set to `null` in the zone output. They are populated later by Phase 5.7 (Finding Confidence Verification) during aggregation. Zone agents should NOT set these fields to any other value.
+
+```
 ```
 
 Increment the bug counter sequentially: r{round_number}-{zone.id}-001, r{round_number}-{zone.id}-002, etc.
@@ -1027,6 +1034,120 @@ If `monitor_active`, POST agent-update for flow tracers with `zone_id: "cross-zo
 
 ---
 
+## Phase 5.7 — Finding Confidence Verification
+
+After all zone agents and cross-zone validation complete, independently verify that critical/high findings are real. Zone agents can hallucinate file paths, misquote code, or describe patterns that don't exist at the cited location. This phase catches those false positives before they pollute the final report.
+
+**When to run:** Always. Verification uses Haiku agents (cheap, fast) and typically eliminates 15-30% of false positives.
+
+### Step 1: Collect all findings
+
+Gather all bugs from all zone JSONs collected in Phase 5 (including cross-zone results from Phase 5.6). Group by severity.
+
+Count critical + high bugs. If the count is 0, skip this phase entirely.
+
+### Step 1.5: Constitutional Pre-Validation (zero-LLM cost filter)
+
+Before spending Haiku tokens, run cheap deterministic checks on each critical/high bug. These catch obvious hallucinations for free:
+
+| Check | How | Action on failure |
+|-------|-----|-------------------|
+| **File exists** | `test -f {bug.file}` | Reject immediately (score=0, verified=false) |
+| **Line in range** | `wc -l {bug.file}`, check `bug.line <= total_lines` | Reject (score=5, verified=false) |
+| **Bug ID format** | Regex: `^r\d+-z\w+-\d{3}$` | Fix the ID, don't reject |
+| **Severity valid** | `bug.severity ∈ {critical, high, medium, low}` | Normalize, don't reject |
+| **File in scope** | Check `bug.file` starts with one of the zone's declared paths | Flag as `out_of_scope: true`, still verify |
+| **Title not empty** | `bug.title.length > 0` | Reject (score=0) |
+| **Description not copy of title** | Jaccard similarity between title and description < 0.9 | Flag as `low_quality: true`, still verify but with suspicion |
+
+**Execution:** Run these checks sequentially on all critical/high bugs using Bash/Read tools. No agents needed — pure file system checks.
+
+**Outcome:**
+- Bugs failing file-exists or line-in-range are immediately moved to `unverified_bugs` with `verification_score: 0` and `verified: false`. They skip Haiku verification entirely.
+- Remaining bugs proceed to Step 2.
+
+Print: `Constitutional pre-filter: {N} bugs checked, {R} rejected (file missing or line out of range), {P} passed to Haiku verification`
+
+### Step 2: Dispatch verification agents
+
+For each bug with severity `critical` or `high`, spawn a **Haiku** agent with this prompt:
+
+```
+You are a code finding verifier. Check if this bug report accurately describes a real issue in the code.
+
+BUG REPORT:
+- ID: {bug.id}
+- File: {bug.file}
+- Line: {bug.line}
+- Title: {bug.title}
+- Description: {bug.description}
+- Category: {bug.category}
+
+INSTRUCTIONS:
+1. Use the Read tool to read the file at {bug.file}, lines {bug.line - 20} to {bug.line + 20}
+2. Check: does the code at that location actually have the problem described?
+3. Verify these specific things:
+   a. The file exists and has content at the cited line
+   b. The code pattern described in the bug actually appears near that line
+   c. The described impact is plausible given the surrounding code
+4. Score the finding 0-100:
+   - 0-20: FALSE POSITIVE — file/line doesn't exist, or code doesn't match description at all
+   - 21-40: UNLIKELY — code exists but description is inaccurate, or issue is already guarded
+   - 41-60: UNCERTAIN — pattern exists but impact unclear (dead path, handled upstream)
+   - 61-80: LIKELY — pattern matches, appears real, but some context unclear
+   - 81-100: CONFIRMED — code clearly exhibits the described problem
+
+Reply with EXACTLY this format (two lines):
+BUG_ID: {bug.id}
+SCORE: {number 0-100}
+```
+
+**Dispatch rules:**
+- Spawn ALL verification agents in a **single message** (maximizes parallelism)
+- Use `model: haiku` — this is a read-only verification, doesn't need stronger models
+- Do NOT use worktree isolation — agents only read files, never write
+- **Cap:** Maximum 50 agents per dispatch batch. If more than 50 critical/high bugs exist, verify only the first 50 (sorted: all critical first, then high, in zone order). Remaining critical/high bugs get `verification_score: null` (not verified, kept as-is).
+
+### Step 3: Collect scores and apply
+
+As each verification agent completes, parse its output:
+
+1. Find the line matching `^SCORE: (\d{1,3})$` — extract the number
+2. If no matching line found, assign score `50` (neutral — don't penalize agent parsing issues)
+3. Match the `BUG_ID` line to find which bug this score belongs to
+
+**Apply scores to bugs:**
+
+| Score Range | Action | `verified` field |
+|-------------|--------|-----------------|
+| 80-100 | **Keep as-is** — finding confirmed | `true` |
+| 40-79 | **Downgrade severity** — `critical` → `high`, `high` → `medium`. Keep in results. | `"uncertain"` |
+| 0-39 | **Move to unverified** — remove from main `bugs` array, add to `unverified_bugs` array | `false` |
+
+Add these fields to each verified bug:
+- `verification_score`: the 0-100 score from the Haiku agent
+- `verified`: `true`, `"uncertain"`, or `false`
+
+**Medium and low severity bugs** are NOT verified (too many, too cheap to be worth it). They get: `verification_score: null, verified: null`.
+
+### Step 4: Update summary counts
+
+After filtering, recompute `summary.by_severity` and `summary.by_category` counts to reflect any downgrades and removals. Update `summary.total_bugs` to exclude unverified bugs.
+
+### Step 5: Report
+
+Print to the terminal:
+
+```
+Finding verification: {N} critical/high bugs checked by Haiku
+  Confirmed (≥80):  {count} — kept as-is
+  Uncertain (40-79): {count} — severity downgraded
+  Rejected (<40):   {count} — moved to unverified_bugs
+  Skipped (cap):    {count} — not verified (over 50 cap)
+```
+
+---
+
 ## Phase 6 — Aggregate + Report
 
 ### Step 1: Collect all zone JSON files
@@ -1119,7 +1240,8 @@ Merge all zone results into a single aggregated file:
     },
     "files_audited": <sum of files_audited across all zones>,
     "files_modified": <count of unique files with fix_applied: true>,
-    "duration_ms": <total wall-clock time from Phase 1 start to Phase 6>
+    "duration_ms": <total wall-clock time from Phase 1 start to Phase 6>,
+    "risk_score": <0-100 diminishing-returns score>
   },
   "impacted_ui_routes": [
     {"route": "<url path>", "reason": "<bug title + file>", "severity": "<highest severity bug for this route>"}
@@ -1127,9 +1249,21 @@ Merge all zone results into a single aggregated file:
   "impacted_backend": [
     {"endpoint": "<API path or service name>", "reason": "<bug title + file>", "severity": "<severity>"}
   ],
-  "bugs": [<all bugs from all zones and rounds, combined into one array>]
+  "verification": {
+    "checked": <number of critical/high bugs verified>,
+    "confirmed": <count with score >= 80>,
+    "uncertain": <count with score 40-79>,
+    "rejected": <count with score < 40>,
+    "skipped": <count not verified due to cap>
+  },
+  "bugs": [<all verified + uncertain bugs from all zones and rounds>],
+  "unverified_bugs": [<bugs rejected by Phase 5.7 verification (score < 40) — kept for audit trail>]
 }
 ```
+
+Each bug in the `bugs` array includes two additional fields from Phase 5.7:
+- `verification_score`: 0-100 integer (or `null` if not verified — medium/low severity)
+- `verified`: `true` (score >= 80), `"uncertain"` (40-79), or `null` (not checked)
 
 When `scope_mode == "full"`: `"scope_info": {"mode": "full"}` — no other fields.
 When `scope_mode == "diff"`: include all fields above.
@@ -1174,9 +1308,80 @@ Deduplicate routes: if multiple bugs map to the same route, keep one entry with 
 
 If no routes can be derived (no framework, no HTML files, no manifest matches), set `impacted_ui_routes` to an empty array `[]`.
 
+### Step 3.5: Compute risk score (diminishing-returns model)
+
+Compute a single 0-100 `risk_score` for the audit. This score represents overall codebase risk, not just a count of findings. It uses geometric weighting so that many low-severity findings don't inflate the score past the impact of the worst single finding.
+
+**Algorithm:**
+
+1. Assign base points per severity:
+   - `critical` = 25 points
+   - `high` = 15 points
+   - `medium` = 5 points
+   - `low` = 1 point
+
+2. Sort all bugs by base points descending (highest severity first).
+
+3. Apply geometric decay: the Nth finding contributes `base_points × 0.5^(N-1)`:
+   - 1st finding: 100% of its base points
+   - 2nd finding: 50%
+   - 3rd finding: 25%
+   - 4th finding: 12.5%
+   - ...and so on
+
+4. Sum all weighted points. Cap at 100.
+
+**Example:**
+- 1 critical + 3 high + 10 medium:
+  - 25×1.0 + 15×0.5 + 15×0.25 + 15×0.125 + 5×0.0625 + ... ≈ 38.4
+- 1 critical alone: 25.0
+- 50 lows: 1×1.0 + 1×0.5 + 1×0.25 + ... ≈ 2.0 (many trivial findings barely move the score)
+
+**Interpretation:**
+- 0-15: Low risk — mostly clean
+- 16-35: Moderate risk — some real issues
+- 36-60: High risk — significant bugs found
+- 61-100: Critical risk — severe issues present
+
+Store as `summary.risk_score` in audit-results.json (integer, 0-100).
+
 ### Step 4: Write results
 
 Write `audit-results.json` to `{results_dir}`. The `results_dir` was determined in Phase 1 and is the single source of truth for all output files.
+
+### Step 4.5: Write TOON compact format
+
+Also write `audit-results.toon` alongside the JSON file. TOON (Token-Optimized Output Notation) is a compact format that reduces token cost by ~40% when results are fed back into LLM agents (e.g., for sg-improve analysis or cross-session comparison).
+
+**Format specification:**
+
+```
+# audit-results.toon
+# repo:{repo} mode:{mode} ts:{timestamp} rounds:{rounds} agents:{agents}
+# scope:{scope_mode} diff_files:{diff_files} total:{total_in_scope}
+# summary: total={total_bugs} critical={critical} high={high} medium={medium} low={low}
+# verified: checked={checked} confirmed={confirmed} uncertain={uncertain} rejected={rejected}
+# bugs[{bug_count}]{id,severity,category,file,line,title,verified,score}:
+r1-z01-001,high,logic-error,apps/uranus/src/components/foo.tsx,71,key={index} on reorderable list,true,95
+r1-z01-002,medium,error-handling,apps/api-synthesia/routes/chat.py,142,bare except swallows errors,uncertain,55
+r1-z03-001,high,security,apps/uranus/src/lib/auth.ts,23,JWT secret in client bundle,true,98
+...
+```
+
+**Rules:**
+- Header lines start with `#` — contain metadata as key:value pairs
+- The `# bugs[N]{fields}:` line declares the column order (header-once pattern)
+- One bug per line after the header, CSV-formatted (commas, no spaces around commas)
+- Fields with commas in their values are quoted: `"title, with comma"`
+- `verified` column: `true`, `uncertain`, `null` (not checked), or `false` (in unverified section)
+- `score` column: 0-100 integer or `null`
+- If `unverified_bugs` is non-empty, add a second section:
+  ```
+  # unverified[{count}]{id,severity,category,file,line,title,score}:
+  r1-z02-005,high,logic-error,apps/foo/bar.py,30,False positive finding,12
+  ```
+
+The TOON file is informational — the JSON file remains the canonical source. TOON is for feeding into LLM context where token efficiency matters.
 
 ### Step 5: Print summary
 
@@ -1188,7 +1393,7 @@ Print a summary table to the terminal:
 Mode: {mode} | Agents: {actual_count} | Rounds: {round_count}
 Duration: {formatted_duration}
 
-Bugs found: {total}
+Bugs found: {total} ({verified_count} verified, {uncertain_count} uncertain, {rejected_count} rejected)
   Critical: {count}  High: {count}  Medium: {count}  Low: {count}
 
 Top categories:
@@ -1204,6 +1409,7 @@ Merge conflicts (manual resolution required): {count} zones
 {END IF}
 
 Results: {path to audit-results.json}
+         {path to audit-results.toon} (compact, ~40% fewer tokens)
 
 Next steps:
   /sg-visual-run --from-audit    Visually verify impacted routes
@@ -1245,8 +1451,10 @@ for round_number in 1..round_count:
        - Only then continue to the next round.
 
 After all rounds:
-    7. Aggregate ALL rounds into a single audit-results.json (Phase 6)
-    8. Print final summary
+    7. Verify critical/high findings with Haiku agents (Phase 5.7)
+    8. Aggregate ALL rounds into a single audit-results.json (Phase 6)
+    9. Write TOON compact format (Phase 6 Step 4.5)
+    10. Print final summary
 ```
 
 ### Round-specific behavior

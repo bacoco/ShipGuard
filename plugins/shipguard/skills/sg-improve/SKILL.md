@@ -145,6 +145,10 @@ If found, read it and extract:
 - `scope_info.mode`, `scope_info.total_in_scope` (if diff mode)
 - Count of `bugs` where `fix_applied: false` (deferred/unfixable)
 - Count of `bugs` where `confidence: "low"` (uncertain findings)
+- `verification.checked`, `verification.confirmed`, `verification.rejected` (if present — Phase 5.7 stats)
+- Count of `unverified_bugs` (findings rejected by confidence verification)
+
+**Prefer TOON:** If `audit-results.toon` exists alongside the JSON, use it for LLM analysis (Phase 2+) — it's ~40% fewer tokens. Use the JSON only for structured field extraction in this step.
 
 If not found, log: "No audit-results.json — extracting from conversation only."
 
@@ -207,6 +211,37 @@ Now combine the structured data with conversation context. For each signal type 
 | Top noise pattern | Most frequent `category` among `low` severity bugs |
 | Deferred count | Count of `fix_applied: false` in bugs array |
 | Post-audit regression | Any Docker/build failure AFTER audit commits (check conversation) |
+
+### User Friction Signals
+
+Scan the **user's messages** (not assistant messages) in the current conversation for correction and frustration patterns. These indicate that ShipGuard or Claude's behavior was wrong — even if no error was thrown.
+
+| Signal | Regex patterns (case-insensitive) | Priority |
+|--------|----------------------------------|----------|
+| COMMAND_FAILURE | Tool use exit code != 0, stderr contains "error", "failed", "not found" | 100 |
+| USER_CORRECTION | `I said`, `you didn't`, `that's wrong`, `no not`, `pas ça`, `non c'est`, `j'ai dit` | 80 |
+| REPETITION | Same instruction given 2+ times (Jaccard similarity > 0.5 across last 10 user messages) | 60 |
+| TONE_ESCALATION | 3+ uppercase words in a row, 2+ exclamation marks, `for the last time`, `encore une fois`, `STOP` | 40 |
+| SKILL_OVERRIDE | User explicitly overrides a skill decision: `skip that`, `don't do`, `ignore`, `laisse tomber` | 75 |
+| REDO_REQUEST | `refais`, `recommence`, `redo`, `try again`, `re-run`, `relance` | 70 |
+
+**Detection rules:**
+- Scan only **user messages**, never assistant messages
+- A message can trigger multiple signals (e.g., correction + escalation)
+- For REPETITION: compare each user message against the previous 10 using Jaccard word similarity. If 3+ pairs score > 0.5, emit one REPETITION signal with count
+- For COMMAND_FAILURE: check tool results in the conversation, not user messages
+
+**Output per signal:**
+```yaml
+- signal: "user_correction"
+  count: 2
+  details: "User said 'pas ça' after audit hint was applied incorrectly"
+  priority: 80
+  type: "friction"
+  quote: "non c'est pas le bon fichier"  # exact user quote (truncated to 100 chars)
+```
+
+These signals feed into Phase 3 classification. A friction signal with priority >= 70 should generate either a local learning (if project-specific) or a GitHub issue (if generic to ShipGuard behavior).
 
 ### Success Signals
 

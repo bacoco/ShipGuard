@@ -457,7 +457,7 @@ body.light #bug-search{background:var(--surface)}
     </div>
     <div id="mc-bug-table-wrap">
       <table class="mc-table" id="mc-bugs-table">
-        <thead><tr><th>ID</th><th>Severity</th><th>Category</th><th>File</th><th>Line</th><th>Title</th><th>Fixed</th></tr></thead>
+        <thead><tr><th>ID</th><th>Severity</th><th>Category</th><th>File</th><th>Line</th><th>Title</th><th>Fixed</th><th>Verified</th></tr></thead>
         <tbody id="mc-bugs-tbody"></tbody>
       </table>
     </div>
@@ -1891,7 +1891,8 @@ function renderAuditComplete(data) {
     {n: sev.medium || 0, l: 'Medium', c: 'medium', sev: 'medium'},
     {n: sev.low || 0, l: 'Low', c: 'low', sev: 'low'},
     {n: s.files_modified || 0, l: 'Files Fixed', c: 'fixed inert', sev: null},
-    {n: s.files_audited || 0, l: 'Files Audited', c: 'audited inert', sev: null}
+    {n: s.files_audited || 0, l: 'Files Audited', c: 'audited inert', sev: null},
+    {n: s.risk_score != null ? s.risk_score : '—', l: 'Risk Score', c: (s.risk_score >= 61 ? 'critical' : s.risk_score >= 36 ? 'high' : s.risk_score >= 16 ? 'medium' : 'low') + ' inert', sev: null}
   ].forEach(function(item) {
     var card = document.createElement('div');
     card.className = 'mc-stat ' + item.c;
@@ -1926,6 +1927,8 @@ function renderAuditComplete(data) {
   if (data.rounds) parts.push(data.rounds + ' rounds');
   if (data.agents) parts.push(data.agents + ' agents');
   if (s.files_audited) parts.push(s.files_audited.toLocaleString() + ' files');
+  var v = data.verification;
+  if (v && v.checked > 0) parts.push(v.confirmed + '/' + v.checked + ' verified');
   summaryEl.textContent = parts.join(' \u2014 ');
 
   // ── Overview: Severity distribution bar ──
@@ -2298,6 +2301,31 @@ function makeBugRow(bug) {
   fixSpan.textContent = bug.fix_applied ? '\u2713' : '\u2717';
   td7.appendChild(fixSpan);
   tr.appendChild(td7);
+
+  // Verification score badge (Phase 5.7)
+  var td8 = document.createElement('td');
+  td8.style.cssText = 'text-align:center;font-size:11px;white-space:nowrap';
+  if (bug.verification_score != null) {
+    var vBadge = document.createElement('span');
+    var vs = bug.verification_score;
+    vBadge.style.cssText = 'padding:2px 6px;border-radius:3px;font-weight:600;font-size:10px;';
+    if (vs >= 80) {
+      vBadge.style.background = 'rgba(46,160,67,0.15)'; vBadge.style.color = 'var(--green)';
+      vBadge.textContent = '\u2713 ' + vs;
+    } else if (vs >= 40) {
+      vBadge.style.background = 'rgba(210,153,34,0.15)'; vBadge.style.color = '#d29a22';
+      vBadge.textContent = '? ' + vs;
+    } else {
+      vBadge.style.background = 'rgba(218,54,51,0.15)'; vBadge.style.color = 'var(--red)';
+      vBadge.textContent = '\u2717 ' + vs;
+    }
+    vBadge.title = bug.verified === true ? 'Confirmed' : bug.verified === 'uncertain' ? 'Uncertain — severity downgraded' : 'Rejected';
+    td8.appendChild(vBadge);
+  } else {
+    td8.style.color = 'var(--muted)';
+    td8.textContent = '—';
+  }
+  tr.appendChild(td8);
 
   return tr;
 }
