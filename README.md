@@ -6,6 +6,8 @@
 
 ## How it works
 
+![ShipGuard Demo](docs/screenshots/demo.gif)
+
 ```
 code audit → find bugs → visual test → confirm on screen → human review → annotate → auto-fix → repeat
 ```
