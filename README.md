@@ -214,20 +214,23 @@ Dispatch parallel AI agents to audit your entire codebase. Each agent reviews a 
 
 ### Model Configuration
 
-By default, `auto` mode uses haiku for R1 (fast surface scan) and sonnet for R2+ (deeper reasoning). Override with `--model` to control which model runs all rounds:
+By default, `auto` mode uses Haiku for R1 (fast surface scan) and **Opus 4.7 for R2/R3** (deep bug hunt — the +8 points SWE-bench Verified gap over Sonnet 4.6 translates to real cross-file bugs caught). Override with `--model` to control which model runs all rounds:
 
 | Flag | Behavior |
 |------|----------|
-| `--model=auto` | Haiku for R1, sonnet for R2+ (default) |
-| `--model=haiku` | Haiku everywhere — fast, more noise |
-| `--model=sonnet` | Sonnet everywhere — balanced depth and cost |
-| `--model=opus` | Opus everywhere — maximum depth, highest token cost |
+| `--model=auto` | Haiku for R1, **Opus** for R2/R3 (default) — depth where it matters |
+| `--model=haiku` | Haiku everywhere — fast triage, more noise |
+| `--model=sonnet` | Sonnet everywhere — balanced, use when Opus weekly quota is saturated |
+| `--model=opus` | Opus everywhere — maximum depth (R1 too), highest token cost |
 
 ```bash
-/sg-code-audit deep --model=opus          # Critical audit with maximum depth
+/sg-code-audit deep --model=opus          # Critical audit with maximum depth (R1 too)
 /sg-code-audit --model=haiku --all        # Quick full-repo sweep, minimal cost
+/sg-code-audit --model=sonnet             # Run when Opus weekly cap is tight
 /sg-code-audit deep --model=opus --focus=src/auth/  # Max rigor on auth code
 ```
+
+**Why R2/R3 uses Opus by default:** Surface pattern scans (R1) are bulk work — Haiku handles them fine. Deep/paranoid rounds hunt subtle cross-file and logic bugs, where Opus 4.7's reasoning advantage turns into real findings. Anthropic's benchmarks show Opus 4.7 at 87.6% SWE-bench Verified vs 79.6% for Sonnet 4.6.
 
 ### Smart Scope
 

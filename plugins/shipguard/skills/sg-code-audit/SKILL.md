@@ -104,15 +104,17 @@ Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and 
 2. Extract `--focus=<path>` flag. If present, store the path. If not, scope is the entire repo.
 3. Check for `--report-only` flag. If present, set `fix_mode = false`. Default: `fix_mode = true`.
 3b. Check for `--model=<model>` flag. Values: `haiku`, `sonnet`, `opus`, `auto`. Default: `auto`.
-   - `auto`: use haiku for R1 (bulk surface scan, cheap), sonnet for R2/R3 (deeper reasoning)
+   - `auto`: use haiku for R1 (bulk surface scan, cheap), **opus** for R2/R3 (deep bug hunt where the Opus 4.7 vs Sonnet 4.6 gap on SWE-bench Verified (~8 points) translates to real bugs caught)
    - `haiku`: all rounds use haiku (fast, catches everything, more noise)
-   - `sonnet`: all rounds use sonnet (balanced depth and cost)
-   - `opus`: all rounds use opus (maximum depth, highest token cost — best for critical audits)
+   - `sonnet`: all rounds use sonnet (balanced — use when Opus quota is saturated but haiku is too shallow)
+   - `opus`: all rounds use opus (maximum depth, highest token cost — `deep`/`paranoid` R1 too)
    
-   **User override:** The `--model` flag lets users override the default model strategy for any audit. This is useful when:
-   - A project requires maximum rigor: `--model=opus` uses opus for all rounds
-   - Budget is tight: `--model=haiku` runs the full audit at minimal cost
-   - The default auto strategy (haiku R1, sonnet R2+) can be overridden per-run without changing any config
+   **Rationale:** The audit is the moment where paying for Opus pays off. R1 still uses Haiku because surface scans are bulk pattern matching — Haiku catches them fine. R2/R3 (deep/paranoid modes) are where subtle cross-file and logic bugs hide, and that's where Opus 4.7's lead over Sonnet matters.
+   
+   **User override:** The `--model` flag lets users override the default strategy. This is useful when:
+   - Opus weekly quota is getting tight: `--model=sonnet` runs R2/R3 on Sonnet (still catches most bugs, ~10× more runway)
+   - Budget is tight and quick triage needed: `--model=haiku` runs the full audit at minimal cost
+   - The default auto strategy (haiku R1, opus R2+) can be overridden per-run without changing any config
    
    When using haiku for R1, add this instruction to the agent prompt:
    ```
@@ -627,9 +629,9 @@ For each zone, dispatch an agent:
 - **prompt:** The filled prompt template above
 - **isolation:** worktree
 - **model:** determined by `--model` flag and round number:
-  - `auto` (default): `haiku` for R1, `sonnet` for R2/R3
+  - `auto` (default): `haiku` for R1, **`opus` for R2/R3** (deep bug hunt benefits from Opus 4.7's +8 pts SWE-bench gap)
   - `haiku`: always `haiku`
-  - `sonnet`: always `sonnet`
+  - `sonnet`: always `sonnet` (use when Opus weekly quota is saturated)
   - `opus`: always `opus`
 - **run_in_background:** true
 
@@ -714,7 +716,7 @@ If `monitor_active` is true, after processing each agent's result:
   ```
   Extract `total_tokens`, `tool_uses`, and `duration_ms` from the Agent tool's result footer. If input/output split is unavailable, estimate 60/40 ratio from total.
 
-  **Note:** Cost estimation uses the model specified in the agent dispatch (default: sonnet). If a different model is used, adjust the pricing table accordingly.
+  **Note:** Cost estimation uses the model specified in the agent dispatch. In `auto` mode: haiku for R1, opus for R2/R3. Adjust the pricing table accordingly when the `--model` flag overrides the default.
 
 - **Context overflow:** POST overflow + started for children:
   ```

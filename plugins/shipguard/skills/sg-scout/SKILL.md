@@ -11,6 +11,8 @@ Scan the GitHub ecosystem for techniques that could make ShipGuard better. Parse
 
 Think of it as a research assistant that reads other people's code so you don't have to, then brings back only what's worth stealing.
 
+> **Recommended model: Sonnet 4.6.** Web search + repo scanning + summary writing — mechanical research work where Opus 4.7 provides no measurable quality gain. Use `/model sonnet` before invoking to save Opus weekly quota.
+
 ## Invocations
 
 | Command | Behavior |

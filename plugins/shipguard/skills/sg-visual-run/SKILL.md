@@ -9,6 +9,8 @@ argument-hint: "[tests to run or natural language description] [--from-audit] [-
 
 Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid execution: mechanical steps run directly, complex assertions delegate to LLM evaluation.
 
+> **Recommended model: Sonnet 4.6.** This skill runs scripted steps (click, fill, screenshot) + lightweight LLM assertions. Opus 4.7 provides no measurable quality gain here. Use `/model sonnet` before invoking to save Opus weekly quota.
+
 ## Invocations
 
 | Command | Behavior |

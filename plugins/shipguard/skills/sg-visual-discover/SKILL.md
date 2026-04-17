@@ -9,6 +9,8 @@ argument-hint: "[project-path] [--all] [--diff=ref] [--refresh-existing]"
 
 Explore the codebase of any web application, detect all user-facing routes and interactions, and generate a YAML test manifest tree that mirrors the UI navigation structure.
 
+> **Recommended model: Sonnet 4.6.** This skill crawls routes + generates YAML manifests — mechanical work where Opus 4.7 provides no measurable quality gain. Use `/model sonnet` before invoking to save Opus weekly quota.
+
 ## Invocations
 
 | Command | Behavior |

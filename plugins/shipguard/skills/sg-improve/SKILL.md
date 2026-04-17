@@ -9,6 +9,8 @@ argument-hint: "[--local-only] [--github-only] [--dry-run] [--rollback]"
 
 After an audit or visual-test session, this skill extracts what went well and what didn't, then feeds those insights back into ShipGuard so the next run is better. Think of it as a retrospective that writes its own action items.
 
+> **Recommended model: Sonnet 4.6.** Log analysis + config updates + GitHub issue writing — mechanical retrospective work where Opus 4.7 provides no measurable quality gain. Use `/model sonnet` before invoking to save Opus weekly quota.
+
 Two outputs:
 1. **Local learnings** (`.shipguard/learnings.yaml`) — project-specific knowledge that the next `/sg-code-audit` reads automatically (zone size limits, codebase-specific patterns, infra timing)
 2. **GitHub issue** (`bacoco/ShipGuard`) — generic improvements that benefit all ShipGuard users (better retry logic, missing validation steps, UX friction)

@@ -9,6 +9,8 @@ argument-hint: "[path to fix manifest JSON, or 'latest' to use most recent]"
 
 Take human-annotated screenshots from `/sg-visual-review`, analyze the marked problems, fix the code, and produce before/after comparison.
 
+> **Recommended model: Sonnet 4.6 for mineures fixes (CSS tweaks, copy changes, small layout nits).** Switch to Opus 4.7 if the annotations point to a full component refonte or cross-file logic change. Use `/model sonnet` or `/model opus` accordingly.
+
 ## Flow
 
 ```
