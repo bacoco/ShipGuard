@@ -1188,6 +1188,50 @@ Before aggregation, apply two corrections to each bug in each zone JSON:
 
 Log: `Normalized {N} severity values, {M} category values, deduplicated {D} bugs.`
 
+### Step 1.6: Finding Lifecycle (cross-run diff)
+
+Compare this run's findings against the previous audit so the report distinguishes what is genuinely new from what was already known, and shows what got fixed.
+
+1. **Load previous run:** If `{results_dir}/audit-results.json` exists (the file this run is about to replace), read it now and store as `previous_run`. If it does not exist or fails to parse, set every current bug to `"lifecycle": "new"`, set `lifecycle_summary = {"new": <total>, "persistent": 0, "fixed": 0, "not_rechecked": 0, "compared_to": null}`, print `Lifecycle: no previous audit found — tracking starts with this run.`, and skip to Step 1.7.
+2. **Build match keys:** Key each bug by `{file}::{title_normalized}` — the same normalization as Step 1.5 dedup (title lowercased, whitespace collapsed). Line numbers are deliberately excluded (they shift between runs). Compare against the previous run's `bugs` array only (never its `unverified_bugs`).
+3. **Comparability rule (scope guard):** A previous bug is *comparable* only if its file was audited this run:
+   - Current `scope_mode == "full"` and no `focus_path` → all previous bugs are comparable
+   - Current `scope_mode == "diff"` → comparable only if the previous bug's file is in `scope_files`
+   - Current `focus_path` set → comparable only if the previous bug's file is under `focus_path`
+4. **Tag lifecycle:**
+   - Current bug whose key exists in the previous run → `"lifecycle": "persistent"`
+   - Current bug whose key is absent from the previous run → `"lifecycle": "new"`
+   - Previous bug that is comparable but absent from the current run → record `{file, title, severity}` in the `fixed_since_last_run` array. Do NOT inject it into the current `bugs` array — this run did not find it.
+   - Previous bug that is NOT comparable (file out of scope this run) → count it in `not_rechecked` only. Never claim it fixed.
+5. **Store:** `lifecycle_summary = {"new": N, "persistent": P, "fixed": F, "not_rechecked": K, "compared_to": "<previous_run.timestamp>"}`.
+
+Print: `Lifecycle vs {previous timestamp}: {N} new, {P} persistent, {F} fixed since last run, {K} not re-checked (out of scope)`
+
+### Step 1.7: Apply Accepted Risks
+
+If `{repo_root}/.shipguard/accepted-risks.json` exists, read it. If it does not exist, set `accepted_bugs = []` and skip silently. Schema:
+
+```json
+{
+  "accepted": [
+    {
+      "finding_key": "apps/api/auth.py::jwt token never expires",
+      "reason": "legacy tokens until Q3 migration",
+      "accepted_by": "loic",
+      "expires": "2026-09-30"
+    }
+  ]
+}
+```
+
+- `finding_key` format: `{file}::{title_normalized}` — exactly the lifecycle match key from Step 1.6 (title lowercased, whitespace collapsed). Users copy `file` and `title` from `audit-results.json`.
+- For each current bug whose key matches an entry:
+  - **Not expired** (`expires` is today or later, or no `expires` field): move the bug out of `bugs` into the `accepted_bugs` array. It keeps all its fields plus `"accepted_reason"` and `"accepted_expires"`. Accepted bugs are excluded from `summary` counts and from the risk score (Step 3.5).
+  - **Expired** (`expires` is in the past): keep the bug in `bugs`, add `"acceptance_expired": true`, and flag it in the terminal summary — the acceptance must be renewed or the bug fixed.
+- Malformed file or entry (unparseable JSON, missing `finding_key`) → print a warning with the parse error and skip acceptance entirely for this run. Never silently drop findings.
+
+Print: `Accepted risks: {A} findings moved to accepted{IF E > 0}, {E} acceptance(s) EXPIRED and resurfaced{END IF}`
+
 ### Step 2: Build audit-results.json
 
 Merge all zone results into a single aggregated file:
@@ -1237,7 +1281,8 @@ Merge all zone results into a single aggregated file:
     "files_audited": <sum of files_audited across all zones>,
     "files_modified": <count of unique files with fix_applied: true>,
     "duration_ms": <total wall-clock time from Phase 1 start to Phase 6>,
-    "risk_score": <0-100 diminishing-returns score>
+    "risk_score": <0-100 diminishing-returns score>,
+    "lifecycle": {"new": <count>, "persistent": <count>, "fixed": <count>, "not_rechecked": <count>, "compared_to": "<previous run timestamp, or null on first run>"}
   },
   "impacted_ui_routes": [
     {"route": "<url path>", "reason": "<bug title + file>", "severity": "<highest severity bug for this route>"}
@@ -1253,13 +1298,17 @@ Merge all zone results into a single aggregated file:
     "skipped": <count not verified due to cap>
   },
   "bugs": [<all verified + uncertain bugs from all zones and rounds>],
-  "unverified_bugs": [<bugs rejected by Phase 5.7 verification (score < 40) — kept for audit trail>]
+  "unverified_bugs": [<bugs rejected by Phase 5.7 verification (score < 40) — kept for audit trail>],
+  "accepted_bugs": [<bugs matching non-expired accepted-risks entries (Step 1.7) — excluded from summary and risk score>],
+  "fixed_since_last_run": [<{file, title, severity} of comparable previous-run bugs not found this run (Step 1.6)>]
 }
 ```
 
 Each bug in the `bugs` array includes two additional fields from Phase 5.7:
 - `verification_score`: 0-100 integer (or `null` if not verified — medium/low severity)
 - `verified`: `true` (score >= 80), `"uncertain"` (40-79), or `null` (not checked)
+
+Each bug also carries `"lifecycle"`: `"new"` or `"persistent"` (Step 1.6), and `"acceptance_expired": true` when a matching accepted-risk entry has lapsed (Step 1.7).
 
 When `scope_mode == "full"`: `"scope_info": {"mode": "full"}` — no other fields.
 When `scope_mode == "diff"`: include all fields above.
@@ -1341,7 +1390,11 @@ Compute a single 0-100 `risk_score` for the audit. This score represents overall
 
 Store as `summary.risk_score` in audit-results.json (integer, 0-100).
 
+Compute the score on the `bugs` array AFTER Step 1.7 — `accepted_bugs` and `unverified_bugs` do not contribute. The score reflects active findings only.
+
 ### Step 4: Write results
+
+**Archive the previous run first:** if `{results_dir}/audit-results.json` exists, copy it to `{results_dir}/history/audit-{previous timestamp, colons replaced by dashes}.json` (create `history/` if needed) before overwriting. This preserves the lifecycle chain across runs.
 
 Write `audit-results.json` to `{results_dir}`. The `results_dir` was determined in Phase 1 and is the single source of truth for all output files.
 
@@ -1391,6 +1444,13 @@ Duration: {formatted_duration}
 
 Bugs found: {total} ({verified_count} verified, {uncertain_count} uncertain, {rejected_count} rejected)
   Critical: {count}  High: {count}  Medium: {count}  Low: {count}
+
+{IF lifecycle_summary.compared_to is not null}
+Lifecycle vs last audit ({compared_to}): {new} new | {persistent} persistent | {fixed} fixed | {not_rechecked} not re-checked
+{END IF}
+{IF accepted_bugs not empty OR expired acceptances exist}
+Accepted risks: {A} excluded from counts{IF E > 0} — ⚠ {E} acceptance(s) EXPIRED, resurfaced in results{END IF}
+{END IF}
 
 Top categories:
   {category}: {count}
@@ -1582,5 +1642,8 @@ Before reporting completion to the user, verify:
 - [ ] audit-results.json written with correct schema
 - [ ] `scope_info` included in audit-results.json
 - [ ] impacted_ui_routes + impacted_backend derived using generic detection (no hardcoded paths)
+- [ ] Lifecycle computed vs previous audit-results.json (or marked as first run)
+- [ ] Accepted risks applied — expired acceptances resurfaced, never silently dropped
+- [ ] Previous audit-results.json archived to history/ before overwrite
 - [ ] Summary printed to terminal
 - [ ] Next steps suggested (/sg-visual-run --from-audit, /sg-visual-review)

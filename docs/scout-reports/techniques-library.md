@@ -106,7 +106,7 @@ Move Phase 6 (aggregate zone JSONs into audit-results.json) from LLM to a Python
 - **Source:** [alissonlinneker/shield-claude-skill](https://github.com/alissonlinneker/shield-claude-skill)
 - **Score:** 4.2/5.0 (Impact: 4, Novelty: 4, Applicability: 5, Effort: 4)
 - **Category:** evaluation
-- **Status:** `proposed`
+- **Status:** `implemented` (2026-06-10 — sg-code-audit Phase 6 Step 1.6, previous results archived to history/)
 - **ShipGuard skill:** sg-code-audit
 - **Date scouted:** 2026-06-10
 
@@ -118,7 +118,7 @@ Diff each audit run against the previous one; tag every finding NEW / FIXED / PE
 - **Source:** [wrsmith108/claude-skill-security-auditor](https://github.com/wrsmith108/claude-skill-security-auditor)
 - **Score:** 4.1/5.0 (Impact: 4, Novelty: 4, Applicability: 5, Effort: 4)
 - **Category:** scoring
-- **Status:** `proposed`
+- **Status:** `implemented` (2026-06-10 — sg-code-audit Phase 6 Step 1.7, `.shipguard/accepted-risks.json`)
 - **ShipGuard skill:** sg-code-audit
 - **Date scouted:** 2026-06-10
 
