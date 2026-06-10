@@ -2,7 +2,7 @@
 name: sg-code-audit
 description: Parallel AI codebase audit — dispatches agents to find and fix bugs across the entire repo. Produces structured JSON results viewable in /sg-visual-review. Trigger on "sg-code-audit", "code audit", "audit codebase", "find bugs", "code-audit", "audit code", "static audit", "security audit", "ship guard".
 context: conversation
-argument-hint: "[quick|standard|deep|paranoid] [--focus=path] [--report-only] [--all] [--diff=ref] [--model=auto|haiku|sonnet|opus]"
+argument-hint: "[quick|standard|deep|paranoid] [--focus=path] [--report-only] [--all] [--diff=ref] [--model=auto|sonnet|opus]"
 ---
 
 # /sg-code-audit — Parallel Codebase Audit
@@ -103,20 +103,14 @@ Parse the user's input into four values: **mode**, **focus**, **fix_mode**, and 
 1. Extract the first positional argument (after the command name). Match against `quick`, `standard`, `deep`, `paranoid`. Default: `standard`.
 2. Extract `--focus=<path>` flag. If present, store the path. If not, scope is the entire repo.
 3. Check for `--report-only` flag. If present, set `fix_mode = false`. Default: `fix_mode = true`.
-3b. Check for `--model=<model>` flag. Values: `haiku`, `sonnet`, `opus`, `auto`. Default: `auto`.
-   - `auto`: use haiku for R1 (bulk surface scan, cheap), **opus** for R2/R3 (deep bug hunt where the Opus 4.7 vs Sonnet 4.6 gap on SWE-bench Verified (~8 points) translates to real bugs caught)
-   - `haiku`: all rounds use haiku (fast, catches everything, more noise)
-   - `sonnet`: all rounds use sonnet (balanced — use when Opus quota is saturated but haiku is too shallow)
-   - `opus`: all rounds use opus (maximum depth, highest token cost — `deep`/`paranoid` R1 too)
+3b. Check for `--model=<model>` flag. Values: `sonnet`, `opus`, `auto`. Default: `auto`.
+   - `auto`: use **opus** for ALL rounds (best quality — the audit is the moment where paying for Opus pays off)
+   - `sonnet`: all rounds use sonnet (fallback when Opus weekly quota is saturated)
+   - `opus`: all rounds use opus (same as auto)
    
-   **Rationale:** The audit is the moment where paying for Opus pays off. R1 still uses Haiku because surface scans are bulk pattern matching — Haiku catches them fine. R2/R3 (deep/paranoid modes) are where subtle cross-file and logic bugs hide, and that's where Opus 4.7's lead over Sonnet matters.
+   **NEVER use haiku.** Haiku is permanently banned for audit agents — it fails under load (529) and produces inferior results. If a user passes `--model=haiku`, print `haiku is banned for audits — using sonnet instead.` and proceed with sonnet.
    
-   **User override:** The `--model` flag lets users override the default strategy. This is useful when:
-   - Opus weekly quota is getting tight: `--model=sonnet` runs R2/R3 on Sonnet (still catches most bugs, ~10× more runway)
-   - Budget is tight and quick triage needed: `--model=haiku` runs the full audit at minimal cost
-   - The default auto strategy (haiku R1, opus R2+) can be overridden per-run without changing any config
-   
-   When using haiku for R1, add this instruction to the agent prompt:
+   Always add this instruction to every agent prompt regardless of model:
    ```
    Report ALL instances of every pattern you find, regardless of how minor you think they are.
    The severity field exists for post-filtering — your job is to find, not to pre-filter.
@@ -628,11 +622,11 @@ For each zone, dispatch an agent:
 - **Tool:** Agent
 - **prompt:** The filled prompt template above
 - **isolation:** worktree
-- **model:** determined by `--model` flag and round number:
-  - `auto` (default): `haiku` for R1, **`opus` for R2/R3** (deep bug hunt benefits from Opus 4.7's +8 pts SWE-bench gap)
-  - `haiku`: always `haiku`
-  - `sonnet`: always `sonnet` (use when Opus weekly quota is saturated)
+- **model:** determined by `--model` flag:
+  - `auto` (default): `opus` for ALL rounds
+  - `sonnet`: always `sonnet` (fallback when Opus quota is saturated)
   - `opus`: always `opus`
+  - NEVER use `haiku` — it is permanently banned
 - **run_in_background:** true
 
 **Staggered dispatch:** Do not launch all agents in the same instant. Dispatch in batches of 3-5 agents per message to reduce API burst load. This prevents 529 overload errors caused by 10+ agents all requesting context simultaneously.
@@ -710,13 +704,13 @@ If `monitor_active` is true, after processing each agent's result:
          "round": {round}, "started_at": "{original}", "ended_at": "{ISO 8601 now}",
          "duration_ms": {from agent result footer or elapsed time},
          "tokens": {"total": {total_tokens}, "input": {input_tokens}, "output": {output_tokens}},
-         "estimated_cost_usd": {calculated from tokens — haiku: $0.25/$1.25, sonnet: $3/$15, opus: $15/$75 per 1M in/out},
+         "estimated_cost_usd": {calculated from tokens — sonnet: $3/$15, opus: $15/$75 per 1M in/out},
          "tool_uses": {from agent result footer}, "bugs_found": {from zone JSON},
          "files_audited": {from zone JSON}}
   ```
   Extract `total_tokens`, `tool_uses`, and `duration_ms` from the Agent tool's result footer. If input/output split is unavailable, estimate 60/40 ratio from total.
 
-  **Note:** Cost estimation uses the model specified in the agent dispatch. In `auto` mode: haiku for R1, opus for R2/R3. Adjust the pricing table accordingly when the `--model` flag overrides the default.
+  **Note:** Cost estimation uses the model specified in the agent dispatch. In `auto` mode: opus for all rounds. Adjust the pricing table accordingly when the `--model` flag overrides the default.
 
 - **Context overflow:** POST overflow + started for children:
   ```
@@ -1040,7 +1034,7 @@ If `monitor_active`, POST agent-update for flow tracers with `zone_id: "cross-zo
 
 After all zone agents and cross-zone validation complete, independently verify that critical/high findings are real. Zone agents can hallucinate file paths, misquote code, or describe patterns that don't exist at the cited location. This phase catches those false positives before they pollute the final report.
 
-**When to run:** Always. Verification uses Haiku agents (cheap, fast) and typically eliminates 15-30% of false positives.
+**When to run:** Always. Verification uses Sonnet agents and typically eliminates 15-30% of false positives.
 
 ### Step 1: Collect all findings
 
@@ -1050,7 +1044,7 @@ Count critical + high bugs. If the count is 0, skip this phase entirely.
 
 ### Step 1.5: Constitutional Pre-Validation (zero-LLM cost filter)
 
-Before spending Haiku tokens, run cheap deterministic checks on each critical/high bug. These catch obvious hallucinations for free:
+Before spending verification tokens, run cheap deterministic checks on each critical/high bug. These catch obvious hallucinations for free:
 
 | Check | How | Action on failure |
 |-------|-----|-------------------|
@@ -1065,14 +1059,14 @@ Before spending Haiku tokens, run cheap deterministic checks on each critical/hi
 **Execution:** Run these checks sequentially on all critical/high bugs using Bash/Read tools. No agents needed — pure file system checks.
 
 **Outcome:**
-- Bugs failing file-exists or line-in-range are immediately moved to `unverified_bugs` with `verification_score: 0` and `verified: false`. They skip Haiku verification entirely.
+- Bugs failing file-exists or line-in-range are immediately moved to `unverified_bugs` with `verification_score: 0` and `verified: false`. They skip verification entirely.
 - Remaining bugs proceed to Step 2.
 
-Print: `Constitutional pre-filter: {N} bugs checked, {R} rejected (file missing or line out of range), {P} passed to Haiku verification`
+Print: `Constitutional pre-filter: {N} bugs checked, {R} rejected (file missing or line out of range), {P} passed to Sonnet verification`
 
 ### Step 2: Dispatch verification agents
 
-For each bug with severity `critical` or `high`, spawn a **Haiku** agent with this prompt:
+For each bug with severity `critical` or `high`, spawn a **Sonnet** agent with this prompt:
 
 ```
 You are a code finding verifier. Check if this bug report accurately describes a real issue in the code.
@@ -1106,7 +1100,7 @@ SCORE: {number 0-100}
 
 **Dispatch rules:**
 - Spawn ALL verification agents in a **single message** (maximizes parallelism)
-- Use `model: haiku` — this is a read-only verification, doesn't need stronger models
+- Use `model: sonnet` — NEVER use haiku (permanently banned)
 - Do NOT use worktree isolation — agents only read files, never write
 - **Cap:** Maximum 50 agents per dispatch batch. If more than 50 critical/high bugs exist, verify only the first 50 (sorted: all critical first, then high, in zone order). Remaining critical/high bugs get `verification_score: null` (not verified, kept as-is).
 
@@ -1127,7 +1121,7 @@ As each verification agent completes, parse its output:
 | 0-39 | **Move to unverified** — remove from main `bugs` array, add to `unverified_bugs` array | `false` |
 
 Add these fields to each verified bug:
-- `verification_score`: the 0-100 score from the Haiku agent
+- `verification_score`: the 0-100 score from the verification agent
 - `verified`: `true`, `"uncertain"`, or `false`
 
 **Medium and low severity bugs** are NOT verified (too many, too cheap to be worth it). They get: `verification_score: null, verified: null`.
@@ -1141,7 +1135,7 @@ After filtering, recompute `summary.by_severity` and `summary.by_category` count
 Print to the terminal:
 
 ```
-Finding verification: {N} critical/high bugs checked by Haiku
+Finding verification: {N} critical/high bugs checked by Sonnet
   Confirmed (≥80):  {count} — kept as-is
   Uncertain (40-79): {count} — severity downgraded
   Rejected (<40):   {count} — moved to unverified_bugs
@@ -1453,7 +1447,7 @@ for round_number in 1..round_count:
        - Only then continue to the next round.
 
 After all rounds:
-    7. Verify critical/high findings with Haiku agents (Phase 5.7)
+    7. Verify critical/high findings with Sonnet agents (Phase 5.7)
     8. Aggregate ALL rounds into a single audit-results.json (Phase 6)
     9. Write TOON compact format (Phase 6 Step 4.5)
     10. Print final summary
