@@ -6,10 +6,11 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 10 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording.
+ShipGuard is composed of 11 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording. `sg-ship` orchestrates the three discovery lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
+| `sg-ship` | One-command orchestrator -- runs code audit -> process check -> visual -> review on the diff. Thin sequencer over the lanes; no new analysis | Repo + git diff | Unified review across all three signals |
 | `sg-code-audit` | Parallel AI codebase audit -- dispatches agents to find and fix bugs | Repo source code | `audit-results.json` (structured bug list) |
 | `sg-process-check` | Diff-driven behavior simulation at the PROCESS level -- traces changed units before/after (reasoning by default, optional real execution), observe-not-fix | Git diff (+ optional running code) | `process-results.json` + `process-report.md` |
 | `sg-visual-discover` | Scan codebase for routes, navigation, forms -- generate YAML test manifests | Repo source code | `visual-tests/**/*.yaml` manifest tree |
@@ -44,7 +45,19 @@ sg-code-audit --> impacted_backend[] --> sg-process-check --from-audit
 sg-process-check --> impacted_ui_routes[] --> sg-visual-run --from-process (visual confirm)
 ```
 
-The entry points (`sg-code-audit`, `sg-visual-discover`, and `sg-process-check`) can run independently. `sg-visual-run --from-audit` bridges static→visual by reading `audit-results.json` impacted routes. `sg-process-check` adds the static→dynamic bridge: it reads `audit-results.json`'s `impacted_backend[]` (`--from-audit`) to dynamically exercise flagged endpoints, and emits `impacted_ui_routes[]` so the visual lane can confirm the user-facing effect of a behavior change. `sg-visual-review` merges all data sources into a single dashboard.
+The entry points (`sg-code-audit`, `sg-visual-discover`, and `sg-process-check`) can run independently. `sg-visual-run --from-audit` bridges static→visual by reading `audit-results.json` impacted routes. `sg-process-check` adds the static→dynamic bridge: it reads `audit-results.json`'s `impacted_backend[]` (`--from-audit`) to dynamically exercise flagged endpoints, and emits `impacted_ui_routes[]` so the visual lane can confirm the user-facing effect of a behavior change. `sg-visual-review` merges all data sources into a single dashboard. `sg-ship` is the optional one-command orchestrator that runs all three lanes in order over a single resolved scope and opens that dashboard — it only sequences the lanes via these bridges; it adds no analysis of its own.
+
+---
+
+## sg-ship Architecture
+
+The orchestrator. It runs ShipGuard's three discovery lanes in order and opens one review — a **thin sequencer**, not a new analyzer.
+
+- **Resolves scope once.** The diff (working tree, `--diff`, or `--all`) is resolved a single time and threaded into every lane so they all look at the same change.
+- **Sequences via existing bridges.** `sg-code-audit` → `sg-process-check --from-audit` → `sg-visual-run --from-audit --from-process` → `sg-visual-review`. The handoff is the result files each lane already writes (`audit-results.json`, `process-results.json`); `sg-ship` adds no schema or logic.
+- **Order matters.** Audit runs first because it produces `impacted_backend[]` / `impacted_ui_routes[]`, which the process and visual lanes consume.
+- **Degrades gracefully.** Lanes with nothing to do are skipped and logged (no backend → process-check reasons on functions only; no UI / no agent-browser / `--no-visual` → visual skipped). A failing lane doesn't abort the others.
+- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; fixing stays with `sg-visual-fix` / `sg-code-audit`. Flags (`quick|deep`, `--all`, `--diff`, `--report-only`, `--mode`) are passed through to the relevant lane.
 
 ---
 

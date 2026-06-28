@@ -23,6 +23,26 @@ npm install -g agent-browser && agent-browser install --with-deps
 
 ---
 
+## One command — `/sg-ship`
+
+Don't want to run the lanes by hand? `/sg-ship` runs the whole pipeline on your diff and opens one review:
+
+```bash
+/sg-ship                 # audit + process-check + visual + review, scoped to what changed
+/sg-ship deep --all      # full-repo, deeper audit
+/sg-ship --no-visual     # headless project / no UI
+/sg-ship --report-only   # find & observe, fix nothing
+```
+
+```
+static FIND ──► dynamic SIMULATE ──► visual CONFIRM ──► human DECIDES
+sg-code-audit    sg-process-check      sg-visual-run        sg-visual-review
+```
+
+It's a **thin sequencer** over the skills below — same scope threaded through every lane, connected by the `--from-audit` / `--from-process` bridges, no new analysis. Skips any lane that doesn't apply (no UI → no browser pass) and says so. You can still run each skill individually.
+
+---
+
 ## Visual E2E Debugger
 
 Mark bugs directly on screenshots. The AI traces each annotation to source code and fixes it.
@@ -347,14 +367,14 @@ Community adapters welcome.
 claude plugin add bacoco/shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 
-# Audit your code
-/sg-code-audit
+# Everything at once, scoped to your diff
+/sg-ship
 
-# Record a test manually
-/sg-record http://localhost:3000
-
-# Run all tests
-/sg-visual-run
+# …or run a single lane:
+/sg-code-audit                          # static audit
+/sg-process-check I changed the chunking # dynamic behavior
+/sg-record http://localhost:3000         # record a test
+/sg-visual-run                           # run visual tests
 ```
 
 ## Configuration

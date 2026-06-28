@@ -94,9 +94,13 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 </td>
 <td width="50%" valign="top">
 
-### 🔗 One pipeline
+### 🔗 One pipeline — `/sg-ship`
 
-Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Use any subset.
+Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Run all of it on your diff with one command — **`/sg-ship`** — or use any subset.
+
+```
+/sg-ship
+```
 
 </td>
 </tr>
@@ -479,7 +483,10 @@ Community adapters welcome.
 claude plugin add bacoco/shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 
-# Audit your code
+# Everything at once, scoped to your diff
+/sg-ship
+
+# …or a single lane — audit your code
 /sg-code-audit
 
 # Record a test manually
