@@ -1468,8 +1468,10 @@ Results: {path to audit-results.json}
          {path to audit-results.toon} (compact, ~40% fewer tokens)
 
 Next steps:
+  /sg-process-check --from-audit Dynamically check the impacted backend (behavior delta)
   /sg-visual-run --from-audit    Visually verify impacted routes
   /sg-visual-review              See the full dashboard with Code Audit tab
+  (or /sg-ship to run all lanes + review in one command)
 ```
 
 ### Monitor: report audit complete
@@ -1646,4 +1648,4 @@ Before reporting completion to the user, verify:
 - [ ] Accepted risks applied — expired acceptances resurfaced, never silently dropped
 - [ ] Previous audit-results.json archived to history/ before overwrite
 - [ ] Summary printed to terminal
-- [ ] Next steps suggested (/sg-visual-run --from-audit, /sg-visual-review)
+- [ ] Next steps suggested (/sg-process-check --from-audit, /sg-visual-run --from-audit, /sg-visual-review, or /sg-ship)
