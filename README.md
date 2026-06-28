@@ -85,7 +85,7 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 
 ### 🧪 Process Check
 
-Run the code your **diff** touched **before and after** the change and report how the behavior moved — output, errors, timing, token cost. The backend twin of the Visual Debugger. **Observe-not-fix; you decide what's intended.**
+**Simulate** how the process behaves **before/after** your **diff** — by default it **runs the code "in its head"** (no stack to boot, works on a 5-container app), and reports how the behavior moved: output, errors, timing, token cost. Every finding tagged reasoned vs measured. Backend twin of the Visual Debugger. **Observe-not-fix.**
 
 ```
 /sg-process-check I changed the chunking

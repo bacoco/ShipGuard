@@ -1,138 +1,125 @@
 ---
 name: sg-process-check
-description: Diff-driven dynamic behavior check at the PROCESS level — the backend twin of sg-visual-run. Looks at what changed (git diff / recent commits), runs the changed code units (API endpoints, functions, pipeline stages) on a few realistic inputs BEFORE and AFTER the change, and reports how the observable runtime behavior differs. Observe-not-fix; a human decides what matters. Trigger on "sg-process-check", "process check", "check the process", "verify the process", "behavior diff", "runtime check", "I changed X check the process/backend still behaves", "dynamic check", "vérifier le process".
+description: Diff-driven behavioral simulation at the PROCESS level — the backend twin of sg-visual-run. Given what changed (git diff / recent commits), it simulates how the process behaves BEFORE vs AFTER the change — by default by REASONING through the code (running it "in its head"), optionally anchored by really executing the cheap parts. Reports the behavioral delta with every observation tagged reasoned-vs-measured; observe-not-fix, human decides. Works on any complexity (a 5-container Docker app included) because the default mode needs no running stack. Trigger on "sg-process-check", "process check", "simulate the process", "trace the behavior", "behavior diff", "runtime check", "I changed X, how does the process behave now", "run it in your head", "vérifier le process".
 context: conversation
-argument-hint: "[what changed, natural language] [--diff=ref] [--from-audit] [--seam=auto|api|function] [--samples=N] [--report-only]"
+argument-hint: "[what changed, natural language] [--mode=reason|hybrid|execute] [--diff=ref] [--from-audit] [--samples=N] [--depth=shallow|deep]"
 ---
 
-# /sg-process-check — Diff-Driven Process Behavior Check
+# /sg-process-check — Diff-Driven Process Behavior Simulation
 
-The backend counterpart of `/sg-visual-run`. Where `sg-visual-run` drives the **browser** to confirm a change is still good in the **UI**, `sg-process-check` drives the **running code** to observe how a change affects the **process behavior** — no browser involved.
+The backend counterpart of `/sg-visual-run`. Where the visual lane drives the **browser** to confirm a change in the **UI**, `sg-process-check` simulates the **running process** to show how a change affects its **behavior** — no browser.
 
-It is **scoped to the diff** of the module you are working on (not the whole repo), and its oracle is **before/after**: the previous version of the code is the reference. You are not asking "is this correct in the absolute" — you are asking **"did this change alter the observable behavior, and is that change intended?"** The human decides. This is the process-level twin of `sg-visual-fix`'s before/after screenshots — here we capture before/after **behavior** (output, exceptions, timing, cost) instead of pixels.
+**The default is to run the code "in its head."** It reads the diff and the code paths it touches, builds a model of the process (pipeline stages, data flow), and **traces representative inputs through the OLD and NEW code by reasoning** — predicting how the observable behavior differs. It can *optionally* really execute the cheap parts to anchor that reasoning, but it never needs to boot the stack. That is what makes it work on a 5-container app: the floor mode requires no infra.
 
-**Hard rule — observe, never fix.** `sg-process-check` runs code and reports what it does. It never edits source. Fixing stays with `sg-code-audit` / `sg-visual-fix`. This boundary is what keeps the lane honest.
+It is **scoped to the diff** of the module you're working on (not the whole repo). Its oracle is **before/after**: the previous version is the reference. The question is not "is this correct in the absolute" — it's **"did the observable behavior change, and was that intended?"** The human decides. This is the behavior-level twin of `sg-visual-fix`'s before/after screenshots.
 
-> **Recommended model: Sonnet 4.6.** Mapping a diff to units, generating a handful of inputs, running them, and diffing the results is mechanical work. Use `/model sonnet` before invoking to save Opus weekly quota. Escalate to Opus only if input synthesis for a complex unit needs deeper reasoning.
+> ### ⚠️ Reasoned ≠ measured — the honesty rule
+> A simulated trace is a **prediction**, not a measurement. Never present predicted behavior as observed. **Every observation carries an `evidence` tag — `reasoned` (with confidence + assumptions) or `measured` (really executed).** If a measured result contradicts the reasoned one, the measurement wins and the surprise is flagged. The whole value is the human judging a clearly-labelled delta — not a confident-sounding guess dressed up as fact.
+
+**Hard rule — observe, never fix.** Reports what the process does; never edits source. Remediation stays with `sg-code-audit` / `sg-visual-fix`.
+
+> **Recommended model: Opus for `--mode=reason` (the reasoning IS the product), Sonnet for `hybrid`/`execute`** where most of the work is mechanical orchestration. The default leans on code-tracing reasoning, so spend the better model there.
+
+## Modes — a fidelity spectrum
+
+| Mode | What it does | When |
+|------|--------------|------|
+| **`reason`** *(default)* | Simulates the process **by reasoning** — traces inputs through old vs new code in-head, predicts the behavioral delta. **Zero infra.** Every finding `evidence: reasoned`. | Always available — complex multi-container apps, nothing running, quick check |
+| **`hybrid`** | Reasons about the whole, **but really executes the parts that are cheap to run** (a pure importable function, an endpoint already up) to anchor/verify the reasoning. Mixed `reasoned` + `measured`. | When some part is trivially runnable |
+| **`execute`** | Literal before/after: build a baseline worktree, run each action on old + new for real. All `measured`. | **Opt-in**, only when the stack is simple or already running |
+
+`hybrid` and `execute` **auto-degrade to `reason`** for any unit that can't be run cheaply (and say so) — they never boot a 5-container stack unless you explicitly ask and it's feasible.
 
 ## Invocations
 
 | Command | Behavior |
 |---------|----------|
-| `/sg-process-check` | **Interactive** — detect the working diff, list the units it touches, confirm scope |
-| `/sg-process-check <text>` | Natural language — e.g. `I changed the RAPTOR chunking`; parse intent, map to changed units |
-| `/sg-process-check --diff=main` | Scope to everything changed since `main` (instead of the working tree) |
-| `/sg-process-check --from-audit` | Exercise the `impacted_backend[]` endpoints/services from `audit-results.json` |
-| `/sg-process-check --seam=api` | Force the API seam (drive endpoints) — or `--seam=function` for in-process calls. Default `auto` |
-| `/sg-process-check --samples=N` | Inputs to try per unit (default **3** — small on purpose, this is sampling not exhaustive fuzzing) |
-| `/sg-process-check --report-only` | Only observe HEAD behavior; skip the before/after baseline (faster, no worktree) |
-
-Flags combine freely: `/sg-process-check I touched the embed batcher --seam=api --samples=5`.
+| `/sg-process-check` | **Interactive** — detect the working diff, list the units it touches, confirm scope, run `reason` |
+| `/sg-process-check <text>` | Natural language — e.g. `I changed the RAPTOR chunking` |
+| `/sg-process-check --mode=hybrid` | Reason + execute the cheap parts to anchor |
+| `/sg-process-check --mode=execute` | Force literal before/after execution |
+| `/sg-process-check --diff=main` | Scope to everything changed since `main` |
+| `/sg-process-check --from-audit` | Simulate the `impacted_backend[]` endpoints from `audit-results.json` |
+| `/sg-process-check --samples=N` | Representative inputs to trace per unit (default **3**) |
+| `/sg-process-check --depth=deep` | Trace deeper call chains / more edge inputs (more tokens) |
 
 ---
 
-## Phase 0 — Pre-flight & scope
+## Phase 0 — Scope
 
-1. **Resolve the diff.** Default source of "what changed":
-   - working tree + staged changes (`git status --porcelain`, `git diff` and `git diff --staged`), else
-   - if `--diff=<ref>` is given, `git diff <ref>...HEAD`, else
-   - if the tree is clean, the last commit (`git show --stat HEAD`).
-   Record `base_ref` (the "before") and `head_ref` (the "after"). For a dirty working tree, `base_ref` = `HEAD`; for `--diff=main`, `base_ref` = `main`.
-2. **Detect the runtime.** Read `visual-tests/_config.yaml` if present (reuse `base_url`, `credentials`, `build_command`). Detect language/stack (Python/FastAPI, Node, etc.) from the changed files.
-3. **Confirm scope.** Print the changed files and the units detected (Phase 1) and ask the user to confirm or narrow — unless invoked with explicit natural-language scope or `--all`-style intent. Keep it small: this lane is meant to check **one module's change**, fast.
+1. **Resolve the diff.** Working tree + staged (`git status --porcelain`, `git diff`, `git diff --staged`); or `git diff <ref>...HEAD` for `--diff`; or `git show HEAD` if the tree is clean. Record `base_ref` (before) and `head_ref` (after).
+2. **Read context.** `visual-tests/_config.yaml` if present (stack hints, `base_url`); detect language/stack from the changed files.
+3. **Confirm scope.** Print changed files + detected units; ask to confirm/narrow unless explicit scope was given. This lane checks **one module's change**, not the repo.
 
-If nothing changed and no scope is given, stop: "No diff to check. Pass a `--diff=<ref>` or describe what you changed."
+If nothing changed and no scope is given, stop.
 
 ---
 
 ## Phase 1 — Map the change to process units
 
-For each changed file in scope, identify the **executable units** the diff touches. Three kinds:
+For each changed file, find the **executable units** the diff touches:
 
-| Unit kind | How to detect | How it will be driven |
-|-----------|---------------|-----------------------|
-| `endpoint` | FastAPI/Flask/Express route whose handler (or a function it calls) is in the diff. Cross-reference `/openapi.json` when the service exposes one. | HTTP request to the live service |
-| `function` | A changed top-level function/method with type hints or a clear signature (e.g. `chunk_document(doc) -> list[Chunk]`) | Direct in-process call via an ephemeral harness |
-| `pipeline-stage` | A changed step in a known pipeline (RAPTOR index, ColBERT search, embed batch, Celery task) | Call the stage entrypoint directly with a fixture |
+| Unit kind | Detect | Modelled as |
+|-----------|--------|-------------|
+| `endpoint` | route handler (or callee) in the diff; cross-ref `/openapi.json` | request → handler → downstream calls |
+| `function` | changed top-level function/method with a clear signature | input → return / effects |
+| `pipeline-stage` | changed step in a known pipeline (RAPTOR index, ColBERT search, embed batch, Celery task) | stage input → output |
 
-Map each unit back to an `impacted_backend` string (e.g. `POST /raptor/query/{id}` or `raptor_query.chunk_document`) for cross-feeding. Skip pure refactors with no reachable behavior (e.g. comment/rename-only) and **log them as skipped** — never silently drop.
-
-**Seam selection (`--seam=auto`):** prefer `api` when the unit is reachable from a running endpoint and a `base_url` is configured (closest to real usage, mirrors how `sg-visual-discover` reads UI routes); fall back to `function` (in-process) when there is no running service or the unit is an internal helper.
+Map each to an `impacted_backend` string (e.g. `POST /raptor/query/{id}`, `raptor_query.chunk_document`). **Skip** rename/comment-only changes — and **log them as skipped**, never silently drop.
 
 ---
 
-## Phase 2 — Generate actions
+## Phase 2 — Build the model & representative inputs
 
-For each unit, synthesize **`--samples` realistic inputs** (default 3). This is the modest "Monte-Carlo" sense: a few varied-but-plausible cases so you don't only see the happy path — *not* thousands, *not* adversarial worst-case hunting.
+For each unit:
+1. **Read the relevant code paths** — the changed function plus what it calls/returns into, enough to trace the effect of the change (follow imports as needed; `--depth=deep` follows further).
+2. **Pick `--samples` representative inputs** (default 3): one nominal, one boundary, one empty/edge. Prefer real repo fixtures (`data-sample/`, `test/fixtures/`), then OpenAPI examples / type hints. Use the **same** seeded inputs for before and after.
 
-Source inputs, in priority order:
-1. **Fixtures already in the repo** — `data-sample/`, `test/fixtures/`, `__fixtures__/`, factory functions.
-2. **OpenAPI examples** for the endpoint, or **type hints / Pydantic models** for the function (one nominal, one boundary, one empty/edge value).
-3. **A previously recorded real call** if a request log or `sg-record`-style trace exists.
-
-Each action is `{unit, input_summary, input_ref}`. Keep inputs **deterministic and seeded** so before/after run on the *same* input. Never invent inputs that would mutate shared/production data — see Safety.
+This is the modest "sampling" sense — a few cases so you don't only see the happy path. Not exhaustive.
 
 ---
 
-## Phase 3 — Establish the "before" baseline
+## Phase 3 — Simulate before vs after (the core, `reason`)
 
-Unless `--report-only`:
+For each (unit, input), **trace the input through the OLD code and the NEW code by reasoning**, and produce two observation records. For each side predict:
+- **outcome**: `ok` | `error` (and which exception / status, traced to the line that raises it)
+- **output**: shape / key fields / counts — what the unit returns or emits
+- **effects**: writes, external/LLM calls made, state touched
+- **cost/latency signal**: relative — "more LLM calls", "an extra O(n) pass", "one less DB round-trip" (qualitative unless measured)
 
-1. Create a **git worktree pinned to the exact base commit** so "before" is reproducible:
-   ```bash
-   BASE=$(git rev-parse <base_ref>)
-   git worktree add --detach .sg-process-before "$BASE"
-   git -C .sg-process-before reset --hard "$BASE"   # pin — never inherit a stale checkout
-   ```
-   > Pin explicitly with `reset --hard <commit>`. A worktree must run the intended base, not whatever HEAD happened to be — stale-base drift silently invalidates the whole comparison.
-2. Bring the baseline up where needed (install deps if the lockfile changed; for the API seam, boot the base build on an **alternate port** so before/after services don't collide). Reuse `build_command` from `_config.yaml`.
-
-If the baseline cannot be built (e.g. base was already broken), record that and fall back to `--report-only` for the affected units — and say so in the report.
+Each record gets `evidence: reasoned`, a **`confidence`** (high/medium/low), and the **`assumptions`** it rests on (e.g. "assumes `doc.pages` is non-empty", "assumes Albert returns within token budget"). Be explicit about what you could NOT trace with confidence — that goes to `uncovered`, not a confident guess.
 
 ---
 
-## Phase 4 — Execute & observe (before + after)
+## Phase 4 — Anchor by real execution (`hybrid` / `execute` only)
 
-Run **every action on both** the baseline (Phase 3) and HEAD, with the **same seeded input**. For each run, capture an observation record — never assert, just record:
+For units that are **cheap to run**, execute the same seeded inputs for real and replace the reasoned record with a `measured` one:
+- **function** seam → ephemeral harness imports the module and calls the unit; capture outcome/output/timing/cost; delete the harness.
+- **endpoint** seam → if a service is already up (or `build_command` is a single container), fire the request at `base_url`; for `execute`, build a baseline **worktree pinned at the base commit** (`git worktree add --detach … && git reset --hard <BASE>` — pin explicitly, never inherit a stale checkout) on an alternate port for the "before".
+- **pipeline-stage** seam → call the stage entrypoint with a fixture.
 
-- **outcome**: `ok` | `error` (unhandled exception / non-2xx / panic) + the error text/type
-- **output digest**: a stable summary of the result (shape, key fields, counts, a hash or normalized sample — not the full blob)
-- **timing**: wall-clock ms
-- **cost**: LLM tokens / external calls if the unit hits Albert/Olympia/embeddings (this stack is LLM-heavy — cost regressions matter)
-- **trace** (optional, when cheap): which downstream functions/stages were hit (coverage of the changed path)
+Control non-determinism (LLMs, vector DB) with record-replay cassettes so a measured delta reflects the code change, not sampling noise; otherwise mark `noisy` and compare structural fields only.
 
-**Non-determinism control.** This stack calls LLMs and vector DBs. To keep before/after comparable: fix seeds/temperature where possible, and **record-and-replay external calls** (VCR-style cassette captured on the baseline run, replayed on HEAD) so a behavior diff reflects *your code change*, not LLM sampling noise. If a call cannot be made deterministic, mark its observations `noisy` and compare only structural fields.
+**Reconcile:** if a `measured` result **contradicts** the `reasoned` prediction, the measurement wins, the unit is flagged `surprise: true`, and that's a high-signal item for the human (the model's mental model of the process was wrong there). Always clean up worktrees/baseline services.
 
 ---
 
 ## Phase 5 — Diff & classify
 
-For each action, compare before vs after and assign a `delta`:
-
-| delta | Meaning |
-|-------|---------|
-| `identical` | Same outcome and output digest |
-| `output-changed` | Same outcome, different output digest |
-| `now-errors` | OK before, errors after (**likely regression**) |
-| `now-recovers` | Errored before, OK after (likely a fix) |
-| `cost-changed` / `latency-changed` | Outcome+output same, but tokens/time moved beyond a threshold (default ±25%) |
-
-Roll up per unit into a `verdict`: `unchanged`, `behavior-changed`, or `new-error`. **No pass/fail, no severity verdict on intent** — `output-changed` is not inherently bad (the change may be exactly what the user wanted). The skill states *what moved*; the human judges whether it was intended.
+Per action, compare before vs after → `delta`: `identical` / `output-changed` / `now-errors` / `now-recovers` / `cost-changed` / `latency-changed`. Per unit → `verdict`: `unchanged` / `behavior-changed` / `new-error`. **No intent verdict, no pass/fail** — `output-changed` may be exactly what was wanted; the skill states *what moved* and *how it knows* (reasoned/measured), the human judges.
 
 ---
 
 ## Phase 6 — Report & bridges
 
-1. **Write `process-results.json`** to the results dir (`visual-tests/_results/` if it exists, else `.process-check-results/`) — schema below. This mirrors `audit-results.json` so the `/sg-visual-review` dashboard can surface it (a "Process" tab) alongside Code Audit and Visual Tests.
-2. **Write `process-report.md`** next to it: a short, human-first before/after table per unit, newest/most-changed first, with a one-line repro (`seed` + input ref) for each action so the human can re-run the exact case.
-3. **Print a summary** to the conversation: units checked, behavior changes, new errors, and the single most notable delta.
-4. **Cleanup**: `git worktree remove .sg-process-before --force` (and stop the baseline service/port). Never leave worktrees behind.
+1. **`process-results.json`** (schema below) to the results dir (`visual-tests/_results/` else `.process-check-results/`) — mirrors `audit-results.json` so `/sg-visual-review` can show it (Process tab).
+2. **`process-report.md`** — short before/after table per unit, **reasoned and measured findings visually separated**, most-changed/`surprise` first, each with a one-line repro (mode, seed, input ref).
+3. **Print a summary**: units checked, behavior changes, new errors, surprises, and how much was reasoned vs measured.
 
-### Bridges (mix with the rest of ShipGuard)
-
-- **`--from-audit`** consumes `impacted_backend[]` from `audit-results.json` — dynamically confirm the endpoints a static audit flagged.
-- **Feed `sg-visual-run`**: units with a user-facing route get an `impacted_ui_routes` hint so `/sg-visual-run --from-process` (or the operator) can confirm the *visual* effect of a behavior change. Static find → dynamic process check → visual confirm → human decides.
-- **Dashboard**: `process-results.json` in the results dir lets `/sg-visual-review` show the before/after behavior next to screenshots and audit findings.
+### Bridges
+- **`--from-audit`** consumes `impacted_backend[]` from `audit-results.json`.
+- Emits **`impacted_ui_routes[]`** for `sg-visual-run --from-process` (visual confirm).
+- `process-results.json` → `sg-visual-review`. Static **find** → behavioral **simulate** → visual **confirm** → human **decides**.
 
 ---
 
@@ -142,14 +129,15 @@ Roll up per unit into a `verdict`: `unchanged`, `behavior-changed`, or `new-erro
 {
   "repo": "my-project",
   "timestamp": "2026-06-28T10:00:00Z",
+  "mode": "reason",
   "base_ref": "main",
   "head_ref": "working-tree",
-  "seam": "api",
   "summary": {
     "units_checked": 4,
-    "actions_run": 12,
     "behavior_changes": 2,
     "new_errors": 1,
+    "surprises": 0,
+    "evidence_mix": { "reasoned": 10, "measured": 2 },
     "by_verdict": { "unchanged": 2, "behavior-changed": 1, "new-error": 1 }
   },
   "units": [
@@ -164,62 +152,56 @@ Roll up per unit into a `verdict`: `unchanged`, `behavior-changed`, or `new-erro
         {
           "seed": 1,
           "input_summary": "acte.pdf (12 pages)",
-          "before": { "outcome": "ok", "output_digest": "chunks=18 avg_tokens=512", "duration_ms": 240, "tokens": 0 },
-          "after":  { "outcome": "ok", "output_digest": "chunks=11 avg_tokens=870", "duration_ms": 230, "tokens": 0 },
+          "evidence": "reasoned",
+          "confidence": "medium",
+          "assumptions": ["doc has >1 page", "no custom separators configured"],
+          "before": { "outcome": "ok", "output": "≈18 chunks, ~512 tok each", "effects": "0 LLM calls" },
+          "after":  { "outcome": "ok", "output": "≈11 chunks, ~870 tok each", "effects": "0 LLM calls" },
           "delta": "output-changed",
-          "observation": "Same doc → 18 chunks → 11; avg chunk +70% tokens. Intended?"
+          "surprise": false,
+          "observation": "New min-chunk-size merges small chunks → fewer, larger chunks. Downstream embed cost likely up. Intended?"
         }
       ]
     }
   ],
   "impacted_backend": ["POST /raptor/query/{id}"],
   "impacted_ui_routes": [{ "route": "/notaire-chat", "reason": "chunking affects RAG answers" }],
-  "skipped": [{ "file": "utils.py", "reason": "rename-only, no reachable behavior change" }],
-  "uncovered": ["embed_batch.flush() — no fixture available, not exercised"]
+  "skipped": [{ "file": "utils.py", "reason": "rename-only" }],
+  "uncovered": ["embed_batch.flush() — could not trace the retry path with confidence; not simulated"]
 }
 ```
 
-Always populate `skipped` and `uncovered` honestly. Sampling is **not** exhaustive — say what you did not exercise rather than imply full coverage.
-
----
-
-## Driving seams (how to run without a browser)
-
-- **API seam** — boot the service (`build_command`), read `/openapi.json`, build requests from the schema/examples, fire them at `base_url`. Closest to real usage; works across FastAPI/Flask/Express. Run baseline on an alternate port.
-- **Function seam** — write a tiny ephemeral harness (a temp script) that imports the changed module, calls the unit with each seeded input, and prints a JSON observation record. Delete the harness after. No network, fastest, but needs importable units.
-- **Pipeline-stage seam** — call the stage entrypoint (e.g. the RAPTOR indexer, ColBERT searcher, a Celery task body) directly with a fixture, capturing the same observation record.
+`evidence`, `skipped`, and `uncovered` are always populated honestly. Reasoning is a prediction; say what you did not (or could not) trace.
 
 ---
 
 ## Safety rules
 
-1. **Never fix.** Observe and report only. Zero source edits.
-2. **Never mutate shared/production data.** Drive against a local/throwaway instance with seeded, disposable inputs. If only a shared instance is available, restrict to read-only/idempotent actions and **say so** — skip the rest.
-3. **Pin the baseline** with `reset --hard <commit>`; always remove the worktree on exit.
-4. **Budget the cost.** Default `--samples=3`. Cap total LLM tokens; prefer replayed cassettes over live LLM calls for the before/after comparison.
-5. **No secrets in artifacts.** Redact credentials/tokens from captured inputs, outputs, and `process-report.md` before writing.
+1. **Never fix.** Observe/simulate and report only. Zero source edits.
+2. **Reasoned ≠ measured.** Tag every observation. Never let a prediction read as a measurement.
+3. **`reason` mode touches no infra.** `hybrid`/`execute` run code only against local/throwaway instances with seeded, disposable inputs; read-only/idempotent only if a shared instance is the only option (and say so). Pin baselines (`reset --hard`), always remove worktrees.
+4. **Budget.** Default `--samples=3`; cap tokens; prefer cassettes over live LLM calls when executing.
+5. **No secrets** in captured inputs/outputs or `process-report.md`.
 
 ---
 
 ## Edge cases
 
-- **No running service & API-only unit** → fall back to `--seam=function`, or `--report-only` if not importable; note the limitation.
-- **Baseline won't build** → `--report-only` for affected units; report "no before available".
-- **Non-deterministic output even with cassettes** → compare structural fields only; mark `noisy`.
-- **Huge diff** → ask to narrow; this lane is for a module's change, not a repo-wide sweep (use `sg-code-audit --all` for breadth).
-- **Binary/again-untestable change** (config, docs) → skip with reason.
+- **5-container app, nothing running** → `reason` (the default) handles it; `hybrid`/`execute` degrade to `reason` per un-runnable unit and note it.
+- **Baseline won't build (execute)** → degrade that unit to `reason`; report "no measured before".
+- **Reasoning low-confidence on a unit** → say so in `confidence`/`uncovered`; suggest `--mode=hybrid` to anchor it if runnable.
+- **Huge diff** → ask to narrow; this lane is per-module, not a repo-wide sweep.
 
 ---
 
 ## Final checklist
 
 - [ ] Diff resolved; `base_ref` / `head_ref` recorded
-- [ ] Changed files mapped to executable units (skips logged)
-- [ ] `--samples` seeded inputs generated per unit, from real fixtures where possible
-- [ ] Baseline worktree pinned with `reset --hard`; service on alternate port if API seam
-- [ ] Each action run on before + after with the same input; external calls replayed
-- [ ] Deltas classified; per-unit verdicts assigned (no intent verdict)
-- [ ] `process-results.json` + `process-report.md` written; `skipped` / `uncovered` populated honestly
+- [ ] Changed files mapped to units (skips logged)
+- [ ] Model built; `--samples` seeded inputs chosen from real fixtures where possible
+- [ ] Before/after **simulated by reasoning** (default), with `evidence`/`confidence`/`assumptions`
+- [ ] (hybrid/execute) cheap units **measured**; contradictions flagged `surprise`; worktrees cleaned
+- [ ] Deltas classified; per-unit verdicts (no intent verdict)
+- [ ] `process-results.json` + `process-report.md` written; reasoned vs measured separated; `skipped`/`uncovered` honest
 - [ ] Bridges emitted (`impacted_backend`, `impacted_ui_routes`)
-- [ ] Worktree removed, baseline service stopped, no secrets in artifacts
-- [ ] Summary printed
+- [ ] No secrets in artifacts; summary printed
