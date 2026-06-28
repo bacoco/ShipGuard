@@ -6,11 +6,12 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 9 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording.
+ShipGuard is composed of 10 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
 | `sg-code-audit` | Parallel AI codebase audit -- dispatches agents to find and fix bugs | Repo source code | `audit-results.json` (structured bug list) |
+| `sg-process-check` | Diff-driven dynamic behavior check at the PROCESS level -- runs changed code units before/after, observe-not-fix | Git diff + running code | `process-results.json` + `process-report.md` |
 | `sg-visual-discover` | Scan codebase for routes, navigation, forms -- generate YAML test manifests | Repo source code | `visual-tests/**/*.yaml` manifest tree |
 | `sg-visual-run` | Execute test manifests via agent-browser with hybrid assertions | YAML manifests | Screenshots + `report.md` + updated `_regressions.yaml` |
 | `sg-visual-review` | Build interactive HTML dashboard from test results + audit results | Manifests + screenshots + audit JSON | `review.html` (self-contained) + `fix-manifest.json` |
@@ -36,9 +37,14 @@ sg-visual-review --> fix-manifest.json --> sg-visual-fix
 sg-visual-fix --> before/after screenshots --> sg-visual-review (updated comparison)
 
 sg-code-audit --> POST /api/monitor/* --> monitor-data.json --> Monitor tab (polling)
+
+git diff --> sg-process-check --> process-results.json + process-report.md --> sg-visual-review (Process tab)
+                                                       |
+sg-code-audit --> impacted_backend[] --> sg-process-check --from-audit
+sg-process-check --> impacted_ui_routes[] --> sg-visual-run --from-process (visual confirm)
 ```
 
-The two entry points (`sg-code-audit` and `sg-visual-discover`) can run independently. `sg-visual-run --from-audit` bridges them by reading `audit-results.json` impacted routes and running matching visual tests. `sg-visual-review` merges both data sources into a single dashboard.
+The entry points (`sg-code-audit`, `sg-visual-discover`, and `sg-process-check`) can run independently. `sg-visual-run --from-audit` bridges static→visual by reading `audit-results.json` impacted routes. `sg-process-check` adds the static→dynamic bridge: it reads `audit-results.json`'s `impacted_backend[]` (`--from-audit`) to dynamically exercise flagged endpoints, and emits `impacted_ui_routes[]` so the visual lane can confirm the user-facing effect of a behavior change. `sg-visual-review` merges all data sources into a single dashboard.
 
 ---
 
@@ -196,6 +202,47 @@ Bug IDs encode round and zone: `r{round}-{zone_id}-{sequence}`. This avoids coll
 ```
 
 The `impacted_routes` array is derived by mapping each bug's file path to UI routes using framework-specific detection (Next.js App Router directory structure, Pages Router file paths, React Router config, or generic directory-name fallback).
+
+---
+
+## sg-process-check Architecture
+
+The backend twin of `sg-visual-run`. Where the visual lane drives the browser to confirm a change in the UI, `sg-process-check` drives the **running code** to observe how a change affects **process behavior** — no browser. It occupies the missing quadrant of ShipGuard's design space:
+
+| | Reads (static) | Executes (dynamic) |
+|---|---|---|
+| **Code level** | `sg-code-audit` | **`sg-process-check`** |
+| **UI level** | `sg-visual-discover` | `sg-visual-run` |
+
+### Principles
+
+- **Diff-scoped.** The unit of work is the diff of the module being worked on (working tree, `--diff=<ref>`, or `--from-audit`), never the whole repo. Breadth is `sg-code-audit`'s job.
+- **Before/after oracle.** The previous version of the code (a git worktree pinned at the base commit with `reset --hard`) is the reference. The question is "did observable behavior change, and was that intended?" — not absolute correctness. This mirrors `sg-visual-fix`'s before/after screenshots, but captures before/after **behavior** (output, exceptions, timing, token cost).
+- **Observe, never fix.** Runs code and reports; zero source edits. Remediation stays with `sg-code-audit` / `sg-visual-fix`.
+
+### Pipeline
+
+1. **Scope** — resolve the diff; record `base_ref` / `head_ref`.
+2. **Map** — changed files → executable units (`endpoint`, `function`, `pipeline-stage`); rename/comment-only changes are skipped and logged.
+3. **Generate actions** — a small seeded input sample per unit (default 3) sourced from repo fixtures, OpenAPI examples, or type hints. Modest "Monte-Carlo" sampling, not exhaustive fuzzing.
+4. **Baseline** — build a worktree pinned at `base_ref` (API seam: boot it on an alternate port).
+5. **Execute & observe** — run every action on before + after with the same seeded input; record outcome / output digest / timing / LLM cost / optional path trace. External non-determinism (LLMs, vector DB) is controlled by record-replay cassettes captured on the baseline.
+6. **Diff & classify** — per action: `identical` / `output-changed` / `now-errors` / `now-recovers` / `cost-changed` / `latency-changed`; per unit verdict `unchanged` / `behavior-changed` / `new-error`. No intent verdict — the human judges.
+7. **Report** — `process-results.json` (mirrors `audit-results.json`) + `process-report.md`; clean up the worktree.
+
+### Seams
+
+- **API** (default when a service + `base_url` exist): drive endpoints from `/openapi.json`. Closest to real usage; mirrors `sg-visual-discover` reading UI routes.
+- **Function** (in-process): ephemeral harness imports the module and calls the unit directly. No network, fastest.
+- **Pipeline-stage**: call the stage entrypoint (RAPTOR indexer, ColBERT searcher, Celery task) with a fixture.
+
+### Output (`process-results.json`)
+
+- `summary` — units checked, behavior changes, new errors, verdict breakdown
+- `units[]` — kind, ref, file, verdict, and per-action before/after observation records (seed, input summary, outcome, output digest, timing, cost, delta)
+- `impacted_backend[]` — endpoints/services exercised (consumed by `--from-audit` correlation)
+- `impacted_ui_routes[]` — routes whose UX a behavior change may affect (handed to `sg-visual-run --from-process`)
+- `skipped[]` / `uncovered[]` — populated honestly; sampling is not exhaustive, so what was not exercised is stated explicitly
 
 ---
 
