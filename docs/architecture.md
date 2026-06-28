@@ -6,11 +6,12 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 9 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording.
+ShipGuard is composed of 10 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
 | `sg-code-audit` | Parallel AI codebase audit -- dispatches agents to find and fix bugs | Repo source code | `audit-results.json` (structured bug list) |
+| `sg-process-check` | Diff-driven behavior simulation at the PROCESS level -- traces changed units before/after (reasoning by default, optional real execution), observe-not-fix | Git diff (+ optional running code) | `process-results.json` + `process-report.md` |
 | `sg-visual-discover` | Scan codebase for routes, navigation, forms -- generate YAML test manifests | Repo source code | `visual-tests/**/*.yaml` manifest tree |
 | `sg-visual-run` | Execute test manifests via agent-browser with hybrid assertions | YAML manifests | Screenshots + `report.md` + updated `_regressions.yaml` |
 | `sg-visual-review` | Build interactive HTML dashboard from test results + audit results | Manifests + screenshots + audit JSON | `review.html` (self-contained) + `fix-manifest.json` |
@@ -36,9 +37,14 @@ sg-visual-review --> fix-manifest.json --> sg-visual-fix
 sg-visual-fix --> before/after screenshots --> sg-visual-review (updated comparison)
 
 sg-code-audit --> POST /api/monitor/* --> monitor-data.json --> Monitor tab (polling)
+
+git diff --> sg-process-check --> process-results.json + process-report.md --> sg-visual-review (Process tab)
+                                                       |
+sg-code-audit --> impacted_backend[] --> sg-process-check --from-audit
+sg-process-check --> impacted_ui_routes[] --> sg-visual-run --from-process (visual confirm)
 ```
 
-The two entry points (`sg-code-audit` and `sg-visual-discover`) can run independently. `sg-visual-run --from-audit` bridges them by reading `audit-results.json` impacted routes and running matching visual tests. `sg-visual-review` merges both data sources into a single dashboard.
+The entry points (`sg-code-audit`, `sg-visual-discover`, and `sg-process-check`) can run independently. `sg-visual-run --from-audit` bridges static→visual by reading `audit-results.json` impacted routes. `sg-process-check` adds the static→dynamic bridge: it reads `audit-results.json`'s `impacted_backend[]` (`--from-audit`) to dynamically exercise flagged endpoints, and emits `impacted_ui_routes[]` so the visual lane can confirm the user-facing effect of a behavior change. `sg-visual-review` merges all data sources into a single dashboard.
 
 ---
 
@@ -196,6 +202,59 @@ Bug IDs encode round and zone: `r{round}-{zone_id}-{sequence}`. This avoids coll
 ```
 
 The `impacted_routes` array is derived by mapping each bug's file path to UI routes using framework-specific detection (Next.js App Router directory structure, Pages Router file paths, React Router config, or generic directory-name fallback).
+
+---
+
+## sg-process-check Architecture
+
+The backend twin of `sg-visual-run`. Where the visual lane drives the browser to confirm a change in the UI, `sg-process-check` **simulates the running process** to show how a change affects its **behavior** — no browser. It occupies the missing quadrant of ShipGuard's design space:
+
+| | Reads (static) | Runs / simulates (dynamic) |
+|---|---|---|
+| **Code level** | `sg-code-audit` | **`sg-process-check`** |
+| **UI level** | `sg-visual-discover` | `sg-visual-run` |
+
+### Principles
+
+- **Diff-scoped.** The unit of work is the diff of the module being worked on (working tree, `--diff=<ref>`, or `--from-audit`), never the whole repo. Breadth is `sg-code-audit`'s job.
+- **Reasoning by default — runs the code "in its head".** The default `reason` mode needs no running stack: it reads the diff and the touched code paths and **traces representative inputs through old vs new code by reasoning**, predicting the behavioral delta. This is why it works on a 5-container app — the floor mode requires zero infra. Real execution is an opt-in escalation (`hybrid`/`execute`), not a prerequisite.
+- **Reasoned ≠ measured (honesty rule).** A simulated trace is a prediction, not a measurement. Every observation carries an `evidence` tag (`reasoned` with confidence + assumptions, or `measured`). When a measured result contradicts the reasoned one, the measurement wins and the unit is flagged `surprise`. Predictions never masquerade as observations.
+- **Before/after oracle.** The previous version of the code is the reference (reasoned from the diff, or — in `execute` mode — a git worktree pinned at the base commit with `reset --hard`). The question is "did observable behavior change, and was that intended?" — not absolute correctness. This is the behavior-level twin of `sg-visual-fix`'s before/after screenshots.
+- **Observe, never fix.** Simulates/runs and reports; zero source edits. Remediation stays with `sg-code-audit` / `sg-visual-fix`.
+
+### Modes (fidelity spectrum)
+
+| Mode | What | Infra |
+|------|------|-------|
+| `reason` *(default)* | Trace inputs through old vs new code by reasoning; predict the delta. All `reasoned`. | none |
+| `hybrid` | Reason about the whole, really execute the **cheap** parts (importable function, already-running endpoint) to anchor. Mixed. | minimal |
+| `execute` | Literal before/after via a pinned baseline worktree. All `measured`. | full (opt-in) |
+
+`hybrid`/`execute` **auto-degrade to `reason`** per unit that can't be run cheaply — they never boot a multi-container stack unless explicitly asked and feasible.
+
+### Pipeline
+
+1. **Scope** — resolve the diff; record `base_ref` / `head_ref`.
+2. **Map** — changed files → executable units (`endpoint`, `function`, `pipeline-stage`); rename/comment-only changes are skipped and logged.
+3. **Model & inputs** — read the touched code paths; pick a small seeded input sample per unit (default 3) from repo fixtures, OpenAPI examples, or type hints. Modest sampling, not exhaustive fuzzing.
+4. **Simulate before vs after** (`reason`) — trace each input through old + new code; predict outcome / output / effects / cost; tag `reasoned` with confidence + assumptions.
+5. **Anchor** (`hybrid`/`execute`) — really run the cheap units (function harness, live endpoint, pinned baseline worktree); replace with `measured` records; reconcile, flagging contradictions as `surprise`; clean up.
+6. **Diff & classify** — per action: `identical` / `output-changed` / `now-errors` / `now-recovers` / `cost-changed` / `latency-changed`; per unit verdict `unchanged` / `behavior-changed` / `new-error`. No intent verdict — the human judges.
+7. **Report** — `process-results.json` (mirrors `audit-results.json`) + `process-report.md` (reasoned vs measured separated); clean up any worktree.
+
+### Seams (how a unit is run when anchoring)
+
+- **API**: drive endpoints from `/openapi.json` against an already-running service (or a single-container `build_command`); `execute` boots a pinned baseline on an alternate port.
+- **Function** (in-process): ephemeral harness imports the module and calls the unit directly. No network, fastest, easiest to anchor.
+- **Pipeline-stage**: call the stage entrypoint (RAPTOR indexer, ColBERT searcher, Celery task) with a fixture.
+
+### Output (`process-results.json`)
+
+- `mode` + `summary` — units checked, behavior changes, new errors, surprises, `evidence_mix` (reasoned vs measured), verdict breakdown
+- `units[]` — kind, ref, file, verdict, and per-action before/after observation records (seed, input, `evidence`, `confidence`, `assumptions`, outcome, output, effects, delta, `surprise`)
+- `impacted_backend[]` — endpoints/services touched (consumed by `--from-audit` correlation)
+- `impacted_ui_routes[]` — routes whose UX a behavior change may affect (handed to `sg-visual-run --from-process`)
+- `skipped[]` / `uncovered[]` — populated honestly; a prediction is not coverage, so what was not (or could not be) traced is stated explicitly
 
 ---
 

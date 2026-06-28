@@ -29,7 +29,7 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 
 ---
 
-Four AI-powered modules. Use one, two, or all four. No test files to write.
+Five AI-powered modules. Use one, some, or all five. No test files to write.
 
 <table>
 <tr>
@@ -77,6 +77,26 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 ```
 /sg-improve
 ```
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🧪 Process Check
+
+**Simulate** how the process behaves **before/after** your **diff** — by default it **runs the code "in its head"** (no stack to boot, works on a 5-container app), and reports how the behavior moved: output, errors, timing, token cost. Every finding tagged reasoned vs measured. Backend twin of the Visual Debugger. **Observe-not-fix.**
+
+```
+/sg-process-check I changed the chunking
+```
+
+</td>
+<td width="50%" valign="top">
+
+### 🔗 One pipeline
+
+Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Use any subset.
 
 </td>
 </tr>

@@ -4,13 +4,13 @@
 
 **Ship with confidence.** ShipGuard finds bugs before your users do.
 
-Four AI-powered modules. Use one, two, or all four. No test files to write.
+Five AI-powered modules. Use one, some, or all. No test files to write.
 
-| | 📸 **Visual E2E Debugger** | 🎬 **Macro Recorder** | 🔍 **Code Audit** |
-|---|---|---|---|
-| **What** | Auto-discover routes, generate tests, mark bugs on screenshots — AI fixes the code | Record your browser interactions and turn them into replayable tests | Parallel AI agents scan your codebase, find bugs, fix them |
-| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` |
-| **Output** | Screenshots + annotation cards + auto-fix | YAML test manifests + test library cards | Bug report + auto-fixes + Mission Control dashboard |
+| | 📸 **Visual E2E Debugger** | 🎬 **Macro Recorder** | 🔍 **Code Audit** | 🧪 **Process Check** |
+|---|---|---|---|---|
+| **What** | Auto-discover routes, generate tests, mark bugs on screenshots — AI fixes the code | Record your browser interactions and turn them into replayable tests | Parallel AI agents scan your codebase, find bugs, fix them | Simulate the process your diff touched (runs the code "in its head") before/after, report how the behavior moved |
+| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-process-check` |
+| **Output** | Screenshots + annotation cards + auto-fix | YAML test manifests + test library cards | Bug report + auto-fixes + Mission Control dashboard | Before/after behavior report + `process-results.json` |
 
 ### Install
 
@@ -269,6 +269,58 @@ Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JV
 
 ---
 
+## Process Check
+
+The backend twin of the Visual E2E Debugger. Code Audit *reads* your code; the Visual Debugger drives the *browser*. `sg-process-check` **simulates the running process** — by default it **runs the code "in its head"**: it traces the units your diff touched through the old and new code by reasoning, and reports how the observable behavior moved. No browser, no stack to boot (so it works on a 5-container app). Observe-not-fix — you decide what's intended.
+
+```bash
+/sg-process-check I changed the RAPTOR chunking
+```
+
+### What it does
+
+1. Looks at your **diff** (working tree, `--diff=<ref>`, or `--from-audit`) — scoped to the module you're working on, not the whole repo.
+2. Maps changed files to **units** (API endpoints, functions, pipeline stages).
+3. Traces each on a few seeded inputs, **through the old code and the new code**, and diffs the behavior: output, exceptions, timing, LLM token cost.
+4. Writes `process-results.json` + `process-report.md` and surfaces a before/after table in `/sg-visual-review` (Process tab).
+
+The oracle is **before/after** — the previous version is the reference, so there's nothing to spec. It's the behavior-level equivalent of the before/after screenshots `sg-visual-fix` produces.
+
+### Modes — a fidelity spectrum
+
+| Mode | What | Infra |
+|------|------|-------|
+| **`reason`** *(default)* | Simulates by **reasoning** (runs the code in its head). All findings tagged `reasoned`. | none |
+| **`hybrid`** | Reasons about the whole, **really runs the cheap parts** (a pure function, an endpoint already up) to anchor. | minimal |
+| **`execute`** | Literal before/after via a pinned baseline worktree. All `measured`. | full (opt-in) |
+
+> **Reasoned ≠ measured.** A simulated trace is a *prediction*, not a measurement. Every finding is tagged `reasoned` (with confidence + assumptions) or `measured`. If a real run contradicts the prediction, the measurement wins and the unit is flagged a **surprise** — high signal for you. `hybrid`/`execute` auto-degrade to `reason` for anything not cheap to run; they never boot a multi-container stack unless you ask and it's feasible.
+
+### Options
+
+```bash
+/sg-process-check                          # Interactive — detect the diff, confirm scope, reason
+/sg-process-check I touched the embedder   # Natural language
+/sg-process-check --mode=hybrid            # Reason + really run the cheap parts to anchor
+/sg-process-check --mode=execute           # Force literal before/after execution
+/sg-process-check --diff=main              # Everything changed since main
+/sg-process-check --from-audit             # Simulate impacted_backend[] from audit-results.json
+/sg-process-check --samples=5              # Inputs per unit (default 3 — sampling, not fuzzing)
+/sg-process-check --depth=deep             # Trace deeper call chains / more edge inputs
+```
+
+### Bridges
+
+| Bridge | Effect |
+|--------|--------|
+| `--from-audit` | Dynamically confirm the endpoints a static audit flagged (`impacted_backend[]`) |
+| `impacted_ui_routes[]` → `sg-visual-run --from-process` | Confirm the *visual* effect of a behavior change |
+| `process-results.json` → `sg-visual-review` | Before/after behavior shown next to screenshots and audit findings |
+
+Static find → dynamic process check → visual confirm → human decides.
+
+---
+
 ## Compatibility
 
 Built for **Claude Code**. Partial support for other AI CLIs:
@@ -276,6 +328,7 @@ Built for **Claude Code**. Partial support for other AI CLIs:
 | Feature | Claude Code | Codex CLI / Gemini CLI |
 |---------|------------|----------------------|
 | Code Audit (parallel) | ✅ Full | ❌ Requires Agent tool |
+| Process Check (dynamic) | ✅ Full | ✅ Bash + git worktree + LLM prompts |
 | Visual E2E Debugger | ✅ Full | ✅ agent-browser is CLI-independent |
 | Macro Recorder | ✅ Full | ✅ Playwright is CLI-independent |
 | Review Dashboard | ✅ Full | ✅ Pure Node.js |
