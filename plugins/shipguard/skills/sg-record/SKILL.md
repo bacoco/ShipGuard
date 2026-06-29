@@ -141,6 +141,8 @@ Playwright opens a fresh Chromium — the user is not logged in by default.
 - **With `--storage auth.json`**: Load saved cookies/localStorage to skip login.
 - **First time**: Use `--save-storage auth.json` to capture auth state after logging in. Reuse with `--storage auth.json` on subsequent recordings.
 
+Sandbox note: Playwright/browser sockets and dependency installs may need explicit permission. See [../../docs/sandbox.md](../../docs/sandbox.md).
+
 ## Execution Steps for the Skill
 
 When the user invokes `/sg-record`, follow ALL steps in order. Do NOT skip any step.

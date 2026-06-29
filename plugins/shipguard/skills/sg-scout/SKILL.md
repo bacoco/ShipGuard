@@ -2,7 +2,7 @@
 name: sg-scout
 description: Research GitHub and similar tools for ShipGuard audit, visual, and self-improvement techniques.
 context: conversation
-argument-hint: "[url] [--topic=eval|self-improving|audit|visual] [--dry-run]"
+argument-hint: "[url] [--topic=eval|self-improving|audit|visual] [--dry-run] [--offline --from <repos.json>]"
 ---
 
 # /sg-scout — GitHub Intelligence for ShipGuard
@@ -23,7 +23,10 @@ Think of it as a research assistant that reads other people's code so you don't 
 | `/sg-scout --topic=self-improving` | Focus: auto-optimization, mutation, feedback loops |
 | `/sg-scout --topic=audit` | Focus: code review, static analysis, bug detection |
 | `/sg-scout --topic=visual` | Focus: visual regression, screenshot testing, UI automation |
-| `/sg-scout --dry-run` | Show findings in terminal, don't create issues or write files |
+| `/sg-scout --dry-run` | Produce a local preview report; don't create issues or update the techniques library |
+| `/sg-scout --offline --from fixtures/scout-repos.json` | Analyze a local repo fixture; no GitHub search or network |
+
+Sandbox note: GitHub search and issue creation need network/auth. Use `--dry-run` or `--offline` when network is blocked. See [../../docs/sandbox.md](../../docs/sandbox.md).
 
 ---
 
@@ -34,6 +37,25 @@ Think of it as a research assistant that reads other people's code so you don't 
 If a URL is provided (`/sg-scout https://github.com/owner/repo`), skip the search phase. Go directly to Phase 2 with that repo.
 
 ### Full Scan Mode
+
+If `--offline` is present, skip GitHub entirely. Read repos from the JSON file passed by `--from`; if omitted, use `fixtures/scout-repos.json` when present. Expected shape:
+
+```json
+{
+  "repos": [
+    {
+      "full_name": "owner/repo",
+      "url": "https://github.com/owner/repo",
+      "readme": "README text or path to local fixture",
+      "files": [
+        {"path": "SKILL.md", "content": "file text or path to local fixture"}
+      ]
+    }
+  ]
+}
+```
+
+If the fixture is missing or invalid, write `visual-tests/_results/scout-report.md` with the error and stop cleanly. Do not create issues.
 
 Search GitHub for repos relevant to ShipGuard's domains. Run these queries via `gh api`:
 
@@ -74,6 +96,8 @@ repos:
     description: "..."
     query_matched: "claude skill code audit"
 ```
+
+If GitHub or network access fails, do not stop with an opaque error. Write a local report to `visual-tests/_results/scout-report.md` containing the failing command, error summary, topic, and any partial repos already collected. Suggest rerunning with `--offline --from fixtures/scout-repos.json`.
 
 ---
 
@@ -240,7 +264,7 @@ gh issue create --repo bacoco/ShipGuard \
 
 ### Dry Run (--dry-run)
 
-Print all proposals to terminal. Don't write files or create issues. End with: "Run without --dry-run to publish these findings."
+Print all proposals to terminal and write `visual-tests/_results/scout-report.md`. Do not update `docs/scout-reports/techniques-library.md` and do not create or comment on GitHub issues. End with: "Run without --dry-run to publish these findings."
 
 ---
 
@@ -253,6 +277,7 @@ Print all proposals to terminal. Don't write files or create issues. End with: "
   Proposals filed: {P} issues on bacoco/ShipGuard
   Library updated: docs/scout-reports/techniques-library.md ({L} entries)
   Report: docs/scout-reports/{date}-scout.md
+  Preview: visual-tests/_results/scout-report.md (dry-run/offline/network-failure)
 
   Top 3 findings:
   1. {technique} (score {s}/5) — {one-line summary}

@@ -36,9 +36,33 @@ Session (audit, visual-run, debug)
 | `/sg-improve` | Full loop — local learnings + GitHub issue |
 | `/sg-improve --local-only` | Save learnings locally, skip GitHub |
 | `/sg-improve --github-only` | File GitHub issue only, skip local |
-| `/sg-improve --dry-run` | Show what would be saved/filed, write nothing |
+| `/sg-improve --dry-run` | Write a preview report showing exact target changes; do not modify target files or GitHub |
 | `/sg-improve --rollback` | Revert to the previous snapshot (undo last sg-improve run) |
 | `/sg-improve --history` | List all snapshots with dates and summary |
+
+Sandbox note: real mode writes `.shipguard/` and may call GitHub. Use `--dry-run` first in restricted environments. See [../../docs/sandbox.md](../../docs/sandbox.md).
+
+---
+
+## Dry-run Preview
+
+When `--dry-run` is present, run Phases 1-3 normally, then stop before snapshots, local writes, and GitHub writes. Produce:
+
+```text
+visual-tests/_results/sg-improve-preview.md
+```
+
+If `visual-tests/_results/` does not exist, use `.shipguard/preview/sg-improve-preview.md`.
+
+The preview must include:
+- target files that would be written (`.shipguard/learnings.yaml`, `.shipguard/mistakes.md`, GitHub issue/comment);
+- exact YAML entries that would be added or updated;
+- exact mistakes.md sections that would be added or updated;
+- exact GitHub issue or comment body;
+- signals that were ignored and why;
+- rollback snapshot path that would be created in real mode.
+
+Dry-run must not modify `.shipguard/learnings.yaml`, `.shipguard/mistakes.md`, `.shipguard/history/`, GitHub issues, or repository source files.
 
 ---
 
@@ -143,7 +167,7 @@ Check these paths in order (first found wins):
 
 If found, read it and extract:
 - `summary.total_bugs`, `summary.by_severity`, `summary.by_category`
-- `summary.duration_ms`, `agents` count
+- `summary.duration_ms`, `agent_count` count (fallback to numeric `agents` for legacy reports)
 - `scope_info.mode`, `scope_info.total_in_scope` (if diff mode)
 - Count of `bugs` where `fix_applied: false` (deferred/unfixable)
 - Count of `bugs` where `confidence: "low"` (uncertain findings)
@@ -455,6 +479,13 @@ Create the file from scratch. All signals become new entries. session_history st
 
 ### User ran /sg-improve twice in the same session
 The second run should detect that session_history already has an entry for today. Update it rather than appending a duplicate.
+
+### Rollback fixture test
+When changing this skill, test rollback with a disposable `.shipguard` fixture:
+1. Create fixture `learnings.yaml` and `mistakes.md`.
+2. Run the real write path on the fixture so Phase 0 creates `.shipguard/history/{timestamp}`.
+3. Run `--rollback` against that fixture.
+4. Confirm both files match their pre-run content and the latest snapshot was removed.
 
 ### gh CLI not installed or not authenticated
 Skip Phase 5 entirely. Print the issue body to the terminal so the user can file it manually if they want.

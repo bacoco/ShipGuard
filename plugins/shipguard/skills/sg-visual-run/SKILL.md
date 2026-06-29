@@ -26,6 +26,8 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 
 ## Pre-flight
 
+Sandbox note: browser sockets, local network, and cache writes may require explicit permission in Codex/Claude. See [../../docs/sandbox.md](../../docs/sandbox.md).
+
 1. Verify `agent-browser --version` is available
 2. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/sg-visual-discover`)
 3. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error

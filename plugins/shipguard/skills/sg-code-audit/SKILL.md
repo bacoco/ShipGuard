@@ -26,6 +26,8 @@ Dispatch parallel AI agents to audit every file in your repo. Each agent reviews
 | `/sg-code-audit quick --diff=feature-branch` | Combine mode with diff scope |
 | `/sg-code-audit deep --model=opus --focus=src/` | Combine model, mode, and focus |
 
+Sandbox note: report-only avoids source writes, but agent dispatch, Git worktrees, GitHub hooks, and local monitor POSTs may still need permissions. See [../../docs/sandbox.md](../../docs/sandbox.md).
+
 ---
 
 ## Phase 0 — Monitor Setup
@@ -1243,7 +1245,18 @@ Merge all zone results into a single aggregated file:
   "mode": "<quick|standard|deep|paranoid>",
   "prompt_hash": "<SHA256 hex of prompt template + activated checklists + learnings>",
   "rounds": <round_count>,
-  "agents": <actual agents dispatched including re-splits>,
+  "agent_count": <actual agents dispatched including re-splits>,
+  "agents": [
+    {
+      "id": "z1",
+      "label": "Zone 1",
+      "status": "completed",
+      "files_audited": 9,
+      "bugs_found": 1,
+      "duration_ms": 120000,
+      "paths": ["scripts/*.sh", "README.md"]
+    }
+  ],
   "scope_info": {
     "mode": "diff",
     "base_ref": "main",
@@ -1285,7 +1298,7 @@ Merge all zone results into a single aggregated file:
     "lifecycle": {"new": <count>, "persistent": <count>, "fixed": <count>, "not_rechecked": <count>, "compared_to": "<previous run timestamp, or null on first run>"}
   },
   "impacted_ui_routes": [
-    {"route": "<url path>", "reason": "<bug title + file>", "severity": "<highest severity bug for this route>"}
+    {"route": "<url path>", "reason": "<bug title + file>", "severity": "<highest severity bug for this route>", "bug_count": <exact number of active bugs mapped to this route>}
   ],
   "impacted_backend": [
     {"endpoint": "<API path or service name>", "reason": "<bug title + file>", "severity": "<severity>"}
@@ -1309,6 +1322,8 @@ Each bug in the `bugs` array includes two additional fields from Phase 5.7:
 - `verified`: `true` (score >= 80), `"uncertain"` (40-79), or `null` (not checked)
 
 Each bug also carries `"lifecycle"`: `"new"` or `"persistent"` (Step 1.6), and `"acceptance_expired": true` when a matching accepted-risk entry has lapsed (Step 1.7).
+
+Each UI-visible bug SHOULD also carry `"impacted_routes": ["<route>", ...]`. This is the exact route mapping used by the dashboard and by `/sg-visual-run --from-audit`. Do not make the dashboard infer route impact from file path strings, especially for `/`.
 
 When `scope_mode == "full"`: `"scope_info": {"mode": "full"}` — no other fields.
 When `scope_mode == "diff"`: include all fields above.
@@ -1349,7 +1364,9 @@ For frontend bugs, map the file path to the most likely UI route. Use framework-
 
 **Do NOT hardcode any project-specific paths.** All route detection must be generic and work on any repository.
 
-Deduplicate routes: if multiple bugs map to the same route, keep one entry with the highest severity and a combined reason.
+Deduplicate routes: if multiple bugs map to the same route, keep one entry with the highest severity, a combined reason, and an exact `bug_count`. Add that route to each mapped bug's `impacted_routes` array.
+
+Do not compute route bug counts with substring matching. `/` must not count every bug. The count comes only from explicit route mapping.
 
 If no routes can be derived (no framework, no HTML files, no manifest matches), set `impacted_ui_routes` to an empty array `[]`.
 
@@ -1406,7 +1423,7 @@ Also write `audit-results.toon` alongside the JSON file. TOON (Token-Optimized O
 
 ```
 # audit-results.toon
-# repo:{repo} mode:{mode} ts:{timestamp} rounds:{rounds} agents:{agents}
+# repo:{repo} mode:{mode} ts:{timestamp} rounds:{rounds} agents:{agent_count}
 # scope:{scope_mode} diff_files:{diff_files} total:{total_in_scope}
 # summary: total={total_bugs} critical={critical} high={high} medium={medium} low={low}
 # verified: checked={checked} confirmed={confirmed} uncertain={uncertain} rejected={rejected}
@@ -1584,7 +1601,10 @@ All bugs from all rounds are combined in the final `audit-results.json` bugs arr
   "timestamp": "2026-04-10T08:30:00Z",
   "mode": "standard",
   "rounds": 1,
-  "agents": 10,
+  "agent_count": 10,
+  "agents": [
+    {"id": "z1", "label": "Zone 1", "status": "completed", "files_audited": 18, "bugs_found": 2, "duration_ms": 92000, "paths": ["src/routes/*.py"]}
+  ],
   "scope_info": {
     "mode": "diff",
     "base_ref": "main",
@@ -1602,7 +1622,7 @@ All bugs from all rounds are combined in the final `audit-results.json` bugs arr
     "duration_ms": 612000
   },
   "impacted_ui_routes": [
-    {"route": "/dashboard", "reason": "Zustand store bug in dashboard-store.ts", "severity": "high"}
+    {"route": "/dashboard", "reason": "Zustand store bug in dashboard-store.ts", "severity": "high", "bug_count": 3}
   ],
   "impacted_backend": [
     {"endpoint": "POST /dossier/{id}/analyze", "reason": "Missing ownership check in dossier_routes.py", "severity": "critical"}
@@ -1617,6 +1637,7 @@ All bugs from all rounds are combined in the final `audit-results.json` bugs arr
       "line": 119,
       "title": "Missing ownership check",
       "description": "Any authenticated user can access any document by guessing the document ID.",
+      "impacted_routes": [],
       "fix_applied": true,
       "fix_commit": "abc1234"
     }

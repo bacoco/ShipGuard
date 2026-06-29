@@ -23,6 +23,8 @@ Generate and open a self-contained HTML page to visually review all Visual test 
 - `/sg-visual-run` has been run at least once (screenshots + `visual-results.json` or legacy `report.md` exist in `visual-tests/_results/`)
 - No external npm dependencies — the build script uses a built-in YAML parser
 
+Sandbox note: `--serve`, `POST /save-manifest`, and monitor smoke tests need loopback port access. See [../../docs/sandbox.md](../../docs/sandbox.md).
+
 ## What It Does
 
 ### Step 1: Build the Review Page

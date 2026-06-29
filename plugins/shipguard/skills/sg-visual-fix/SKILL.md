@@ -49,6 +49,8 @@ If a fix doesn't work, re-run or provide more specific annotation notes to guide
 | `/sg-visual-fix --dry-run` | Analyze the latest manifest and write a fix plan without editing source files |
 | `/sg-visual-fix --dry-run <path>` | Analyze a specific manifest and write a fix plan without editing source files |
 
+Sandbox note: normal mode edits source, rebuilds, runs browser commands, and writes screenshots. Use `--dry-run` first when permissions are restricted. See [../../docs/sandbox.md](../../docs/sandbox.md).
+
 ## Instructions
 
 ### Step 1: Load the Fix Manifest
