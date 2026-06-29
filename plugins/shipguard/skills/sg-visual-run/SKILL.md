@@ -105,7 +105,7 @@ For each step in the manifest's `steps:` array, run the corresponding action. **
 
 ### Step 3: Record result
 
-`PASS` / `FAIL` / `STALE` / `ERROR` / `SKIP` — mapping in action-reference.md.
+`PASS` / `FAIL` / `STALE` / `ERROR` / `SKIPPED` — mapping in action-reference.md.
 
 ## Browser crash recovery
 
@@ -130,7 +130,40 @@ After all tests complete, update `visual-tests/_regressions.yaml`:
 
 ## Generate report
 
-Write report to `{report_path}` (default: `visual-tests/_results/report.md`) with sections: Summary, Failures, Stale Tests, Generated Tests, Regressions Status, All Results.
+Write the canonical machine-readable result to `visual-tests/_results/visual-results.json`. `report.md` is a human-readable rendering only and must not be the only status source.
+
+Minimum JSON shape:
+
+```json
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-06-29T13:30:00Z",
+  "base_url": "http://127.0.0.1:8001",
+  "summary": {
+    "total": 28,
+    "pass": 28,
+    "fail": 0,
+    "error": 0,
+    "stale": 0,
+    "skipped": 0,
+    "duration_ms": 36800
+  },
+  "tests": [
+    {
+      "id": "pages/root-index",
+      "manifest": "visual-tests/pages/root-index.yaml",
+      "name": "Accueil",
+      "url": "/",
+      "status": "PASS",
+      "duration_ms": 1200,
+      "screenshot": "screenshots/root-index.png",
+      "failure_reason": null
+    }
+  ]
+}
+```
+
+Then write report to `{report_path}` (default: `visual-tests/_results/report.md`) with sections: Summary, Failures, Stale Tests, Generated Tests, Regressions Status, All Results.
 
 **Full template:** [references/report-formats.md](references/report-formats.md).
 

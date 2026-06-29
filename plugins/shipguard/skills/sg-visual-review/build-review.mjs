@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync } from 'fs';
-import { join, relative, basename, dirname } from 'path';
+import { join, relative, basename, dirname, resolve, isAbsolute } from 'path';
 import { execFileSync } from 'child_process';
 
 // Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
@@ -125,6 +125,7 @@ const yaml = { load: yamlParse };
 const ROOT = dirname(new URL(import.meta.url).pathname);
 const RESULTS_DIR = join(ROOT, '_results');
 const SCREENSHOTS_DIR = join(RESULTS_DIR, 'screenshots');
+const VISUAL_RESULTS_PATH = join(RESULTS_DIR, 'visual-results.json');
 const REPORT_PATH = join(RESULTS_DIR, 'report.md');
 const REGRESSIONS_PATH = join(ROOT, '_regressions.yaml');
 const CONFIG_PATH = join(ROOT, '_config.yaml');
@@ -142,18 +143,78 @@ const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
 // ── 1. Parse config ──
 const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
 
-// ── 2. Parse report.md for status ──
+function normalizeStatus(value) {
+  const status = String(value || '').trim().toUpperCase();
+  if (['PASS', 'FAIL', 'ERROR', 'STALE', 'SKIPPED'].includes(status)) return status;
+  return 'STALE';
+}
+
+function normalizeTestId(value) {
+  let id = String(value || '').replace(/\\/g, '/').trim();
+  if (!id) return '';
+  id = id.replace(/^.*?visual-tests\//, '');
+  id = id.replace(/\.ya?ml$/i, '');
+  id = id.replace(/^\/+/, '');
+  return id;
+}
+
+// ── 2. Parse visual-results.json first, then report.md as a legacy fallback ──
+function parseVisualResults() {
+  if (!existsSync(VISUAL_RESULTS_PATH)) return { statusMap: {}, source: 'missing' };
+  try {
+    const raw = JSON.parse(readFileSync(VISUAL_RESULTS_PATH, 'utf8'));
+    if (!raw || typeof raw !== 'object') throw new Error('expected JSON object');
+    if (raw.tests != null && !Array.isArray(raw.tests)) throw new Error('tests must be an array');
+
+    const statusMap = {};
+    for (const test of raw.tests || []) {
+      if (!test || typeof test !== 'object') continue;
+      const status = normalizeStatus(test.status);
+      const keys = [
+        normalizeTestId(test.id),
+        normalizeTestId(test.manifest),
+      ].filter(Boolean);
+      for (const key of keys) {
+        statusMap[key] = status;
+        const slug = key.split('/').pop();
+        if (slug) statusMap[slug] = status;
+      }
+    }
+
+    const summary = raw.summary && typeof raw.summary === 'object' ? raw.summary : {};
+    return {
+      source: 'json',
+      statusMap,
+      total: Number.isFinite(summary.total) ? summary.total : (raw.tests || []).length,
+      pass: Number.isFinite(summary.pass) ? summary.pass : 0,
+      fail: Number.isFinite(summary.fail) ? summary.fail : 0,
+      error: Number.isFinite(summary.error) ? summary.error : 0,
+      stale: Number.isFinite(summary.stale) ? summary.stale : 0,
+      skipped: Number.isFinite(summary.skipped) ? summary.skipped : 0,
+      durationMs: Number.isFinite(summary.duration_ms) ? summary.duration_ms : null,
+      lastRun: raw.timestamp || raw.generated_at || null,
+      baseUrl: raw.base_url || null,
+    };
+  } catch (e) {
+    return {
+      statusMap: {},
+      source: 'invalid',
+      error: `visual-results.json is invalid: ${e.message}`,
+    };
+  }
+}
+
 function parseReport() {
   if (!existsSync(REPORT_PATH)) return { statusMap: {} };
   const md = readFileSync(REPORT_PATH, 'utf8');
   const statusMap = {};
   for (const line of md.split('\n')) {
     // Format 1: | test-slug | PASS | or | category/test-slug | PASS |
-    let m = line.match(/^\|\s*([a-z0-9_/-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL|STALE)(?:\*\*)?\s*\|/i);
-    if (m) { statusMap[m[1]] = m[2].toUpperCase(); continue; }
+    let m = line.match(/^\|\s*([a-z0-9_/-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL|ERROR|STALE|SKIPPED)(?:\*\*)?\s*\|/i);
+    if (m) { statusMap[m[1]] = normalizeStatus(m[2]); continue; }
     // Format 2: - category/test-slug: PASS
-    m = line.match(/^-\s+([a-z0-9_/-]+):\s*(PASS|FAIL|STALE)/i);
-    if (m) { statusMap[m[1]] = m[2].toUpperCase(); continue; }
+    m = line.match(/^-\s+([a-z0-9_/-]+):\s*(PASS|FAIL|ERROR|STALE|SKIPPED)/i);
+    if (m) { statusMap[m[1]] = normalizeStatus(m[2]); continue; }
   }
   const summaryMatch = md.match(/Tests:\s*(\d+)\s*run,\s*(\d+)\s*pass,\s*(\d+)\s*fail/);
   const dateMatch = md.match(/# Visual Report — (\S+ \S+)/);
@@ -163,6 +224,19 @@ function parseReport() {
     pass: summaryMatch ? parseInt(summaryMatch[2]) : 0,
     fail: summaryMatch ? parseInt(summaryMatch[3]) : 0,
     lastRun: dateMatch ? dateMatch[1] : 'unknown',
+  };
+}
+
+function mergeStatusSources(visualResults, markdownReport) {
+  const statusMap = { ...(markdownReport.statusMap || {}) };
+  for (const [key, status] of Object.entries(visualResults.statusMap || {})) {
+    statusMap[key] = status;
+  }
+  return {
+    ...markdownReport,
+    ...Object.fromEntries(Object.entries(visualResults).filter(([, value]) => value !== null && value !== undefined)),
+    statusMap,
+    lastRun: visualResults.lastRun || markdownReport.lastRun || 'unknown',
   };
 }
 
@@ -293,9 +367,9 @@ function mergeStatus(tests, report, regressions) {
     const slug = t.id.split('/').pop();
     // Match by full path first, then by slug
     if (report.statusMap[t.id]) {
-      t.status = report.statusMap[t.id];
+      t.status = normalizeStatus(report.statusMap[t.id]);
     } else if (report.statusMap[slug]) {
-      t.status = report.statusMap[slug];
+      t.status = normalizeStatus(report.statusMap[slug]);
     }
     const reg = regressions[t.id] || regressions[slug];
     if (reg) {
@@ -307,6 +381,33 @@ function mergeStatus(tests, report, regressions) {
       }
     }
   }
+}
+
+function buildVisualResultsContract(data, statusSource) {
+  return {
+    schema_version: '1.0',
+    timestamp: data.generated,
+    base_url: config.base_url || statusSource.baseUrl || null,
+    summary: {
+      total: data.summary.total,
+      pass: data.summary.pass,
+      fail: data.summary.fail,
+      error: data.summary.error || 0,
+      stale: data.summary.stale,
+      skipped: data.summary.skipped || 0,
+      duration_ms: statusSource.durationMs ?? null,
+    },
+    tests: data.tests.map(test => ({
+      id: test.id,
+      manifest: `${test.id}.yaml`,
+      name: test.name,
+      url: test.url || '',
+      status: test.status,
+      duration_ms: null,
+      screenshot: test.screenshot,
+      failure_reason: test.failureReason || null,
+    })),
+  };
 }
 
 // ── 6. Read HTML template ──
@@ -838,7 +939,11 @@ console.log('Building Visual review page...');
 
 mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
-const report = parseReport();
+const visualResults = parseVisualResults();
+if (visualResults.error) {
+  console.warn(`  WARN: ${visualResults.error}`);
+}
+const report = mergeStatusSources(visualResults, parseReport());
 const regressions = parseRegressions();
 const tests = collectTests();
 
@@ -848,7 +953,9 @@ mergeStatus(tests, report, regressions);
 
 const passCount = tests.filter(t => t.status === 'PASS').length;
 const failCount = tests.filter(t => t.status === 'FAIL').length;
+const errorCount = tests.filter(t => t.status === 'ERROR').length;
 const staleCount = tests.filter(t => t.status === 'STALE').length;
+const skippedCount = tests.filter(t => t.status === 'SKIPPED').length;
 
 const data = {
   generated: new Date().toISOString(),
@@ -856,19 +963,26 @@ const data = {
     total: tests.length,
     pass: passCount,
     fail: failCount,
+    error: errorCount,
     stale: staleCount,
+    skipped: skippedCount,
     passRate: tests.length > 0 ? (passCount / tests.length) * 100 : 0,
     lastRun: report.lastRun || new Date().toISOString().split('T')[0],
   },
   categories: CATEGORIES.filter(c => tests.some(t => t.category === c)),
   tests,
+  visualResultsSource: visualResults.source,
+  visualResultsError: visualResults.error || null,
   // Track last fix-manifest timestamp to detect "updated" screenshots
   lastFixTimestamp: existsSync(join(RESULTS_DIR, 'fix-manifest.json'))
     ? statSync(join(RESULTS_DIR, 'fix-manifest.json')).mtimeMs : 0,
 };
 
-console.log(`  Status: ${passCount} pass, ${failCount} fail, ${staleCount} stale`);
+writeFileSync(VISUAL_RESULTS_PATH, JSON.stringify(buildVisualResultsContract(data, report), null, 2), 'utf8');
+
+console.log(`  Status: ${passCount} pass, ${failCount} fail, ${errorCount} error, ${staleCount} stale, ${skippedCount} skipped`);
 console.log(`  Screenshots matched: ${tests.filter(t => t.screenshot).length}/${tests.length}`);
+console.log(`  Visual results: ${VISUAL_RESULTS_PATH}`);
 
 // ── Collect recorded manifests ──
 const MANIFESTS_DIR = join(ROOT, 'manifests');
@@ -981,6 +1095,11 @@ if (process.argv.includes('--serve')) {
 
   const MIME = { '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.css': 'text/css', '.js': 'text/javascript' };
   const PORT = parseInt(process.argv.find(a => a.startsWith('--port='))?.split('=')[1] || '8888');
+  const HOST = process.argv.find(a => a.startsWith('--host='))?.split('=')[1] || '127.0.0.1';
+  const RESULTS_ROOT = resolve(RESULTS_DIR);
+  if (HOST === '0.0.0.0') {
+    console.warn('  WARN: --host=0.0.0.0 exposes the review server on your local network.');
+  }
 
   // ── Monitor state (in-memory + persisted to JSON) ──
   let auditState = null;
@@ -1006,7 +1125,25 @@ if (process.argv.includes('--serve')) {
     });
   }
 
-  // Wildcard CORS: intentional — server is localhost-only, not exposed to network
+  function resolveServedPath(requestUrl) {
+    let pathname;
+    try {
+      const rawPath = String(requestUrl || '/').split('?')[0].split('#')[0] || '/';
+      pathname = rawPath === '/' ? '/review.html' : rawPath;
+      pathname = decodeURIComponent(pathname);
+    } catch {
+      return { error: 'Bad request path', status: 400 };
+    }
+
+    const target = resolve(RESULTS_ROOT, pathname.replace(/^\/+/, ''));
+    const rel = relative(RESULTS_ROOT, target);
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      return { error: 'Forbidden', status: 403 };
+    }
+    return { path: target };
+  }
+
+  // Wildcard CORS: intentional for local browser tooling; default bind is 127.0.0.1.
   const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' };
 
   const server = http.createServer(async (req, res) => {
@@ -1125,10 +1262,9 @@ if (process.argv.includes('--serve')) {
       res.end();
       return;
     }
-    const url = req.url === '/' ? '/review.html' : req.url;
-    const filePath = join(RESULTS_DIR, url.replace(/^\//, ''));
-    // BUG-4: Prevent path traversal attacks
-    if (!filePath.startsWith(RESULTS_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+    const served = resolveServedPath(req.url);
+    if (served.error) { res.writeHead(served.status); res.end(served.error); return; }
+    const filePath = served.path;
     if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
     const ext = extname(filePath);
     const noCache = { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' };
@@ -1136,9 +1272,9 @@ if (process.argv.includes('--serve')) {
     createReadStream(filePath).pipe(res);
   });
 
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     writeFileSync(PID_FILE, String(process.pid), 'utf8');
-    console.log(`  Server: http://localhost:${PORT} (PID ${process.pid})`);
+    console.log(`  Server: http://${HOST}:${PORT} (PID ${process.pid})`);
     console.log('  Stop: node visual-tests/build-review.mjs --stop');
   });
 } else {

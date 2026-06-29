@@ -169,6 +169,7 @@ body.light #bug-search{background:var(--surface)}
 .filter-group{display:flex;gap:4px}
 #search{flex:1;min-width:200px;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:13px;outline:none}
 #search:focus{border-color:var(--accent)}
+.visual-contract-warning{display:none;margin:12px 20px 0;padding:10px 12px;border:1px solid rgba(245,158,11,.35);border-radius:8px;background:rgba(245,158,11,.08);color:var(--orange);font-size:12px}
 
 /* ── Visual tab layout ── */
 #layout{display:flex;min-height:calc(100vh - 140px)}
@@ -202,7 +203,9 @@ body.light #bug-search{background:var(--surface)}
 .badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
 .badge-pass{background:#10b98122;color:var(--green)}
 .badge-fail{background:#ef444422;color:var(--red)}
+.badge-error{background:#ef444422;color:var(--red)}
 .badge-stale{background:#f59e0b22;color:var(--orange)}
+.badge-skipped{background:#6b728022;color:var(--muted)}
 .badge-priority{background:var(--border);color:var(--muted);font-size:9px}
 .card-desc{font-size:11px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card-check{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:4px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.4);cursor:pointer;opacity:0;transition:.15s;display:flex;align-items:center;justify-content:center;z-index:2}
@@ -443,8 +446,8 @@ body.light #bug-search{background:var(--surface)}
     <!-- Empty state -->
     <div id="mc-empty" class="mc-empty" style="display:none">
       <div class="mc-empty-icon">&#128736;</div>
-      <p>No audit data found.</p>
-      <p style="margin-top:8px">Run <code>/sg-code-audit</code> to start a new audit.</p>
+      <p id="mc-empty-title">No audit data found.</p>
+      <p id="mc-empty-detail" style="margin-top:8px">Run <code>/sg-code-audit</code> to start a new audit.</p>
     </div>
 
   </div>
@@ -486,6 +489,7 @@ body.light #bug-search{background:var(--surface)}
   <button class="filter-btn" id="btn-last-run" title="Show only tests from the last run (with screenshots)">Last run only</button>
   <input type="search" id="search" placeholder="Search tests…">
 </div>
+<div id="visual-contract-warning" class="visual-contract-warning"></div>
 
 <div id="layout">
   <nav id="sidebar"><ul id="cat-list"></ul></nav>
@@ -663,7 +667,11 @@ function setTheme(t) {
     var el = document.getElementById('stats');
     if (!el) return;
     el.textContent = '';
-    [['stat-total', s.total+' tests'],['stat-pass', s.pass+' pass'],['stat-fail', s.fail+' fail'],['stat-rate', s.passRate.toFixed(1)+'%']].forEach(function(item) {
+    var stats = [['stat-total', s.total+' tests'],['stat-pass', s.pass+' pass'],['stat-fail', s.fail+' fail']];
+    if (s.error) stats.push(['stat-fail', s.error + ' error']);
+    if (s.skipped) stats.push(['stat-total', s.skipped + ' skipped']);
+    stats.push(['stat-rate', s.passRate.toFixed(1)+'%']);
+    stats.forEach(function(item) {
       var span = document.createElement('span');
       span.className = 'stat ' + item[0];
       span.textContent = item[1];
@@ -671,6 +679,18 @@ function setTheme(t) {
     });
     var metaEl = document.getElementById('meta');
     if (metaEl) metaEl.textContent = 'Last run: ' + s.lastRun;
+  }
+
+  function renderVisualContractWarning() {
+    var el = document.getElementById('visual-contract-warning');
+    if (!el) return;
+    if (!D.visualResultsError) {
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    el.style.display = 'block';
+    el.textContent = D.visualResultsError + ' The dashboard rebuilt statuses from legacy inputs for this page.';
   }
 
   // ── Detect updated screenshots (changed after last fix-manifest) ──
@@ -682,7 +702,9 @@ function setTheme(t) {
     var el = document.getElementById('filters');
     el.textContent = '';
     var updatedCount = D.tests.filter(isUpdated).length;
-    var filters = ['ALL','PASS','FAIL','STALE'];
+    var filters = ['ALL','PASS','FAIL','ERROR','STALE','SKIPPED'].filter(function(status) {
+      return status === 'ALL' || D.tests.some(function(t) { return t.status === status; });
+    });
     if (updatedCount > 0) filters.splice(1, 0, 'UPDATED');
     filters.forEach(function(s) {
       var btn = document.createElement('button');
@@ -1613,7 +1635,7 @@ function setTheme(t) {
   });
 
   // ── Init ──
-  renderStats(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation();
+  renderStats(); renderVisualContractWarning(); renderFilters(); renderSidebar(); renderGrid(); initAnnotation();
 })(__VISUAL_DATA__);
 
 // ════════════════ MAIN TAB SWITCH ════════════════
@@ -1656,19 +1678,35 @@ function loadAuditData() {
   if (_auditLoadInProgress) return;
   _auditLoadInProgress = true;
   fetch('/audit-results.json')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
+    .then(function(r) {
+      if (r.status === 404) return { kind: 'missing' };
+      if (!r.ok) return { kind: 'invalid', error: 'audit-results.json returned HTTP ' + r.status };
+      return r.json().then(function(data) {
+        return { kind: 'data', data: data };
+      }, function(e) {
+        return { kind: 'invalid', error: 'audit-results.json is invalid JSON: ' + e.message };
+      });
+    })
+    .then(function(result) {
       _auditLoadInProgress = false;
-      if (data && data.bugs && data.bugs.length > 0) {
-        _auditData = data;
+      if (result.kind === 'data') {
+        if (!isAuditResultsData(result.data)) {
+          stopAuditPoll();
+          showAuditEmpty('Invalid audit file', 'audit-results.json exists but does not expose a bugs array.');
+          return;
+        }
+        _auditData = result.data;
         _auditPollFailures = 0;
         stopAuditPoll();
-        renderAuditComplete(data);
+        renderAuditComplete(result.data);
+      } else if (result.kind === 'invalid') {
+        stopAuditPoll();
+        showAuditEmpty('Invalid audit file', result.error);
       } else {
         _auditPollFailures++;
         if (_auditPollFailures >= _AUDIT_MAX_POLL_FAILURES) {
           stopAuditPoll();
-          showAuditEmpty();
+          showAuditEmpty('No audit file', 'Run /sg-code-audit to start a new audit.');
           return;
         }
         loadAuditMonitor();
@@ -1679,7 +1717,7 @@ function loadAuditData() {
       _auditPollFailures++;
       if (_auditPollFailures >= _AUDIT_MAX_POLL_FAILURES) {
         stopAuditPoll();
-        showAuditEmpty();
+        showAuditEmpty('No audit file', 'Run /sg-code-audit to start a new audit.');
         return;
       }
       loadAuditMonitor();
@@ -1691,7 +1729,7 @@ function loadAuditMonitor() {
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(monitor) {
       if (!monitor || !monitor.agents) {
-        showAuditEmpty();
+        showAuditEmpty('No audit file', 'Run /sg-code-audit to start a new audit.');
         return;
       }
       if (monitor.status === 'running') {
@@ -1700,10 +1738,10 @@ function loadAuditMonitor() {
       } else if (monitor.status === 'completed') {
         loadAuditData();
       } else {
-        showAuditEmpty();
+        showAuditEmpty('No audit file', 'Run /sg-code-audit to start a new audit.');
       }
     })
-    .catch(function() { showAuditEmpty(); });
+    .catch(function() { showAuditEmpty('No audit file', 'Run /sg-code-audit to start a new audit.'); });
 }
 
 function startAuditPoll() {
@@ -1715,12 +1753,14 @@ function stopAuditPoll() {
   if (_auditPollTimer) { clearInterval(_auditPollTimer); _auditPollTimer = null; }
 }
 
-function showAuditEmpty() {
+function showAuditEmpty(title, detail) {
   document.getElementById('mc-progress-box').style.display = 'none';
   document.getElementById('mc-stat-row').style.display = 'none';
   document.getElementById('mc-summary-line').style.display = 'none';
   document.getElementById('mc-dist-section').style.display = 'none';
   document.getElementById('mc-empty').style.display = 'block';
+  document.getElementById('mc-empty-title').textContent = title || 'No audit data found.';
+  document.getElementById('mc-empty-detail').textContent = detail || 'Run /sg-code-audit to start a new audit.';
   document.getElementById('audit-status-badge').style.display = 'none';
 }
 
@@ -1785,27 +1825,97 @@ function makePod(a) {
   pod.className = 'mc-pod ' + cls;
   var idEl = document.createElement('div');
   idEl.className = 'mc-pod-id';
-  idEl.textContent = a.agent_id || a.zone_id || '?';
+  idEl.textContent = a.label || a.agent_id || a.zone_id || a.id || '?';
   pod.appendChild(idEl);
   var stEl = document.createElement('div');
   stEl.className = 'mc-pod-status';
-  if (st === 'completed') stEl.textContent = '\u2713 ' + (a.bugs_found || 0) + ' bugs';
+  var bugsFound = a.bugs_found != null ? a.bugs_found : (a.count || 0);
+  if (st === 'completed') stEl.textContent = '\u2713 ' + bugsFound + ' bugs';
   else if (st === 'running' || st === 'started') stEl.textContent = 'running\u2026';
   else if (st === 'failed') stEl.textContent = '\u2717 failed';
   else stEl.textContent = 'pending';
   pod.appendChild(stEl);
-  if (a.duration_s) {
+  var duration = a.duration_s || (a.duration_ms ? Math.round(a.duration_ms / 1000) : null);
+  if (duration) {
     var dur = document.createElement('div');
     dur.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px';
-    dur.textContent = a.duration_s + 's';
+    dur.textContent = duration + 's';
     pod.appendChild(dur);
   }
   return pod;
 }
 
+function isAuditResultsData(data) {
+  return !!data && typeof data === 'object' && Array.isArray(data.bugs);
+}
+
+function getImpactedRoutes(data) {
+  if (Array.isArray(data.impacted_ui_routes)) return data.impacted_ui_routes;
+  if (Array.isArray(data.impacted_routes)) return data.impacted_routes;
+  return [];
+}
+
+function normalizeRouteEntry(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return value.route || value.path || '';
+  return '';
+}
+
+function getBugRoutes(bug) {
+  var values = [];
+  if (Array.isArray(bug.impacted_ui_routes)) values = values.concat(bug.impacted_ui_routes);
+  if (Array.isArray(bug.impacted_routes)) values = values.concat(bug.impacted_routes);
+  return values.map(normalizeRouteEntry).filter(Boolean);
+}
+
+function bugImpactsRoute(bug, route) {
+  var routes = getBugRoutes(bug);
+  if (routes.length) return routes.indexOf(route) !== -1;
+  if (route === '/' || route === '(cross-cutting)') return false;
+  var slug = route.replace(/^\//, '').replace(/[()]/g, '');
+  return !!slug && !!bug.file && bug.file.indexOf(slug) !== -1;
+}
+
+function countRouteBugs(data, routeEntry) {
+  if (routeEntry && Number.isFinite(routeEntry.bug_count)) return routeEntry.bug_count;
+  var route = normalizeRouteEntry(routeEntry);
+  return (data.bugs || []).filter(function(bug) { return bugImpactsRoute(bug, route); }).length;
+}
+
+function getAuditAgents(data) {
+  if (Array.isArray(data.agents)) {
+    return data.agents.map(function(agent) {
+      return {
+        id: agent.id || agent.agent_id || agent.zone_id,
+        label: agent.label || agent.name || agent.id || agent.agent_id || agent.zone_id,
+        status: agent.status || 'completed',
+        bugs_found: agent.bugs_found != null ? agent.bugs_found : 0,
+        duration_ms: agent.duration_ms || null,
+        paths: agent.paths || [],
+      };
+    });
+  }
+  var agentMap = {};
+  (data.bugs || []).forEach(function(b) {
+    if (!b.id) return;
+    var m = b.id.match(/^r\d+-([^-]+)/);
+    if (!m) return;
+    var zid = m[1];
+    if (!agentMap[zid]) agentMap[zid] = {id: zid, label: zid, status: 'completed', bugs_found: 0};
+    agentMap[zid].bugs_found++;
+  });
+  return Object.keys(agentMap).sort().map(function(key) { return agentMap[key]; });
+}
+
+function getAuditAgentCount(data) {
+  if (Array.isArray(data.agents)) return data.agents.length;
+  if (typeof data.agents === 'number') return data.agents;
+  return getAuditAgents(data).length;
+}
+
 // Client-side normalization safety net (fixes #30 taxonomy + #21 dedup)
 function normalizeAuditData(data) {
-  if (!data || !data.bugs) return data;
+  if (!data || !Array.isArray(data.bugs)) return data;
   var sevMap = {CRITICAL:'critical',Critical:'critical',HIGH:'high',High:'high',serious:'high',
     MEDIUM:'medium',Medium:'medium',warning:'medium',moderate:'medium',
     LOW:'low',Low:'low',info:'low',minor:'low',trivial:'low',style:'low'};
@@ -1872,13 +1982,17 @@ function renderAuditComplete(data) {
   badge.className = 'complete';
   badge.textContent = 'COMPLETE';
 
-  var s = data.summary;
+  var s = data.summary || {};
+  if (s.total_bugs == null) s.total_bugs = (data.bugs || []).length;
+  data.summary = s;
+  var impactedRoutes = getImpactedRoutes(data);
+  var auditAgentCount = getAuditAgentCount(data);
   // r1-z02-005: guard against missing by_severity
   var sev = (s && s.by_severity) || {};
 
   // Sub-tab counts
-  document.getElementById('sub-tab-bugs-count').textContent = s.total_bugs || '';
-  document.getElementById('sub-tab-routes-count').textContent = (data.impacted_routes || []).length || '';
+  document.getElementById('sub-tab-bugs-count').textContent = String(s.total_bugs || 0);
+  document.getElementById('sub-tab-routes-count').textContent = impactedRoutes.length || '';
 
   // ── Overview: Stat cards ──
   var statRow = document.getElementById('mc-stat-row');
@@ -1925,10 +2039,11 @@ function renderAuditComplete(data) {
   var parts = [];
   if (data.mode) parts.push(data.mode.charAt(0).toUpperCase() + data.mode.slice(1) + ' audit');
   if (data.rounds) parts.push(data.rounds + ' rounds');
-  if (data.agents) parts.push(data.agents + ' agents');
+  if (auditAgentCount) parts.push(auditAgentCount + ' agents');
   if (s.files_audited) parts.push(s.files_audited.toLocaleString() + ' files');
   var v = data.verification;
   if (v && v.checked > 0) parts.push(v.confirmed + '/' + v.checked + ' verified');
+  if (s.total_bugs === 0) parts.unshift('Audit complete, 0 bugs found');
   summaryEl.textContent = parts.join(' \u2014 ');
 
   // ── Overview: Severity distribution bar ──
@@ -2101,32 +2216,33 @@ function renderAuditComplete(data) {
   // ── Routes sub-tab ──
   var rtb = document.getElementById('mc-routes-tbody');
   rtb.textContent = '';
-  (data.impacted_routes || []).forEach(function(r) {
+  impactedRoutes.forEach(function(r) {
     var tr = document.createElement('tr');
     tr.className = 'route-row';
+    var route = normalizeRouteEntry(r);
+    var routeSeverity = (r && typeof r === 'object' && r.severity) ? r.severity : 'low';
+    var routeReason = (r && typeof r === 'object' && r.reason) ? r.reason : '';
 
     var td1 = document.createElement('td');
     var code = document.createElement('code');
     code.style.cssText = 'font-family:monospace;font-size:12px;color:var(--blue)';
-    code.textContent = r.route;
+    code.textContent = route;
     td1.appendChild(code);
 
     var td2 = document.createElement('td');
     var sev = document.createElement('span');
-    sev.className = 'mc-sev mc-sev-' + (r.severity || 'low').toLowerCase();
-    sev.textContent = r.severity;
+    sev.className = 'mc-sev mc-sev-' + routeSeverity.toLowerCase();
+    sev.textContent = routeSeverity;
     td2.appendChild(sev);
 
     var td3 = document.createElement('td');
     td3.style.cssText = 'font-size:12px;color:var(--muted)';
-    var routeBugCount = (data.bugs || []).filter(function(b) {
-      return b.file && r.route !== '(cross-cutting)' && (b.file.indexOf(r.route.replace(/^\//, '').replace(/\//g, '/')) !== -1);
-    }).length;
+    var routeBugCount = countRouteBugs(data, r);
     td3.textContent = routeBugCount > 0 ? String(routeBugCount) : '';
 
     var td4 = document.createElement('td');
     td4.style.fontSize = '12px';
-    td4.textContent = (r.reason || '').substring(0, 120);
+    td4.textContent = routeReason.substring(0, 120);
 
     tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
 
@@ -2139,7 +2255,7 @@ function renderAuditComplete(data) {
         renderBugFilters(data);
         renderBugTable(data);
       });
-    })(r.route);
+    })(route);
 
     rtb.appendChild(tr);
   });
@@ -2147,32 +2263,11 @@ function renderAuditComplete(data) {
   // ── Agents sub-tab ──
   var agentGrid = document.getElementById('mc-pod-grid');
   agentGrid.textContent = '';
-  // Derive agent info from bugs (zone IDs from bug IDs like r1-z01-001)
-  var agentMap = {};
-  (data.bugs || []).forEach(function(b) {
-    if (!b.id) return;
-    var m = b.id.match(/^r\d+-([^-]+)/);
-    if (!m) return;
-    var zid = m[1];
-    if (!agentMap[zid]) agentMap[zid] = {id: zid, count: 0};
-    agentMap[zid].count++;
+  var auditAgents = getAuditAgents(data);
+  auditAgents.forEach(function(agent) {
+    agentGrid.appendChild(makePod(agent));
   });
-  var agentKeys = Object.keys(agentMap).sort();
-  agentKeys.forEach(function(zid) {
-    var a = agentMap[zid];
-    var pod = document.createElement('div');
-    pod.className = 'mc-pod done';
-    var idEl = document.createElement('div');
-    idEl.className = 'mc-pod-id';
-    idEl.textContent = zid;
-    pod.appendChild(idEl);
-    var stEl = document.createElement('div');
-    stEl.className = 'mc-pod-status';
-    stEl.textContent = '\u2713 ' + a.count + ' bugs';
-    pod.appendChild(stEl);
-    agentGrid.appendChild(pod);
-  });
-  document.getElementById('sub-tab-agents-count').textContent = agentKeys.length || (data.agents || '');
+  document.getElementById('sub-tab-agents-count').textContent = auditAgentCount || '';
 
   // Bug search filter — register once, not on every poll call
   var searchInput = document.getElementById('bug-search');
@@ -2235,9 +2330,7 @@ function renderBugTable(data) {
   if (_auditRouteFilter) {
     var rf = _auditRouteFilter;
     bugs = bugs.filter(function(b) {
-      if (!b.file) return false;
-      var routeSlug = rf.replace(/^\//, '').replace(/[()]/g, '');
-      return b.file.indexOf(routeSlug) !== -1;
+      return bugImpactsRoute(b, rf);
     });
   }
   if (searchQuery) {

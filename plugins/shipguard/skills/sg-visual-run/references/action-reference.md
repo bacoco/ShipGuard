@@ -12,7 +12,7 @@ Detailed reference for each `action:` type in manifest steps. SKILL.md covers th
 | [Screenshot validation](#screenshot-validation-mandatory) | Every screenshot MUST be validated — read this before skipping |
 | [Hybrid actions (llm-*)](#hybrid-actions) | llm-wait, llm-check semantics |
 | [llm-check reliability](#llm-check-reliability) | What llm-check can and cannot assert |
-| [Result mapping](#result-mapping) | PASS / FAIL / STALE / ERROR / SKIP rules |
+| [Result mapping](#result-mapping) | PASS / FAIL / STALE / ERROR / SKIPPED rules |
 
 ---
 
@@ -218,7 +218,7 @@ Single-shot LLM evaluation:
 
 ## Result mapping
 
-For each test: `PASS` / `FAIL` / `STALE` / `ERROR` / `SKIP`
+For each test: `PASS` / `FAIL` / `STALE` / `ERROR` / `SKIPPED`
 
 | Status | Meaning |
 |--------|---------|
@@ -226,4 +226,4 @@ For each test: `PASS` / `FAIL` / `STALE` / `ERROR` / `SKIP`
 | **FAIL** | A `severity: critical` assertion failed or screenshot showed an error |
 | **STALE** | An element selector could not be resolved (UI changed) |
 | **ERROR** | agent-browser crashed or unrecoverable error |
-| **SKIP** | Manifest is `deprecated: true` |
+| **SKIPPED** | Manifest is `deprecated: true` |

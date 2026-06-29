@@ -1,6 +1,6 @@
 # Report formats reference
 
-Templates for `_regressions.yaml`, `report.md`, and final user summary.
+Templates for `_regressions.yaml`, `visual-results.json`, `report.md`, and final user summary.
 
 ---
 
@@ -33,6 +33,43 @@ For each test that PASSED and is in regressions:
 
 ---
 
+## `visual-results.json` format
+
+Write to `visual-tests/_results/visual-results.json` after every run. This is the machine contract consumed by `sg-visual-review`; `report.md` is only the human-readable rendering.
+
+```json
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-06-29T13:30:00Z",
+  "base_url": "http://127.0.0.1:8001",
+  "summary": {
+    "total": 28,
+    "pass": 28,
+    "fail": 0,
+    "error": 0,
+    "stale": 0,
+    "skipped": 0,
+    "duration_ms": 36800
+  },
+  "tests": [
+    {
+      "id": "pages/root-index",
+      "manifest": "visual-tests/pages/root-index.yaml",
+      "name": "Accueil",
+      "url": "/",
+      "status": "PASS",
+      "duration_ms": 1200,
+      "screenshot": "screenshots/root-index.png",
+      "failure_reason": null
+    }
+  ]
+}
+```
+
+Allowed test statuses: `PASS`, `FAIL`, `ERROR`, `STALE`, `SKIPPED`.
+
+---
+
 ## `report.md` template
 
 Write to `{report_path}` (default: `visual-tests/_results/report.md`):
@@ -45,7 +82,7 @@ Write to `{report_path}` (default: `visual-tests/_results/report.md`):
 > llm-check assertions are evaluated by the LLM with no external observer.
 
 ## Summary
-- Tests: {total} run, {pass} pass, {fail} fail, {stale} stale, {error} error, {skip} skip
+- Tests: {total} run, {pass} pass, {fail} fail, {stale} stale, {error} error, {skipped} skipped
 - Duration: {total_time}
 - Regressions fixed: {count} (removed after 3 consecutive passes)
 - New failures: {count}

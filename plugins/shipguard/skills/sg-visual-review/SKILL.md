@@ -13,14 +13,14 @@ Generate and open a self-contained HTML page to visually review all Visual test 
 
 | Command | Behavior |
 |---------|----------|
-| `/sg-visual-review` | Build + start server + tell user to open http://localhost:8888 |
+| `/sg-visual-review` | Build + start server + tell user to open http://127.0.0.1:8888 |
 
 **Always:** Build the review page, start the HTTP server, and give the user the URL. No flags, no options. To stop: `/sg-visual-review-stop`.
 
 ## Prerequisites
 
 - `/sg-visual-discover` has been run (manifests exist in `visual-tests/`)
-- `/sg-visual-run` has been run at least once (screenshots + report exist in `visual-tests/_results/`)
+- `/sg-visual-run` has been run at least once (screenshots + `visual-results.json` or legacy `report.md` exist in `visual-tests/_results/`)
 - No external npm dependencies — the build script uses a built-in YAML parser
 
 ## What It Does
@@ -35,12 +35,20 @@ node visual-tests/build-review.mjs --serve
 
 This script:
 1. Reads all YAML test manifests from `visual-tests/`
-2. Reads `visual-tests/_results/report.md` for PASS/FAIL status per test
-3. Reads `visual-tests/_regressions.yaml` for failure reasons
-4. Matches screenshots from `visual-tests/_results/screenshots/`
-5. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
-6. If `monitor-data.json` exists in `_results/`, a "Monitor" tab appears showing the Gantt timeline of the last audit
-7. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
+2. Reads `visual-tests/_results/visual-results.json` for machine-readable status per test
+3. Falls back to legacy `visual-tests/_results/report.md` if the JSON contract is missing or invalid
+4. Reads `visual-tests/_regressions.yaml` for failure reasons
+5. Matches screenshots from `visual-tests/_results/screenshots/`
+6. Rewrites canonical `visual-tests/_results/visual-results.json` from the resolved statuses
+7. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
+8. If `monitor-data.json` exists in `_results/`, a "Monitor" tab appears showing the Gantt timeline of the last audit
+9. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
+
+`--serve` binds to `127.0.0.1` by default and refuses path traversal after decoding and resolving paths. LAN exposure requires an explicit host:
+
+```bash
+node visual-tests/build-review.mjs --serve --host=0.0.0.0
+```
 
 ### Durable Post-Development Change Reports
 
@@ -154,14 +162,15 @@ The review page provides:
 
 **Visual Tests tab**
 - All tests displayed as cards with screenshot thumbnails
-- Color-coded badges: PASS (green), FAIL (red), STALE (yellow)
+- Color-coded badges: PASS (green), FAIL/ERROR (red), STALE (yellow), SKIPPED (muted)
 - Priority badges (critical, high, medium, low)
 - Sidebar with category filters
-- Status filter bar (ALL / PASS / FAIL / STALE)
+- Status filter bar (ALL / PASS / FAIL / ERROR / STALE / SKIPPED, only when present)
 - Search by test name
 
 **Code Audit tab**
 - Shows bug cards from `audit-results.json` if present in `_results/`
+- Shows a completed zero-bug audit as `0 bugs found`, not as missing data
 - Filter by severity, category, fix status, and free-text search. CSV export available
 
 **Monitor tab**
