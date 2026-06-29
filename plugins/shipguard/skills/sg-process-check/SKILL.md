@@ -1,6 +1,6 @@
 ---
 name: sg-process-check
-description: Diff-driven behavioral simulation at the PROCESS level — the backend twin of sg-visual-run. Given what changed (git diff / recent commits), it simulates how the process behaves BEFORE vs AFTER the change — by default by REASONING through the code (running it "in its head"), optionally anchored by really executing the cheap parts. Reports the behavioral delta with every observation tagged reasoned-vs-measured; observe-not-fix, human decides. Works on any complexity (a 5-container Docker app included) because the default mode needs no running stack. Trigger on "sg-process-check", "process check", "simulate the process", "trace the behavior", "behavior diff", "runtime check", "I changed X, how does the process behave now", "run it in your head", "vérifier le process".
+description: Simulate before/after process behavior from a diff. Default reason mode needs no running stack; hybrid/execute can measure cheap seams.
 context: conversation
 argument-hint: "[what changed, natural language] [--mode=reason|hybrid|execute] [--diff=ref] [--from-audit] [--samples=N] [--depth=shallow|deep]"
 ---

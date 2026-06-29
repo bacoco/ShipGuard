@@ -1,6 +1,6 @@
 ---
 name: sg-visual-review-stop
-description: Stop the Visual review HTTP server. Trigger on "sg-visual-review-stop", "visual-review-stop", "stop review server", "stop html server".
+description: Stop the ShipGuard visual review HTTP server.
 context: conversation
 ---
 

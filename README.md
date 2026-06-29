@@ -25,7 +25,7 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 | Review Dashboard | 🟢 Stable | HTML generation, annotations, monitor |
 | CI/CD Integration | 🔴 Planned | not yet available |
 
-> ⚠️ Requires **Claude Code** + **agent-browser** plugin environment. Some flows are experimental and evolving fast.
+> ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.
 
 ---
 
@@ -109,7 +109,14 @@ Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-che
 ### Install
 
 ```bash
+# Claude Code
 claude plugin add bacoco/shipguard
+
+# Codex
+codex plugin marketplace add bacoco/shipguard
+codex plugin add shipguard@shipguard
+
+# Browser lanes
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 

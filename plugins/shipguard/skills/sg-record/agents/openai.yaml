@@ -1,0 +1,13 @@
+interface:
+  display_name: "ShipGuard Record"
+  short_description: "Record browser actions as replayable test manifests."
+  default_prompt: "Record a ShipGuard browser scenario for this URL."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "agent-browser"
+      description: "Drive the browser recorder."
+    - type: "shell"
+      value: "node"
+      description: "Run the recording helper script."

@@ -1,0 +1,16 @@
+interface:
+  display_name: "ShipGuard Ship"
+  short_description: "Run the full diff-scoped ShipGuard pipeline."
+  default_prompt: "Run sg-ship on my current diff."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "git"
+      description: "Resolve one scope for all ShipGuard lanes."
+    - type: "shell"
+      value: "agent-browser"
+      description: "Optional browser lane for visual checks."
+    - type: "shell"
+      value: "node"
+      description: "Build the unified review dashboard."

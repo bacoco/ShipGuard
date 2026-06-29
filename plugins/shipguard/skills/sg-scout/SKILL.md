@@ -1,6 +1,6 @@
 ---
 name: sg-scout
-description: GitHub intelligence for ShipGuard — scans repos for code audit, debugging, and self-improving agent techniques, then files actionable improvement proposals. Use when you want to discover new approaches, benchmark against similar tools, or find inspiration for ShipGuard improvements. Trigger on "sg-scout", "scout github", "find skills", "benchmark shipguard", "veille technique", "competitive analysis", "what are others doing", "find improvements".
+description: Research GitHub and similar tools for ShipGuard audit, visual, and self-improvement techniques.
 context: conversation
 argument-hint: "[url] [--topic=eval|self-improving|audit|visual] [--dry-run]"
 ---

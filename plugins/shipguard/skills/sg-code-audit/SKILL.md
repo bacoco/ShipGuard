@@ -1,6 +1,6 @@
 ---
 name: sg-code-audit
-description: Parallel AI codebase audit — dispatches agents to find and fix bugs across the entire repo. Produces structured JSON results viewable in /sg-visual-review. Trigger on "sg-code-audit", "code audit", "audit codebase", "find bugs", "code-audit", "audit code", "static audit", "security audit", "ship guard".
+description: Audit changed or scoped code for bugs and regressions, then emit structured findings for ShipGuard review.
 context: conversation
 argument-hint: "[quick|standard|deep|paranoid] [--focus=path] [--report-only] [--all] [--diff=ref] [--model=auto|sonnet|opus]"
 ---
@@ -61,12 +61,12 @@ If no matching server found:
 - Otherwise → set `monitor_active = false`, skip silently
 
 - **oui:**
-  1. Check if `visual-tests/build-review.mjs` exists. If not, bootstrap from the plugin directory:
+  1. Check if `visual-tests/build-review.mjs` exists. If not, bootstrap from the installed ShipGuard plugin directory. Resolve `SHIPGUARD_PLUGIN_ROOT` from this skill path (`$SHIPGUARD_PLUGIN_ROOT/skills/sg-code-audit/SKILL.md`), then copy from the sibling `sg-visual-review` skill:
      ```bash
      mkdir -p visual-tests/_results/screenshots
-     if [ -f ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs ]; then
-       cp ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs visual-tests/
-       cp ~/.claude/plugins/shipguard/skills/sg-visual-review/_review-template.html visual-tests/
+     if [ -f "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" ]; then
+       cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/
+       cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/_review-template.html" visual-tests/
      else
        echo "Plugin files not found — skipping bootstrap"
      fi

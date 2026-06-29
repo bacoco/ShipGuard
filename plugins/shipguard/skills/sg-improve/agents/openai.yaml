@@ -1,0 +1,10 @@
+interface:
+  display_name: "ShipGuard Improve"
+  short_description: "Capture session learnings for future ShipGuard runs."
+  default_prompt: "Extract ShipGuard learnings from this session."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "git"
+      description: "Inspect repository state before writing learnings."

@@ -1,6 +1,6 @@
 ---
 name: sg-ship
-description: One-command orchestrator for the full ShipGuard pipeline. Runs code audit (static) -> process check (dynamic behavior) -> visual run (browser) and opens one combined review dashboard — all scoped to your diff. A THIN sequencer over the existing skills via their bridges; it adds no new analysis of its own. Trigger on "sg-ship", "ship it", "run shipguard", "run the full pipeline", "check everything before I ship", "audit everything", "sg-all", "full review".
+description: "Run the full diff-scoped ShipGuard pipeline: code audit, process check, visual run, and unified review."
 context: conversation
 argument-hint: "[quick|standard|deep] [--all] [--diff=ref] [--no-visual] [--report-only] [--mode=reason|hybrid|execute]"
 ---

@@ -1,6 +1,6 @@
 ---
 name: sg-record
-description: Record browser interactions as replayable ShipGuard test manifests. Opens a Playwright browser with a floating toolbar — user navigates, clicks Check to mark assertions, clicks Stop to generate YAML. Trigger on "sg-record", "record test", "record interactions", "macro recorder", "enregistrer test", "enregistre les interactions".
+description: Record browser interactions as replayable ShipGuard test manifests with agent-browser.
 context: conversation
 argument-hint: "<url> [--name <name>] [--storage <auth.json>] [--save-storage <path>]"
 ---

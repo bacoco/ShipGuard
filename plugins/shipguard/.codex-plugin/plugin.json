@@ -1,0 +1,40 @@
+{
+  "name": "shipguard",
+  "version": "2.3.0",
+  "description": "AI-assisted code audit, process behavior simulation, and visual E2E review for changed code.",
+  "author": {
+    "name": "bacoco",
+    "url": "https://github.com/bacoco"
+  },
+  "homepage": "https://github.com/bacoco/shipguard",
+  "repository": "https://github.com/bacoco/shipguard",
+  "license": "MIT",
+  "keywords": [
+    "code-audit",
+    "visual-testing",
+    "process-check",
+    "regression-testing"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ShipGuard",
+    "shortDescription": "Audit changed code, simulate behavior, and review visual tests",
+    "longDescription": "ShipGuard bundles focused skills for static code audit, diff-scoped process behavior simulation, browser-based visual checks, and unified review dashboards. It is designed to expose what changed and how it was verified while leaving fix and ship decisions to the human.",
+    "developerName": "bacoco",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/bacoco/shipguard",
+    "privacyPolicyURL": "https://github.com/bacoco/shipguard",
+    "termsOfServiceURL": "https://github.com/bacoco/shipguard",
+    "defaultPrompt": [
+      "Run ShipGuard on my current diff.",
+      "Simulate the process behavior for this change.",
+      "Review visual regressions for impacted routes."
+    ],
+    "brandColor": "#0F766E",
+    "screenshots": []
+  }
+}

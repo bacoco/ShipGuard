@@ -1,0 +1,13 @@
+interface:
+  display_name: "ShipGuard Process Check"
+  short_description: "Simulate before/after process behavior from a diff."
+  default_prompt: "Run sg-process-check on my current diff."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "git"
+      description: "Resolve diffs and before/after references."
+    - type: "shell"
+      value: "node"
+      description: "Optional lightweight execution for hybrid or execute mode."

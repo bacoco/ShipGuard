@@ -1,6 +1,6 @@
 ---
 name: sg-visual-review
-description: Generate an interactive HTML screenshot review page from Visual test results. Browse all test screenshots in a grid, filter by status/category, annotate problems with a pen tool, multi-select failed tests, and export re-run manifests. Trigger on "sg-visual-review", "visual review", "review screenshots", "show test results", "review visual", "visual-review", "show results", "test review".
+description: Generate the interactive ShipGuard review dashboard from audit, process, and visual results.
 context: conversation
 argument-hint: "[optional: regenerate | open]"
 ---
@@ -240,9 +240,11 @@ The build script and template are installed to the project:
 If the build script is not yet in the project:
 
 ```bash
-# Copy from plugin
-cp ~/.claude/plugins/shipguard/skills/sg-visual-review/build-review.mjs visual-tests/
-cp ~/.claude/plugins/shipguard/skills/sg-visual-review/_review-template.html visual-tests/
+# Copy from the installed ShipGuard plugin root.
+# Resolve SHIPGUARD_PLUGIN_ROOT from this skill path:
+# $SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/SKILL.md
+cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/
+cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/_review-template.html" visual-tests/
 
 # Add npm script (optional)
 # In package.json: "visual:review": "node visual-tests/build-review.mjs"

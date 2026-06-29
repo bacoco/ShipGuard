@@ -1,0 +1,13 @@
+interface:
+  display_name: "ShipGuard Visual Run"
+  short_description: "Run browser visual tests with honest coverage."
+  default_prompt: "Run ShipGuard visual tests for impacted routes."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "agent-browser"
+      description: "Drive browser steps and capture screenshots."
+    - type: "shell"
+      value: "git"
+      description: "Scope visual tests to changed routes when requested."

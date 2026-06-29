@@ -1,0 +1,10 @@
+interface:
+  display_name: "ShipGuard Stop Review"
+  short_description: "Stop the local visual review server."
+  default_prompt: "Stop the ShipGuard visual review server."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "node"
+      description: "Manage the local review server process."

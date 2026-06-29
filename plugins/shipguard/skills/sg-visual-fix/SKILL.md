@@ -1,6 +1,6 @@
 ---
 name: sg-visual-fix
-description: Process human-annotated Visual screenshots — analyze marked problem areas, trace to source code, implement fixes, capture before/after screenshots, and regenerate the review page with a comparison tab. Trigger on "sg-visual-fix", "fix annotated tests", "process review annotations", "visual fix", "fix les annotations", "traite la review".
+description: Analyze human annotations on visual screenshots, trace issues to source, apply fixes, and capture before/after evidence.
 context: conversation
 argument-hint: "[path to fix manifest JSON, or 'latest' to use most recent]"
 ---

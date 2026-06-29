@@ -1,6 +1,6 @@
 ---
 name: sg-visual-run
-description: Execute Visual test manifests using agent-browser with hybrid scripted+LLM assertions. Accepts natural language to describe what to test or what changed — the skill finds and runs the right tests, generating missing ones if needed. Trigger on "sg-visual-run", "visual run", "run visual tests", "test regressions", "run tests", "visual-run", "check if the app works", "I changed X check it still works".
+description: Run ShipGuard visual test manifests with agent-browser, scoped by natural language, diff, audit results, or regressions.
 context: conversation
 argument-hint: "[tests to run or natural language description] [--from-audit] [--regressions] [--all] [--diff=ref]"
 ---

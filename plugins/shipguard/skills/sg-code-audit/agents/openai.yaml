@@ -1,0 +1,13 @@
+interface:
+  display_name: "ShipGuard Code Audit"
+  short_description: "Audit code changes and write structured findings."
+  default_prompt: "Run a ShipGuard code audit on my current diff."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "git"
+      description: "Resolve the audit scope and changed files."
+    - type: "shell"
+      value: "node"
+      description: "Build or serve the optional review dashboard."

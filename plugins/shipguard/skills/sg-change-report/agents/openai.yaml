@@ -1,0 +1,10 @@
+interface:
+  display_name: "ShipGuard Change Report"
+  short_description: "Save durable before/after visual change reports."
+  default_prompt: "Create a ShipGuard change report for the current visual results."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "git"
+      description: "Inspect repository state and changed files."

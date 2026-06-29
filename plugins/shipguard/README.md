@@ -15,7 +15,14 @@ Five AI-powered modules. Use one, some, or all. No test files to write.
 ### Install
 
 ```bash
+# Claude Code
 claude plugin add bacoco/shipguard
+
+# Codex
+codex plugin marketplace add bacoco/shipguard
+codex plugin add shipguard@shipguard
+
+# Browser lanes
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 

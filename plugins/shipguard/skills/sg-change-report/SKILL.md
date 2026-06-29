@@ -1,6 +1,6 @@
 ---
 name: sg-change-report
-description: Create durable ShipGuard before/after change reports for UI-visible work. Use after sg-visual-run, sg-visual-review, sg-visual-fix, screenshot capture, frontend PRs, client validation reports, stakeholder review, or when visual artifacts must be saved with a pull request.
+description: Create durable ShipGuard before/after reports for UI-visible changes after visual runs, screenshots, frontend PRs, or stakeholder review.
 context: conversation
 argument-hint: "<report-id> [optional: summary or screenshot paths]"
 ---

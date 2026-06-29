@@ -1,6 +1,6 @@
 ---
 name: sg-improve
-description: Auto-improve ShipGuard from real session learnings. Run this after any /sg-code-audit, /sg-visual-run, or debugging session. Analyzes what worked, what broke, and what was slow — saves project-specific learnings locally (zone sizing, patterns, infra timing) and files generic improvements as GitHub issues. The local learnings feed back into the next audit run automatically. Trigger on "sg-improve", "improve shipguard", "ameliore shipguard", "shipguard feedback", "session insights", "retex", "retrospective", "what did we learn".
+description: Capture ShipGuard session learnings, local mistakes, and reusable improvement issues after audits, visual runs, or debugging.
 context: conversation
 argument-hint: "[--local-only] [--github-only] [--dry-run] [--rollback]"
 ---

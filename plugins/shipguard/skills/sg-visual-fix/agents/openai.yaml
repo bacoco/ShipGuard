@@ -1,0 +1,13 @@
+interface:
+  display_name: "ShipGuard Visual Fix"
+  short_description: "Fix human-annotated visual review issues."
+  default_prompt: "Fix the annotated ShipGuard visual issues."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "agent-browser"
+      description: "Capture before/after screenshots."
+    - type: "shell"
+      value: "git"
+      description: "Inspect and verify the resulting code diff."

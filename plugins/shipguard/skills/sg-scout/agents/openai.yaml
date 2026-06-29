@@ -1,0 +1,10 @@
+interface:
+  display_name: "ShipGuard Scout"
+  short_description: "Research audit and testing techniques for ShipGuard."
+  default_prompt: "Scout improvements for ShipGuard."
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "gh"
+      description: "Search GitHub when available."
