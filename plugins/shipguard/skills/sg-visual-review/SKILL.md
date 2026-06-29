@@ -239,6 +239,8 @@ The build script and template are installed to the project:
 |------|---------|
 | `visual-tests/build-review.mjs` | Node.js build script |
 | `visual-tests/_review-template.html` | HTML template with inline CSS + JS |
+| `visual-tests/review-smoke-test.mjs` | Isolated smoke test for review build/server/save-manifest/persona reports |
+| `visual-tests/monitor-smoke-test.mjs` | Isolated smoke test for audit monitor endpoints |
 | `visual-tests/_results/review.html` | Generated local review workspace (not committed) |
 | `visual-tests/_results/change-reports/<report-id>/report.json` | Durable source report (committed with UI changes) |
 | `visual-tests/_results/persona-reports/<report-id>/index.html` | Durable generated review report (committed when used for PR/client review) |
@@ -254,10 +256,23 @@ If the build script is not yet in the project:
 # $SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/SKILL.md
 cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/
 cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/_review-template.html" visual-tests/
+cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/review-smoke-test.mjs" visual-tests/
+cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/monitor-smoke-test.mjs" visual-tests/
 
 # Add npm script (optional)
 # In package.json: "visual:review": "node visual-tests/build-review.mjs"
 ```
+
+## Smoke Tests
+
+Run these after installing or changing the review dashboard files:
+
+```bash
+node visual-tests/review-smoke-test.mjs
+node visual-tests/monitor-smoke-test.mjs
+```
+
+Both scripts use temporary fixtures. They should not write into the project except for normal process output.
 
 ## Design
 

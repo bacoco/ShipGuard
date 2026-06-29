@@ -165,6 +165,7 @@ test -f visual-tests/sg-record.mjs && echo "INSTALLED" || echo "NOT_INSTALLED"
 **If NOT_INSTALLED**, copy all recorder files from the plugin:
 
 ```bash
+# Keep these steps sequential. Do not parallelize: cp depends on mkdir.
 mkdir -p visual-tests/lib visual-tests/manifests
 
 # Copy from this skill's directory (SKILL_DIR)
@@ -188,6 +189,8 @@ If REVIEW_NOT_INSTALLED, copy from the sg-visual-review skill:
 REVIEW_DIR="${SKILL_DIR}/../sg-visual-review"
 cp "${REVIEW_DIR}/build-review.mjs" visual-tests/
 cp "${REVIEW_DIR}/_review-template.html" visual-tests/
+cp "${REVIEW_DIR}/review-smoke-test.mjs" visual-tests/
+cp "${REVIEW_DIR}/monitor-smoke-test.mjs" visual-tests/
 ```
 
 Print: `Recorder files installed to visual-tests/`
@@ -195,16 +198,49 @@ Print: `Recorder files installed to visual-tests/`
 ### Step 3: Check Playwright
 
 ```bash
-npx playwright --version 2>/dev/null
+node <<'NODE'
+const { existsSync } = require('fs');
+const { spawnSync } = require('child_process');
+
+function run(cmd, args) {
+  return spawnSync(cmd, args, { encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
+}
+
+(async () => {
+  try {
+    await import('playwright');
+    console.log('PLAYWRIGHT_OK: import');
+    return;
+  } catch {}
+
+  if (existsSync('node_modules/.bin/playwright')) {
+    const local = run('node_modules/.bin/playwright', ['--version']);
+    if (local.status === 0) {
+      console.log('PLAYWRIGHT_OK: local binary');
+      return;
+    }
+  }
+
+  const global = run('playwright', ['--version']);
+  if (global.status === 0) {
+    console.log('PLAYWRIGHT_OK: global binary');
+    return;
+  }
+
+  console.error('PLAYWRIGHT_MISSING');
+  process.exit(1);
+})();
+NODE
 ```
 
-If the command fails, install Playwright:
+Do not use `npx playwright --version` as a precheck; outside a Node project it can hang or try the network. If the bounded check fails, tell the user:
 
 ```bash
+npm install --save-dev playwright
 npx playwright install chromium
 ```
 
-If that also fails, tell the user: "Playwright is required for the recorder. Run: `npx playwright install chromium`" and stop.
+If there is no `package.json`, include `npm init -y` before the install command. Stop after giving the install command; do not keep retrying networked installs.
 
 ### Step 4: Check target URL is reachable
 
@@ -257,5 +293,7 @@ visual-tests/
     recorded-*.yaml           # Output from recordings (user-generated)
   build-review.mjs            # Review page builder (from sg-visual-review)
   _review-template.html       # Review page template (from sg-visual-review)
+  review-smoke-test.mjs        # Review dashboard smoke test
+  monitor-smoke-test.mjs       # Monitor endpoint smoke test
   _config.yaml                # Project config (base_url, credentials)
 ```

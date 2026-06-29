@@ -46,6 +46,8 @@ If a fix doesn't work, re-run or provide more specific annotation notes to guide
 |---------|----------|
 | `/sg-visual-fix` | Process the most recent fix manifest in `visual-tests/_results/` |
 | `/sg-visual-fix <path>` | Process a specific fix manifest JSON file |
+| `/sg-visual-fix --dry-run` | Analyze the latest manifest and write a fix plan without editing source files |
+| `/sg-visual-fix --dry-run <path>` | Analyze a specific manifest and write a fix plan without editing source files |
 
 ## Instructions
 
@@ -54,6 +56,7 @@ If a fix doesn't work, re-run or provide more specific annotation notes to guide
 Find the manifest file:
 - If argument provided: use that path
 - Otherwise: read `visual-tests/_results/fix-manifest.json` (saved by the review page server)
+- If `--dry-run` is present: do not edit code, rebuild, run browser commands, run Git, or write screenshots; only write `visual-tests/_results/visual-fix-plan.md`
 
 The manifest `action` field determines how to process each test:
 
@@ -78,6 +81,52 @@ The manifest contains:
   ]
 }
 ```
+
+### Step 1b: Dry-run planning mode
+
+When `--dry-run` is present, stop before implementation. For each test in the manifest:
+
+1. Read the annotated screenshot.
+2. Describe each annotation region from the coordinates and any note text.
+3. Identify likely files/components from the test URL, manifest path, screenshot name, route, and nearby code search.
+4. Propose the minimal correction that would be attempted in normal mode.
+5. List uncertainty and any data/build/runtime dependency that prevents confidence.
+
+Write:
+
+```text
+visual-tests/_results/visual-fix-plan.md
+```
+
+Plan format:
+
+```markdown
+# ShipGuard Visual Fix Plan
+
+Mode: dry-run
+Manifest: visual-tests/_results/fix-manifest.json
+
+## Test: auth/login
+- URL: http://localhost:3000/login
+- Screenshot: visual-tests/_results/screenshots/login-load.png
+- Action: validate-and-fix
+- Annotations:
+  - Region 1: x1=0.20 y1=0.30 x2=0.80 y2=0.60
+    Observed issue: ...
+- Candidate files:
+  - app/login/page.tsx - route component
+  - components/auth/login-form.tsx - form layout
+- Proposed fix:
+  - ...
+- Limits:
+  - ...
+```
+
+Dry-run acceptance:
+- No source file changes.
+- No `git checkout`, `git commit`, `npm run build`, or browser re-run.
+- The plan lists tests, screenshots, annotations, candidate files, proposed fix, and limits.
+- If screenshots cannot be read, the plan records that as a blocker instead of guessing.
 
 ### Step 2: For Each Annotated Test
 
@@ -207,3 +256,4 @@ Visual Review Fix Complete:
 - ALWAYS verify the fix visually (read the "after" screenshot)
 - If a fix requires backend changes, run the appropriate build_command
 - If you can't identify the issue from the screenshot, say so — don't guess
+- In `--dry-run`, stop after `visual-fix-plan.md`; do not modify source, Git state, build artifacts, or screenshots
