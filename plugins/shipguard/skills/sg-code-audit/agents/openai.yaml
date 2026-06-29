@@ -3,6 +3,9 @@ interface:
   short_description: "Audit code changes and write structured findings."
   default_prompt: "Run a ShipGuard code audit on my current diff."
 
+policy:
+  allow_implicit_invocation: false
+
 dependencies:
   tools:
     - type: "shell"

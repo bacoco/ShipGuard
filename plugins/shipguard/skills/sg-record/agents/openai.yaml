@@ -3,6 +3,9 @@ interface:
   short_description: "Record browser actions as replayable test manifests."
   default_prompt: "Record a ShipGuard browser scenario for this URL."
 
+policy:
+  allow_implicit_invocation: false
+
 dependencies:
   tools:
     - type: "shell"

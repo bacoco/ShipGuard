@@ -3,6 +3,9 @@ interface:
   short_description: "Stop the local visual review server."
   default_prompt: "Stop the ShipGuard visual review server."
 
+policy:
+  allow_implicit_invocation: false
+
 dependencies:
   tools:
     - type: "shell"

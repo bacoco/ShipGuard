@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
   "description": "ShipGuard — AI-powered code audit + visual E2E testing. Audit the code first, verify visually second. Zero tests written.",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "author": {
     "name": "bacoco"
   }
