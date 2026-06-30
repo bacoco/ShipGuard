@@ -26,6 +26,8 @@ codex plugin add shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 
+Migrating from an older local Codex adapter or a Claude marketplace install? See [`docs/codex-migration.md`](docs/codex-migration.md).
+
 > ⚠️ **Token Usage** — Code audits are token-intensive. `standard` (10 agents) ≈ 2M tokens. `deep` (15 agents, 2 rounds) ≈ 5M+. `paranoid` (20 agents, 3 rounds) can exceed 10M.
 
 ---

@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" translate="no" class="notranslate">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="google" content="notranslate">
+<link rel="icon" href="data:,">
 <title>SHIPGUARD — Mission Control</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -1842,6 +1844,12 @@ function makePod(a) {
     dur.textContent = duration + 's';
     pod.appendChild(dur);
   }
+  if (a.note) {
+    var note = document.createElement('div');
+    note.style.cssText = 'font-size:10px;color:var(--muted);margin-top:4px;line-height:1.3';
+    note.textContent = a.note;
+    pod.appendChild(note);
+  }
   return pod;
 }
 
@@ -1898,16 +1906,27 @@ function getAuditAgents(data) {
   var agentMap = {};
   (data.bugs || []).forEach(function(b) {
     if (!b.id) return;
-    var m = b.id.match(/^r\d+-([^-]+)/);
+    var m = b.id.match(/^r\d+-([^-]+)/i) || b.id.match(/^SG-(Z\d+)-/i);
     if (!m) return;
-    var zid = m[1];
+    var zid = m[1].toLowerCase();
     if (!agentMap[zid]) agentMap[zid] = {id: zid, label: zid, status: 'completed', bugs_found: 0};
     agentMap[zid].bugs_found++;
   });
-  return Object.keys(agentMap).sort().map(function(key) { return agentMap[key]; });
+  var agents = Object.keys(agentMap).sort().map(function(key) { return agentMap[key]; });
+  if (!agents.length && typeof data.agents === 'number') {
+    agents.push({
+      id: 'legacy',
+      label: 'Legacy audit',
+      status: 'completed',
+      bugs_found: (data.bugs || []).length,
+      note: data.agents + ' agents in legacy schema. Rerun sg-code-audit for detailed agent cards.',
+    });
+  }
+  return agents;
 }
 
 function getAuditAgentCount(data) {
+  if (typeof data.agent_count === 'number') return data.agent_count;
   if (Array.isArray(data.agents)) return data.agents.length;
   if (typeof data.agents === 'number') return data.agents;
   return getAuditAgents(data).length;
@@ -2238,7 +2257,7 @@ function renderAuditComplete(data) {
     var td3 = document.createElement('td');
     td3.style.cssText = 'font-size:12px;color:var(--muted)';
     var routeBugCount = countRouteBugs(data, r);
-    td3.textContent = routeBugCount > 0 ? String(routeBugCount) : '';
+    td3.textContent = String(routeBugCount);
 
     var td4 = document.createElement('td');
     td4.style.fontSize = '12px';

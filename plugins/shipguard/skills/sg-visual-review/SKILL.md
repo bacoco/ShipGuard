@@ -270,11 +270,18 @@ cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/monitor-smoke-test.mjs" visua
 Run these after installing or changing the review dashboard files:
 
 ```bash
-node visual-tests/review-smoke-test.mjs
-node visual-tests/monitor-smoke-test.mjs
+node visual-tests/review-smoke-test.mjs --port=23101
+node visual-tests/monitor-smoke-test.mjs --port=23102
 ```
 
 Both scripts use temporary fixtures. They should not write into the project except for normal process output.
+
+Options:
+- `--port=<port>` uses a deterministic local port. The same value can be supplied with `SHIPGUARD_REVIEW_SMOKE_PORT`, `SHIPGUARD_MONITOR_SMOKE_PORT`, or `SHIPGUARD_SMOKE_PORT`.
+- `--keep-tmp` keeps the fixture directory for inspection after the run.
+- `--debug` keeps the fixture directory and prints server output on failure.
+
+If a sandbox blocks local bind, the scripts fail with the fixture path, rerun command, server output tail, and a `listen EPERM` hint.
 
 ## Design
 

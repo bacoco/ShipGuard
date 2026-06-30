@@ -128,6 +128,16 @@ Dry-run acceptance:
 - No source file changes.
 - No `git checkout`, `git commit`, `npm run build`, or browser re-run.
 - The plan lists tests, screenshots, annotations, candidate files, proposed fix, and limits.
+
+### Smoke Test
+
+Run the deterministic dry-run smoke test after changing this skill:
+
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-fix/visual-fix-dry-run-smoke-test.mjs"
+```
+
+The smoke test validates the dry-run contract with a fixture: it creates a fix manifest, writes `visual-tests/_results/visual-fix-plan.md`, verifies source files are unchanged, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated fixture.
 - If screenshots cannot be read, the plan records that as a blocker instead of guessing.
 
 ### Step 2: For Each Annotated Test

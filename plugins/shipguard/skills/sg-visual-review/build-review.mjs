@@ -1147,6 +1147,12 @@ if (process.argv.includes('--serve')) {
   const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' };
 
   const server = http.createServer(async (req, res) => {
+    if (req.method === 'GET' && req.url === '/favicon.ico') {
+      res.writeHead(204, CORS);
+      res.end();
+      return;
+    }
+
     // ── GET /health ──
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json', ...CORS });

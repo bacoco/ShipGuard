@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-06-29T13:30:00Z",
+  "base_url": "http://127.0.0.1:8001",
+  "summary": {
+    "total": 1,
+    "pass": 1,
+    "fail": 0,
+    "error": 0,
+    "stale": 0,
+    "skipped": 0,
+    "duration_ms": 1000
+  },
+  "tests": [
+    {
+      "id": "pages/root-index",
+      "manifest": "visual-tests/pages/root-index.yaml",
+      "name": "Home",
+      "url": "/",
+      "status": "PASS",
+      "duration_ms": 1000,
+      "screenshot": null,
+      "failure_reason": null
+    }
+  ]
+}

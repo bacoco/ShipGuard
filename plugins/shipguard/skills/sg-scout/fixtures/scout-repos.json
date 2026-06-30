@@ -1,0 +1,21 @@
+{
+  "repos": [
+    {
+      "full_name": "bacoco/ShipGuard",
+      "url": "https://github.com/bacoco/ShipGuard",
+      "stars": 0,
+      "description": "ShipGuard plugin fixture for offline scout dry-run smoke tests.",
+      "readme": "ShipGuard validates code audit, process checks, visual review dashboards, smoke tests, sandbox notes, and dry-run preview workflows.",
+      "files": [
+        {
+          "path": "skills/sg-visual-review/review-smoke-test.mjs",
+          "content": "Creates an isolated fixture, generates review.html, starts a localhost server, verifies JSON contracts, save-manifest, persona reports, and path traversal rejection."
+        },
+        {
+          "path": "plugins/shipguard/docs/sandbox.md",
+          "content": "Documents sandbox constraints for local ports, browser sockets, GitHub network calls, dependency installs, and cache writes."
+        }
+      ]
+    }
+  ]
+}

@@ -64,6 +64,14 @@ The preview must include:
 
 Dry-run must not modify `.shipguard/learnings.yaml`, `.shipguard/mistakes.md`, `.shipguard/history/`, GitHub issues, or repository source files.
 
+Deterministic dry-run smoke test:
+
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-improve/improve-dry-run-smoke-test.mjs"
+```
+
+The smoke test creates audit and visual fixtures, writes `visual-tests/_results/sg-improve-preview.md`, verifies `.shipguard/` target files are untouched, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated preview.
+
 ---
 
 ## Phase 0 — Snapshot (Safety Net)

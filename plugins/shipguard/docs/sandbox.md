@@ -6,6 +6,7 @@ ShipGuard can run in Codex, Claude, and local shells. Some actions are legitimat
 |--------|------------------------|------------|
 | `agent-browser` | Browser daemon/socket may write outside the workspace | Allow the socket path or configure it under `/tmp` when supported |
 | `node visual-tests/build-review.mjs --serve` | Opens a local HTTP port | Bind stays on `127.0.0.1` by default; allow local port access |
+| `node visual-tests/review-smoke-test.mjs` / `monitor-smoke-test.mjs` | Starts a temporary server on `127.0.0.1` | Use `--port=<port>` or `SHIPGUARD_SMOKE_PORT`; `listen EPERM` means the sandbox denied local bind |
 | `curl` or browser POST to localhost | Local network calls can be blocked | Allow loopback network for `POST /save-manifest` and monitor smoke tests |
 | `gh api` / `gh issue` | Needs GitHub network and auth | Grant network explicitly or use `--offline` / `--dry-run` modes |
 | `npm install`, `npx playwright install` | Needs network and writes dependencies | Ask before network install; prefer bounded local checks first |

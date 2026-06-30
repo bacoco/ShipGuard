@@ -57,6 +57,15 @@ If `--offline` is present, skip GitHub entirely. Read repos from the JSON file p
 
 If the fixture is missing or invalid, write `visual-tests/_results/scout-report.md` with the error and stop cleanly. Do not create issues.
 
+Deterministic fixture smoke test:
+
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/offline-dry-run-smoke-test.mjs"
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/offline-dry-run-smoke-test.mjs" --from "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/fixtures/scout-repos.json"
+```
+
+The smoke test writes only a temporary `visual-tests/_results/scout-report.md`, verifies no techniques library or GitHub side effect is produced, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated report.
+
 Search GitHub for repos relevant to ShipGuard's domains. Run these queries via `gh api`:
 
 ```bash

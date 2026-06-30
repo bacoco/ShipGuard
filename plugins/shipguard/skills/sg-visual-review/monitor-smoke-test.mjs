@@ -6,7 +6,7 @@
  * monitor API: start, agent updates, status, completion, and persistence.
  */
 
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { request as httpRequest } from 'http';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
@@ -16,9 +16,64 @@ import { spawn } from 'child_process';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_BUILD = join(SCRIPT_DIR, 'build-review.mjs');
 const SOURCE_TEMPLATE = join(SCRIPT_DIR, '_review-template.html');
+const DEFAULT_PORT_BASE = 22000;
+
+function parseArgs() {
+  const options = {
+    port: null,
+    keepTmp: false,
+    debug: false,
+  };
+  for (const arg of process.argv.slice(2)) {
+    if (arg === '--keep-tmp') options.keepTmp = true;
+    else if (arg === '--debug') options.debug = true;
+    else if (arg.startsWith('--port=')) options.port = parseInt(arg.split('=')[1], 10);
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+  const envPort = process.env.SHIPGUARD_MONITOR_SMOKE_PORT || process.env.SHIPGUARD_SMOKE_PORT;
+  if (!options.port && envPort) options.port = parseInt(envPort, 10);
+  if (options.port && (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)) {
+    throw new Error(`Invalid port: ${options.port}`);
+  }
+  return options;
+}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function createProcessLog(child) {
+  const lines = [];
+  function push(prefix, chunk) {
+    for (const line of String(chunk).split(/\r?\n/)) {
+      if (!line) continue;
+      lines.push(`${prefix}${line}`);
+      if (lines.length > 200) lines.shift();
+    }
+  }
+  child.stdout.on('data', chunk => push('stdout: ', chunk));
+  child.stderr.on('data', chunk => push('stderr: ', chunk));
+  return {
+    tail(count = 40) {
+      return lines.slice(-count).join('\n') || '(no child output captured)';
+    },
+  };
+}
+
+function formatFailure(error, root, port, log) {
+  const tail = log ? log.tail() : '(server was not started)';
+  const eperm = tail.match(/listen EPERM[^\n]*/);
+  const sandboxHint = eperm
+    ? `\nLocal server bind denied by sandbox: ${eperm[0]}\nRerun with localhost/network permission, or outside the sandbox.`
+    : '';
+  return [
+    error.message,
+    `Fixture: ${root || '(not created)'}`,
+    root ? `Rerun server: cd ${root} && node build-review.mjs --serve --port=${port}` : null,
+    sandboxHint.trim() || null,
+    'Server output:',
+    tail,
+  ].filter(Boolean).join('\n');
 }
 
 function request(port, method, path, body = null) {
@@ -86,10 +141,18 @@ function createFixture() {
 }
 
 async function main() {
-  const root = createFixture();
-  const port = 22000 + Math.floor(Math.random() * 10000);
-  const server = spawn(process.execPath, ['build-review.mjs', '--serve', `--port=${port}`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  const options = parseArgs();
+  let root = null;
+  let port = null;
+  let server = null;
+  let log = null;
+  let passed = false;
   try {
+    root = createFixture();
+    port = options.port || DEFAULT_PORT_BASE + Math.floor(Math.random() * 10000);
+    console.error(`monitor smoke test: fixture=${root} port=${port}`);
+    server = spawn(process.execPath, ['build-review.mjs', '--serve', `--port=${port}`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    log = createProcessLog(server);
     await waitForServer(port);
     let res = await request(port, 'POST', '/api/monitor/audit-start', {
       timestamp: '2026-06-29T13:30:00Z',
@@ -131,9 +194,18 @@ async function main() {
     assert(res.json?.status === 'completed', 'status is not completed');
     const persisted = JSON.parse(readFileSync(join(root, '_results', 'audit-monitor.json'), 'utf8'));
     assert(persisted.status === 'completed', 'monitor state was not persisted');
+    passed = true;
     console.log('monitor smoke test passed');
+    if (options.debug) console.error(log.tail());
+  } catch (error) {
+    throw new Error(formatFailure(error, root, port, log));
   } finally {
-    server.kill('SIGTERM');
+    if (server) server.kill('SIGTERM');
+    if (root && passed && !options.keepTmp && !options.debug) {
+      rmSync(root, { recursive: true, force: true });
+    } else if (root) {
+      console.error(`monitor smoke test fixture kept: ${root}`);
+    }
   }
 }
 
