@@ -2,7 +2,7 @@
 name: sg-record
 description: Record browser interactions as replayable ShipGuard test manifests with agent-browser.
 context: conversation
-argument-hint: "<url> [--name <name>] [--storage <auth.json>] [--save-storage <path>]"
+argument-hint: "<url> [--name <name>] [--storage <auth.json>] [--save-storage <path>] | --check"
 ---
 
 # /sg-record — Macro Recorder
@@ -26,7 +26,8 @@ sg-record (human)         ───┘
 | `/sg-record http://localhost:6969` | Open recorder on the given URL |
 | `/sg-record http://localhost:6969 --name login-flow` | Record with a preset manifest name |
 | `/sg-record http://localhost:6969 --storage auth.json` | Skip login by loading saved auth state |
-| `/sg-record --save-storage auth.json` | Save auth state after recording (for reuse) |
+| `/sg-record http://localhost:6969 --save-storage auth.json` | Save auth state after recording (for reuse) |
+| `/sg-record --check` | Check Playwright, Chromium, and headed browser launch prerequisites |
 
 ## How It Works
 
@@ -200,42 +201,23 @@ Print: `Recorder files installed to visual-tests/`
 ### Step 3: Check Playwright
 
 ```bash
-node <<'NODE'
-const { existsSync } = require('fs');
-const { spawnSync } = require('child_process');
-
-function run(cmd, args) {
-  return spawnSync(cmd, args, { encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
-}
-
-(async () => {
-  try {
-    await import('playwright');
-    console.log('PLAYWRIGHT_OK: import');
-    return;
-  } catch {}
-
-  if (existsSync('node_modules/.bin/playwright')) {
-    const local = run('node_modules/.bin/playwright', ['--version']);
-    if (local.status === 0) {
-      console.log('PLAYWRIGHT_OK: local binary');
-      return;
-    }
-  }
-
-  const global = run('playwright', ['--version']);
-  if (global.status === 0) {
-    console.log('PLAYWRIGHT_OK: global binary');
-    return;
-  }
-
-  console.error('PLAYWRIGHT_MISSING');
-  process.exit(1);
-})();
-NODE
+node visual-tests/sg-record.mjs --check
 ```
 
-Do not use `npx playwright --version` as a precheck; outside a Node project it can hang or try the network. If the bounded check fails, tell the user:
+Expected success output:
+
+```text
+PLAYWRIGHT_OK
+CHROMIUM_OK
+GUI_LAUNCH_OK
+```
+
+Do not use `npx playwright --version` as a precheck; outside a Node project it can hang or try the network. If the check fails, use its diagnostic. Common failures:
+- `PLAYWRIGHT_MISSING`: install the package in the project.
+- `CHROMIUM_MISSING`: run the browser install.
+- `GUI_LAUNCH_FAILED`: grant browser/GUI launch permission or use an environment with headed Chromium support.
+
+If Playwright is missing, tell the user:
 
 ```bash
 npm install --save-dev playwright
@@ -289,7 +271,7 @@ visual-tests/
     recorder-toolbar.js       # Injected toolbar (copied from plugin)
     recorder-toolbar.css      # Toolbar styles (copied from plugin)
     actions-to-yaml.mjs       # Conversion: actions → YAML (copied from plugin)
-    actions-to-yaml.test.mjs  # Unit tests — 11 tests (copied from plugin)
+    actions-to-yaml.test.mjs  # Unit tests (copied from plugin)
     integration-test.mjs      # Pipeline smoke test (copied from plugin)
   manifests/
     recorded-*.yaml           # Output from recordings (user-generated)

@@ -3,6 +3,7 @@
  * sg-record.mjs — ShipGuard Macro Recorder
  * Opens a Playwright Chromium with a recording toolbar.
  * Usage: node visual-tests/sg-record.mjs <url> [--name <name>] [--storage <auth.json>] [--save-storage <path>]
+ *        node visual-tests/sg-record.mjs --check
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -23,8 +24,13 @@ function getFlag(name) {
   return args[idx + 1];
 }
 
+function hasFlag(name) {
+  return args.includes('--' + name);
+}
+
 // Known flags that take a value (others are boolean)
 const FLAGS_WITH_VALUE = new Set(['name', 'storage', 'save-storage']);
+const checkOnly = hasFlag('check');
 
 // First non-flag arg = URL
 let url = null;
@@ -38,22 +44,15 @@ for (let i = 0; i < args.length; i++) {
   break;
 }
 
-if (!url) {
+if (!checkOnly && !url) {
   console.error('Usage: node visual-tests/sg-record.mjs <url> [--name <name>] [--storage <auth.json>] [--save-storage <path>]');
+  console.error('       node visual-tests/sg-record.mjs --check');
   process.exit(1);
 }
 
 const nameArg = getFlag('name');
 const storageArg = getFlag('storage');
 const saveStorageArg = getFlag('save-storage');
-
-/* ── Read toolbar assets ────────────────────────────────────────── */
-
-const toolbarCSS = readFileSync(join(__dirname, 'lib', 'recorder-toolbar.css'), 'utf-8');
-const rawJS = readFileSync(join(__dirname, 'lib', 'recorder-toolbar.js'), 'utf-8');
-
-// Inject CSS into the JS placeholder — handle backticks in CSS
-const toolbarJS = rawJS.replace("'__CSS_PLACEHOLDER__'", '`' + toolbarCSS.replace(/`/g, '\\`') + '`');
 
 /* ── Read base_url from config (fallback to URL arg) ────────────── */
 
@@ -73,6 +72,58 @@ try {
 
 let allSteps = [];
 let stopped = false;
+let toolbarJS = null;
+
+/* ── Preflight ──────────────────────────────────────────────────── */
+
+function installHint() {
+  const hasPackageJson = existsSync(join(process.cwd(), 'package.json'));
+  const initStep = hasPackageJson ? '' : 'npm init -y && ';
+  return `${initStep}npm install --save-dev playwright && npx playwright install chromium`;
+}
+
+async function runCheck() {
+  console.log('ShipGuard Recorder Preflight');
+
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright'));
+    console.log('PLAYWRIGHT_OK');
+  } catch (error) {
+    console.error('PLAYWRIGHT_MISSING');
+    console.error(`Install with: ${installHint()}`);
+    console.error(`Detail: ${error.message}`);
+    process.exit(1);
+  }
+
+  const executablePath = chromium.executablePath();
+  if (!existsSync(executablePath)) {
+    console.error('CHROMIUM_MISSING');
+    console.error('Install with: npx playwright install chromium');
+    console.error(`Expected executable: ${executablePath}`);
+    process.exit(1);
+  }
+  console.log('CHROMIUM_OK');
+
+  let browser = null;
+  try {
+    browser = await chromium.launch({ headless: false, timeout: 5000 });
+    console.log('GUI_LAUNCH_OK');
+  } catch (error) {
+    console.error('GUI_LAUNCH_FAILED');
+    console.error('Grant browser/GUI launch permission, ensure a display is available, or run in an environment that supports headed Chromium.');
+    console.error(`Detail: ${error.message}`);
+    process.exit(1);
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
+function loadToolbarScript() {
+  const toolbarCSS = readFileSync(join(__dirname, 'lib', 'recorder-toolbar.css'), 'utf-8');
+  const rawJS = readFileSync(join(__dirname, 'lib', 'recorder-toolbar.js'), 'utf-8');
+  return rawJS.replace("'__CSS_PLACEHOLDER__'", '`' + toolbarCSS.replace(/`/g, '\\`') + '`');
+}
 
 /* ── Bridge event handler ───────────────────────────────────────── */
 
@@ -135,6 +186,11 @@ function askQuestion(prompt) {
 /* ── Main ───────────────────────────────────────────────────────── */
 
 async function main() {
+  if (checkOnly) {
+    await runCheck();
+    return;
+  }
+
   console.log('\n\u26A1 ShipGuard Recorder');
   console.log(`  URL:     ${url}`);
   if (nameArg) console.log(`  Name:    ${nameArg}`);
@@ -147,12 +203,12 @@ async function main() {
   try {
     ({ chromium } = await import('playwright'));
   } catch {
-    // Detect if this is a non-npm project (no package.json)
-    const hasPackageJson = existsSync(join(process.cwd(), 'package.json'));
-    const initStep = hasPackageJson ? '' : 'npm init -y && ';
-    console.error(`  Playwright not found. Install with:\n\n    ${initStep}npm install playwright && npx playwright install chromium\n`);
+    console.error(`  Playwright not found. Install with:\n\n    ${installHint()}\n`);
+    console.error('  Run `node visual-tests/sg-record.mjs --check` after installing to verify Chromium and GUI launch.\n');
     process.exit(1);
   }
+
+  toolbarJS = loadToolbarScript();
 
   // Launch browser
   const browser = await chromium.launch({ headless: false });

@@ -25,6 +25,22 @@ codex plugin --help
 
 Then remove the stale adapter name shown by `codex plugin list`.
 
+If removal fails with an error such as:
+
+```text
+failed to remove existing plugin cache entry: Operation not permitted
+```
+
+rerun with permission to modify the Codex plugin cache. The remove command updates local config and deletes the cached plugin entry, so sandboxes may block it even though it is only local cleanup.
+
+After removal, verify:
+
+```bash
+codex plugin list
+```
+
+`shipguard-codex@personal` should be absent or listed as not installed. `shipguard@shipguard` should remain installed.
+
 ## 3. Install Official ShipGuard Entry
 
 ```bash

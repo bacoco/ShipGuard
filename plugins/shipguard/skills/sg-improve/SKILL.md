@@ -136,6 +136,14 @@ When the user runs `/sg-improve --rollback`:
    ```
 4. Print: `Rolled back to state before {timestamp}. The changes from that sg-improve run are undone.`
 
+Deterministic rollback smoke test:
+
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-improve/improve-rollback-smoke-test.mjs"
+```
+
+The smoke test creates a temporary `.shipguard` fixture, mutates `learnings.yaml` and `mistakes.md`, restores both from the newest snapshot, verifies the consumed snapshot was removed, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated fixture.
+
 ### --history
 
 Show all snapshots:
