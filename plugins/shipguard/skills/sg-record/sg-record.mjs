@@ -13,6 +13,8 @@ import * as readline from 'readline';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const DEFAULT_CHECK_TIMEOUT_MS = 15000;
+const GUI_LAUNCH_ATTEMPTS = 2;
 
 /* ── CLI args parsing ───────────────────────────────────────────── */
 
@@ -24,12 +26,20 @@ function getFlag(name) {
   return args[idx + 1];
 }
 
+function getFlagValue(name) {
+  const exact = getFlag(name);
+  if (exact) return exact;
+  const prefix = `--${name}=`;
+  const match = args.find(arg => arg.startsWith(prefix));
+  return match ? match.slice(prefix.length) : null;
+}
+
 function hasFlag(name) {
   return args.includes('--' + name);
 }
 
 // Known flags that take a value (others are boolean)
-const FLAGS_WITH_VALUE = new Set(['name', 'storage', 'save-storage']);
+const FLAGS_WITH_VALUE = new Set(['name', 'storage', 'save-storage', 'check-timeout']);
 const checkOnly = hasFlag('check');
 
 // First non-flag arg = URL
@@ -53,6 +63,7 @@ if (!checkOnly && !url) {
 const nameArg = getFlag('name');
 const storageArg = getFlag('storage');
 const saveStorageArg = getFlag('save-storage');
+const checkTimeoutArg = getFlagValue('check-timeout');
 
 /* ── Read base_url from config (fallback to URL arg) ────────────── */
 
@@ -82,8 +93,50 @@ function installHint() {
   return `${initStep}npm install --save-dev playwright && npx playwright install chromium`;
 }
 
+function checkTimeoutMs() {
+  const raw = checkTimeoutArg || process.env.SHIPGUARD_RECORD_CHECK_TIMEOUT;
+  if (!raw) return DEFAULT_CHECK_TIMEOUT_MS;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 1000) {
+    console.error(`Invalid check timeout: ${raw}`);
+    process.exit(1);
+  }
+  return parsed;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function verifyGuiLaunch(chromium, timeoutMs) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= GUI_LAUNCH_ATTEMPTS; attempt++) {
+    let browser = null;
+    try {
+      browser = await chromium.launch({ headless: false, timeout: timeoutMs });
+      console.log('GUI_LAUNCH_OK');
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < GUI_LAUNCH_ATTEMPTS) {
+        console.error(`GUI_LAUNCH_RETRY: attempt ${attempt} failed, retrying once`);
+        await sleep(750);
+      }
+    } finally {
+      if (browser) await browser.close();
+    }
+  }
+
+  console.error('GUI_LAUNCH_FAILED');
+  console.error('Grant browser/GUI launch permission, ensure a display is available, or run in an environment that supports headed Chromium.');
+  console.error(`Increase timeout with SHIPGUARD_RECORD_CHECK_TIMEOUT=${timeoutMs * 2} or --check-timeout=${timeoutMs * 2}`);
+  console.error(`Detail: ${lastError?.message || lastError}`);
+  process.exit(1);
+}
+
 async function runCheck() {
   console.log('ShipGuard Recorder Preflight');
+  const timeoutMs = checkTimeoutMs();
 
   let chromium;
   try {
@@ -91,6 +144,7 @@ async function runCheck() {
     console.log('PLAYWRIGHT_OK');
   } catch (error) {
     console.error('PLAYWRIGHT_MISSING');
+    console.error('sg-record requires the Node package `playwright` importable from this project. A Python/global playwright command is not enough.');
     console.error(`Install with: ${installHint()}`);
     console.error(`Detail: ${error.message}`);
     process.exit(1);
@@ -105,18 +159,7 @@ async function runCheck() {
   }
   console.log('CHROMIUM_OK');
 
-  let browser = null;
-  try {
-    browser = await chromium.launch({ headless: false, timeout: 5000 });
-    console.log('GUI_LAUNCH_OK');
-  } catch (error) {
-    console.error('GUI_LAUNCH_FAILED');
-    console.error('Grant browser/GUI launch permission, ensure a display is available, or run in an environment that supports headed Chromium.');
-    console.error(`Detail: ${error.message}`);
-    process.exit(1);
-  } finally {
-    if (browser) await browser.close();
-  }
+  await verifyGuiLaunch(chromium, timeoutMs);
 }
 
 function loadToolbarScript() {
@@ -204,6 +247,7 @@ async function main() {
     ({ chromium } = await import('playwright'));
   } catch {
     console.error(`  Playwright not found. Install with:\n\n    ${installHint()}\n`);
+    console.error('  sg-record requires the Node package `playwright` importable from this project. A Python/global playwright command is not enough.\n');
     console.error('  Run `node visual-tests/sg-record.mjs --check` after installing to verify Chromium and GUI launch.\n');
     process.exit(1);
   }

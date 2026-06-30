@@ -213,9 +213,9 @@ GUI_LAUNCH_OK
 ```
 
 Do not use `npx playwright --version` as a precheck; outside a Node project it can hang or try the network. If the check fails, use its diagnostic. Common failures:
-- `PLAYWRIGHT_MISSING`: install the package in the project.
+- `PLAYWRIGHT_MISSING`: install the Node package in the project. A Python or global `playwright` command is not enough because `sg-record.mjs` runs `await import('playwright')`.
 - `CHROMIUM_MISSING`: run the browser install.
-- `GUI_LAUNCH_FAILED`: grant browser/GUI launch permission or use an environment with headed Chromium support.
+- `GUI_LAUNCH_FAILED`: grant browser/GUI launch permission or use an environment with headed Chromium support. The check uses a 15s launch timeout and retries once; increase it with `SHIPGUARD_RECORD_CHECK_TIMEOUT=30000` or `--check-timeout=30000` on slow first launches.
 
 If Playwright is missing, tell the user:
 
