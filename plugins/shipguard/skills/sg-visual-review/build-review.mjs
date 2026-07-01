@@ -185,6 +185,8 @@ function parseVisualResults() {
     return {
       source: 'json',
       statusMap,
+      run_id: raw.run_id || null,
+      scope: raw.scope && typeof raw.scope === 'object' ? raw.scope : null,
       total: Number.isFinite(summary.total) ? summary.total : (raw.tests || []).length,
       pass: Number.isFinite(summary.pass) ? summary.pass : 0,
       fail: Number.isFinite(summary.fail) ? summary.fail : 0,
@@ -384,20 +386,52 @@ function mergeStatus(tests, report, regressions) {
 }
 
 function buildVisualResultsContract(data, statusSource) {
-  return {
-    schema_version: '1.0',
-    timestamp: data.generated,
-    base_url: config.base_url || statusSource.baseUrl || null,
-    summary: {
+  const scope = statusSource.scope && typeof statusSource.scope === 'object' ? { ...statusSource.scope } : null;
+  const selectedIds = new Set(
+    (scope?.selected_manifests || [])
+      .map(normalizeTestId)
+      .filter(Boolean)
+  );
+  const contractTests = selectedIds.size
+    ? data.tests.filter(test => selectedIds.has(normalizeTestId(test.id)) || selectedIds.has(normalizeTestId(`${test.id}.yaml`)))
+    : data.tests;
+  const summary = selectedIds.size && contractTests.length
+    ? {
+      total: contractTests.length,
+      pass: contractTests.filter(test => test.status === 'PASS').length,
+      fail: contractTests.filter(test => test.status === 'FAIL').length,
+      error: contractTests.filter(test => test.status === 'ERROR').length,
+      stale: contractTests.filter(test => test.status === 'STALE').length,
+      skipped: contractTests.filter(test => test.status === 'SKIPPED').length,
+    }
+    : {
       total: data.summary.total,
       pass: data.summary.pass,
       fail: data.summary.fail,
       error: data.summary.error || 0,
       stale: data.summary.stale,
       skipped: data.summary.skipped || 0,
+    };
+  if (scope) {
+    if (!Number.isFinite(scope.selected_total)) scope.selected_total = summary.total;
+    if (!Number.isFinite(scope.full_suite_total)) scope.full_suite_total = data.tests.length;
+  }
+  return {
+    schema_version: '1.0',
+    ...(statusSource.run_id ? { run_id: statusSource.run_id } : {}),
+    timestamp: data.generated,
+    base_url: config.base_url || statusSource.baseUrl || null,
+    ...(scope ? { scope } : {}),
+    summary: {
+      total: summary.total,
+      pass: summary.pass,
+      fail: summary.fail,
+      error: summary.error,
+      stale: summary.stale,
+      skipped: summary.skipped,
       duration_ms: statusSource.durationMs ?? null,
     },
-    tests: data.tests.map(test => ({
+    tests: contractTests.map(test => ({
       id: test.id,
       manifest: `${test.id}.yaml`,
       name: test.name,
@@ -1109,6 +1143,36 @@ if (process.argv.includes('--serve')) {
     if (auditState) writeFileSync(MONITOR_PATH, JSON.stringify(auditState, null, 2), 'utf8');
   }
 
+  function normalizeMonitorId(value) {
+    if (value === undefined || value === null) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const roundPrefixed = raw.match(/^r\d+[:_-](.+)$/i);
+    return roundPrefixed ? roundPrefixed[1] : raw;
+  }
+
+  function monitorIdFrom(data) {
+    return normalizeMonitorId(data?.agent_id ?? data?.zone_id ?? data?.id);
+  }
+
+  function monitorAliasesFor(data, canonicalId) {
+    const aliases = new Set();
+    for (const value of [data?.agent_id, data?.zone_id, data?.id]) {
+      if (value !== undefined && value !== null && String(value).trim()) aliases.add(String(value).trim());
+    }
+    if (canonicalId) aliases.add(`r1:${canonicalId}`);
+    return [...aliases].filter(alias => alias !== canonicalId);
+  }
+
+  function existingMonitorKey(canonicalId) {
+    if (!auditState?.agents) return canonicalId;
+    if (auditState.agents[canonicalId]) return canonicalId;
+    for (const [key, agent] of Object.entries(auditState.agents)) {
+      if (normalizeMonitorId(key) === canonicalId || monitorIdFrom(agent) === canonicalId) return key;
+    }
+    return canonicalId;
+  }
+
   function readBody(req, maxBytes = 5 * 1024 * 1024) {
     return new Promise((resolve, reject) => {
       let body = '';
@@ -1172,8 +1236,14 @@ if (process.argv.includes('--serve')) {
         };
         // Pre-populate agents from zones
         for (const z of (data.zones || [])) {
-          auditState.agents[`r1:${z.zone_id || z.id}`] = {
-            zone_id: z.zone_id || z.id,
+          const id = monitorIdFrom(z);
+          if (!id) continue;
+          auditState.agents[id] = {
+            ...(auditState.agents[id] || {}),
+            id,
+            agent_id: id,
+            zone_id: id,
+            aliases: monitorAliasesFor(z, id),
             status: 'pending',
             paths: z.paths,
             file_count: z.file_count,
@@ -1196,8 +1266,24 @@ if (process.argv.includes('--serve')) {
         if (!auditState) {
           auditState = { agents: {}, status: 'running', started_at: new Date().toISOString() };
         }
-        const id = data.agent_id || data.zone_id;
-        auditState.agents[id] = { ...(auditState.agents[id] || {}), ...data };
+        const id = monitorIdFrom(data);
+        if (!id) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...CORS });
+          res.end(JSON.stringify({ error: 'agent update missing id, agent_id, or zone_id' }));
+          return;
+        }
+        const key = existingMonitorKey(id);
+        const previous = auditState.agents[key] || {};
+        const aliases = new Set([...(previous.aliases || []), ...monitorAliasesFor(data, id)]);
+        auditState.agents[id] = {
+          ...previous,
+          ...data,
+          id,
+          agent_id: id,
+          zone_id: normalizeMonitorId(data.zone_id ?? previous.zone_id ?? id),
+          aliases: [...aliases].filter(alias => alias !== id),
+        };
+        if (key !== id) delete auditState.agents[key];
         persistMonitor();
         res.writeHead(200, { 'Content-Type': 'application/json', ...CORS });
         res.end(JSON.stringify({ ok: true }));

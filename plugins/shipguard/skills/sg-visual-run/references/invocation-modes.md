@@ -8,8 +8,9 @@ Before entering any mode, check scope override flags:
 2. Check `--diff=<ref>`. If present → use that ref for "only what changed" logic, skip menu.
 3. If BOTH `--all` and `--diff` present → error: `Cannot use --all and --diff together.`
 4. Check `--from-audit`. If present → read `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json`. `--from-audit` wins over `--diff` if both present.
-5. Check `--regressions`. If present → read `_regressions.yaml`, run only those tests, skip menu.
-6. No scope flags → Interactive Mode or Natural Language Mode.
+5. Check `--from-process`. If present → read `impacted_ui_routes` from `process-results.json`. `--from-process` wins over `--diff` and loses to `--from-audit` if both bridge flags are present.
+6. Check `--regressions`. If present → read `_regressions.yaml`, run only those tests, skip menu.
+7. No scope flags → Interactive Mode or Natural Language Mode.
 
 ---
 
@@ -125,9 +126,43 @@ Overrides smart scope flags. If `--from-audit` and `--diff=<ref>` are both prese
    - Compare extracted pathname against `impacted_route.route` (always a bare path like `/dashboard`, `/chat`, `/dossier/:id`).
    - Parameterized routes (`:id`, `[id]`): match path segments (`/dossier/:id` matches `/dossier/anything`).
    - A manifest matches if its extracted pathname starts with or equals the impacted route path.
-4. If no manifest matches a route, log "uncovered route" (do NOT auto-generate — user can run `/sg-visual-discover` separately).
+   - **Special case:** `/` matches only the root page manifest. It must not prefix-match the whole suite.
+   - Non-HTML assets are not visual page tests; record them as skipped, for example `{ "route": "/assets/file.zip", "status": "skipped", "reason": "non_html_asset" }`.
+4. If no manifest matches a route, log and persist `uncovered route` (do NOT auto-generate — user can run `/sg-visual-discover` separately), for example `{ "route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest" }`.
 5. Run matched manifests, highest `impacted_route.severity` first; manifest `priority` as secondary sort.
 6. Report: routes visually verified, uncovered routes, code-audit findings visually confirmed vs not reproduced.
+
+The resulting `visual-results.json` must preserve bridge scope:
+
+```json
+{
+  "scope": {
+    "type": "from-audit",
+    "source": "visual-tests/_results/audit-results.json",
+    "selected_routes": ["/"],
+    "selected_manifests": ["visual-tests/pages/root-index.yaml"],
+    "uncovered_routes": [
+      {"route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest"}
+    ],
+    "selected_total": 1,
+    "full_suite_total": 28
+  }
+}
+```
+
+`summary.total` is the selected run total. Do not rewrite unselected manifests as `STALE` during review rebuild.
+
+---
+
+## From-Process Mode (`--from-process`)
+
+Same matching and reporting rules as `--from-audit`, but read `impacted_ui_routes` from:
+
+1. `visual-tests/_results/process-results.json`
+2. `{repo_root}/process-results.json`
+3. `.process-check-results/process-results.json`
+
+Use `scope.type: "from-process"` and `scope.source` pointing to the consumed file.
 
 ---
 
@@ -136,10 +171,11 @@ Overrides smart scope flags. If `--from-audit` and `--diff=<ref>` are both prese
 Priority order when building the final execution list:
 
 1. **`--from-audit`** → severity-ordered list from `impacted_ui_routes`
-2. **`--diff=<ref>` or "Only what changed"** → diff-based route detection + regressions
-3. **Natural language** → intent analysis + generate missing tests
-4. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` descending
-5. **`--all` or "Full suite"** → all manifests, regressions first, then by priority `high` → `medium` → `low`
+2. **`--from-process`** → visual confirmation list from `process-results.json`
+3. **`--diff=<ref>` or "Only what changed"** → diff-based route detection + regressions
+4. **Natural language** → intent analysis + generate missing tests
+5. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` descending
+6. **`--all` or "Full suite"** → all manifests, regressions first, then by priority `high` → `medium` → `low`
 
 **Always skip** manifests with `deprecated: true`.
 **Regressions among matched tests always run first** (except in `--from-audit` mode, where severity order takes precedence).

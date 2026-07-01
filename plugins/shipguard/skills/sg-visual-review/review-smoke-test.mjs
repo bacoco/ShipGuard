@@ -8,7 +8,7 @@
  * dashboard data surface.
  */
 
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { request as httpRequest } from 'http';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
@@ -159,8 +159,18 @@ function createFixture() {
 
   writeJson(join(root, '_results', 'visual-results.json'), {
     schema_version: '1.0',
+    run_id: 'visual-smoke-20260629-133000',
     timestamp: '2026-06-29T13:30:00Z',
     base_url: 'http://127.0.0.1:8001',
+    scope: {
+      type: 'from-audit',
+      source: 'visual-tests/_results/audit-results.json',
+      selected_routes: ['/'],
+      selected_manifests: ['visual-tests/pages/root-index.yaml'],
+      uncovered_routes: [{ route: '/review.html', status: 'uncovered', reason: 'no_visual_manifest' }],
+      selected_total: 1,
+      full_suite_total: 99,
+    },
     summary: { total: 1, pass: 1, fail: 0, error: 0, stale: 0, skipped: 0, duration_ms: 1200 },
     tests: [{ id: 'pages/root-index', manifest: 'visual-tests/pages/root-index.yaml', name: 'Home', url: '/', status: 'PASS', duration_ms: 1200, screenshot: null, failure_reason: null }],
   });
@@ -193,6 +203,11 @@ async function main() {
     execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
     assert(existsSync(join(root, '_results', 'review.html')), 'review.html was not generated');
     assert(existsSync(join(root, '_results', 'visual-results.json')), 'visual-results.json was not generated');
+    const rebuiltVisualResults = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
+    assert(rebuiltVisualResults.run_id === 'visual-smoke-20260629-133000', 'visual-results run_id was not preserved');
+    assert(rebuiltVisualResults.scope?.type === 'from-audit', 'visual-results scope was not preserved');
+    assert(rebuiltVisualResults.scope?.full_suite_total === 99, 'visual-results full_suite_total was not preserved');
+    assert(rebuiltVisualResults.scope?.uncovered_routes?.[0]?.reason === 'no_visual_manifest', 'visual-results uncovered routes were not preserved');
     assert(existsSync(join(root, '_results', 'persona-reports', 'demo', 'index.html')), 'persona report was not generated');
 
     port = options.port || DEFAULT_PORT_BASE + Math.floor(Math.random() * 10000);

@@ -40,11 +40,24 @@ Write to `visual-tests/_results/visual-results.json` after every run. This is th
 ```json
 {
   "schema_version": "1.0",
+  "run_id": "visual-20260629-133000",
   "timestamp": "2026-06-29T13:30:00Z",
   "base_url": "http://127.0.0.1:8001",
+  "scope": {
+    "type": "from-audit",
+    "source": "visual-tests/_results/audit-results.json",
+    "selected_routes": ["/dashboard"],
+    "selected_manifests": ["visual-tests/pages/dashboard.yaml"],
+    "uncovered_routes": [
+      {"route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest"},
+      {"route": "/assets/report.zip", "status": "skipped", "reason": "non_html_asset"}
+    ],
+    "selected_total": 1,
+    "full_suite_total": 28
+  },
   "summary": {
-    "total": 28,
-    "pass": 28,
+    "total": 1,
+    "pass": 1,
     "fail": 0,
     "error": 0,
     "stale": 0,
@@ -67,6 +80,8 @@ Write to `visual-tests/_results/visual-results.json` after every run. This is th
 ```
 
 Allowed test statuses: `PASS`, `FAIL`, `ERROR`, `STALE`, `SKIPPED`.
+
+For scoped runs, `summary.total` is the selected run total. Preserve the global suite size in `scope.full_suite_total`, and preserve routes that were not executable as `scope.uncovered_routes` rather than dropping them from the machine contract.
 
 ---
 

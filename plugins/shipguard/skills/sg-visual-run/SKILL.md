@@ -2,7 +2,7 @@
 name: sg-visual-run
 description: Run ShipGuard visual test manifests with agent-browser, scoped by natural language, diff, audit results, or regressions.
 context: conversation
-argument-hint: "[tests to run or natural language description] [--from-audit] [--regressions] [--all] [--diff=ref]"
+argument-hint: "[tests to run or natural language description] [--from-audit] [--from-process] [--regressions] [--all] [--diff=ref]"
 ---
 
 # /sg-visual-run — Execute Visual Tests
@@ -18,6 +18,7 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 | `/sg-visual-run` | **Interactive** — asks what to test |
 | `/sg-visual-run <text>` | Natural language — figures out what tests to run |
 | `/sg-visual-run --from-audit` | Run tests for `impacted_ui_routes` from `audit-results.json` |
+| `/sg-visual-run --from-process` | Run tests for `impacted_ui_routes` from `process-results.json` |
 | `/sg-visual-run --diff=main` | Run tests impacted by changes since `main` |
 | `/sg-visual-run --all` | Full suite (skip interactive menu) |
 | `/sg-visual-run --regressions` | Re-run tests that failed last run |
@@ -39,10 +40,11 @@ Sandbox note: browser sockets, local network, and cache writes may require expli
 Priority order:
 
 1. **`--from-audit`** → severity-ordered list from `impacted_ui_routes` (see invocation-modes.md)
-2. **`--diff` or "Only what changed"** → diff-based routes + regressions
-3. **Natural language** → intent analysis + generate missing tests
-4. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` desc
-5. **`--all` or "Full suite"** → all manifests, regressions first, then priority `high`→`medium`→`low`
+2. **`--from-process`** → process-confirmation list from `process-results.json`
+3. **`--diff` or "Only what changed"** → diff-based routes + regressions
+4. **Natural language** → intent analysis + generate missing tests
+5. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` desc
+6. **`--all` or "Full suite"** → all manifests, regressions first, then priority `high`→`medium`→`low`
 
 **Always skip** manifests with `deprecated: true`. **Regressions among matched tests always run first** (except `--from-audit`, where severity wins).
 
@@ -139,11 +141,24 @@ Minimum JSON shape:
 ```json
 {
   "schema_version": "1.0",
+  "run_id": "visual-20260629-133000",
   "timestamp": "2026-06-29T13:30:00Z",
   "base_url": "http://127.0.0.1:8001",
+  "scope": {
+    "type": "from-audit",
+    "source": "visual-tests/_results/audit-results.json",
+    "selected_routes": ["/"],
+    "selected_manifests": ["visual-tests/pages/root-index.yaml"],
+    "uncovered_routes": [
+      {"route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest"},
+      {"route": "/assets/downloads/file.zip", "status": "skipped", "reason": "non_html_asset"}
+    ],
+    "selected_total": 1,
+    "full_suite_total": 28
+  },
   "summary": {
-    "total": 28,
-    "pass": 28,
+    "total": 1,
+    "pass": 1,
     "fail": 0,
     "error": 0,
     "stale": 0,
@@ -164,6 +179,8 @@ Minimum JSON shape:
   ]
 }
 ```
+
+For scoped runs, `summary.total` is the selected run total, not the full suite total. Preserve `scope.full_suite_total` separately so the dashboard does not reinterpret unselected manifests as `STALE`.
 
 Then write report to `{report_path}` (default: `visual-tests/_results/report.md`) with sections: Summary, Failures, Stale Tests, Generated Tests, Regressions Status, All Results.
 

@@ -158,14 +158,14 @@ async function main() {
       timestamp: '2026-06-29T13:30:00Z',
       round_count: 1,
       zones: [
-        { zone_id: 'z1', paths: ['src/a.js'], file_count: 1 },
-        { zone_id: 'z2', paths: ['src/b.js'], file_count: 1 },
+        { id: 'r1:z1', paths: ['src/a.js'], file_count: 1 },
+        { zone_id: 'r1:z2', paths: ['src/b.js'], file_count: 1 },
       ],
     });
     assert(res.status === 200, 'audit-start failed');
 
     res = await request(port, 'POST', '/api/monitor/agent-update', {
-      agent_id: 'z1',
+      id: 'z1',
       status: 'completed',
       bugs_found: 1,
       duration_s: 12,
@@ -180,10 +180,24 @@ async function main() {
     });
     assert(res.status === 200, 'second agent update failed');
 
+    res = await request(port, 'POST', '/api/monitor/agent-update', {
+      status: 'completed',
+      bugs_found: 99,
+    });
+    assert(res.status === 400, 'agent update without id should fail');
+
     res = await request(port, 'GET', '/api/monitor/status');
     assert(res.status === 200, 'status failed');
     assert(res.json?.status === 'running', 'status is not running');
-    assert(Object.keys(res.json?.agents || {}).length >= 2, 'expected agent status entries');
+    const agentKeys = Object.keys(res.json?.agents || {});
+    assert(agentKeys.length === 2, `expected two canonical agent entries, got ${agentKeys.join(', ')}`);
+    assert(agentKeys.includes('z1'), 'expected canonical z1 agent');
+    assert(agentKeys.includes('z2'), 'expected canonical z2 agent');
+    assert(!agentKeys.includes('undefined'), 'agent update created agents.undefined');
+    assert(!agentKeys.includes('r1:z1'), 'r1:z1 was not reconciled with z1');
+    assert(res.json.agents.z1.status === 'completed', 'z1 update was not applied');
+    assert(res.json.agents.z1.bugs_found === 1, 'z1 bugs_found was not preserved');
+    assert((res.json.agents.z1.aliases || []).includes('r1:z1'), 'z1 aliases do not retain r1:z1');
 
     res = await request(port, 'POST', '/api/monitor/audit-complete', {
       timestamp: '2026-06-29T13:31:00Z',
@@ -194,6 +208,7 @@ async function main() {
     assert(res.json?.status === 'completed', 'status is not completed');
     const persisted = JSON.parse(readFileSync(join(root, '_results', 'audit-monitor.json'), 'utf8'));
     assert(persisted.status === 'completed', 'monitor state was not persisted');
+    assert(!Object.keys(persisted.agents || {}).includes('undefined'), 'persisted monitor contains agents.undefined');
     passed = true;
     console.log('monitor smoke test passed');
     if (options.debug) console.error(log.tail());
