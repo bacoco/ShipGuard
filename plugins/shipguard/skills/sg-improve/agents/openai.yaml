@@ -11,3 +11,6 @@ dependencies:
     - type: "shell"
       value: "git"
       description: "Inspect repository state before writing learnings."
+    - type: "shell"
+      value: "gh"
+      description: "List, create, and comment on ShipGuard improvement issues in Phase 5."

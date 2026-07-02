@@ -1,210 +1,145 @@
 ---
 name: sg-improve
-description: Capture ShipGuard session learnings, local mistakes, and reusable improvement issues after audits, visual runs, or debugging.
+description: Use after an audit, visual run, or debugging session when learnings should be captured — records local hints and mistakes, and proposes sanitized improvement issues.
 context: conversation
-argument-hint: "[--local-only] [--github-only] [--dry-run] [--rollback]"
+argument-hint: "[--local-only] [--github-only] [--dry-run] [--history] [--rollback[=#N]] [--keep-all]"
 ---
 
 # /sg-improve — Self-Improving Feedback Loop
 
-After an audit or visual-test session, this skill extracts what went well and what didn't, then feeds those insights back into ShipGuard so the next run is better. Think of it as a retrospective that writes its own action items.
+After an audit or visual-test session, extract what went well and what didn't, then feed those insights back into ShipGuard so the next run is better.
 
-> **Recommended model: Sonnet 4.6.** Log analysis + config updates + GitHub issue writing — mechanical retrospective work where Opus 4.7 provides no measurable quality gain. Use `/model sonnet` before invoking to save Opus weekly quota.
+> **Recommended model: Sonnet 4.6.** Mechanical retrospective work — use `/model sonnet` to save Opus quota.
 
 Two outputs:
-1. **Local learnings** (`.shipguard/learnings.yaml`) — project-specific knowledge that the next `/sg-code-audit` reads automatically (zone size limits, codebase-specific patterns, infra timing)
-2. **GitHub issue** (`bacoco/ShipGuard`) — generic improvements that benefit all ShipGuard users (better retry logic, missing validation steps, UX friction)
+1. **Local learnings** (`.shipguard/learnings.yaml`) — project-specific knowledge, read automatically by the next `/sg-code-audit`
+2. **GitHub issue** (on `{target_repo}`, Phase 5) — generic improvements for all ShipGuard users
 
-```
-Session (audit, visual-run, debug)
-  │
-  ▼
-/sg-improve
-  │
-  ├─► Phase 1: Collect structured data (audit-results.json, git log, regressions)
-  ├─► Phase 2: Extract friction signals from data + conversation
-  ├─► Phase 3: Classify each signal (project-specific vs generic)
-  ├─► Phase 4: Write .shipguard/learnings.yaml (project memory)
-  ├─► Phase 5: File GitHub issue (generic improvements)
-  └─► Phase 6: Summary — what the next run will do differently
-```
+Phases: 0 snapshot · 1 collect data · 2 extract signals · 3 classify · 4 learnings + 4b mistakes · 5 GitHub (sanitized) · 6 summary.
 
 ## Invocations
 
 | Command | Behavior |
 |---------|----------|
 | `/sg-improve` | Full loop — local learnings + GitHub issue |
-| `/sg-improve --local-only` | Save learnings locally, skip GitHub |
-| `/sg-improve --github-only` | File GitHub issue only, skip local |
-| `/sg-improve --dry-run` | Write a preview report showing exact target changes; do not modify target files or GitHub |
-| `/sg-improve --rollback` | Revert to the previous snapshot (undo last sg-improve run) |
-| `/sg-improve --history` | List all snapshots with dates and summary |
+| `--local-only` | Save learnings locally, skip GitHub |
+| `--github-only` | GitHub issue only; skip local writes AND snapshot creation (nothing local changes) |
+| `--dry-run` | Preview exact target changes; no target-file or GitHub writes |
+| `--rollback` | Revert to the previous snapshot (undo last run) |
+| `--rollback=#N` | Revert to snapshot #N; consumes #N and all newer snapshots |
+| `--history` | List all snapshots with dates and summary |
+| `--keep-all` | Disable snapshot pruning (default keeps the last 5) |
 
-Sandbox note: real mode writes `.shipguard/` and may call GitHub. Use `--dry-run` first in restricted environments. See [../../docs/sandbox.md](../../docs/sandbox.md).
+Sandbox note: real mode writes `.shipguard/` and may call GitHub — use `--dry-run` first in restricted environments ([../../docs/sandbox.md](../../docs/sandbox.md)).
 
 ---
 
 ## Dry-run Preview
 
-When `--dry-run` is present, run Phases 1-3 normally, then stop before snapshots, local writes, and GitHub writes. Produce:
+With `--dry-run`, run Phases 1-3 normally, then stop before snapshots, local writes, and GitHub writes. Write the preview to `visual-tests/_results/sg-improve-preview.md`, or to `.shipguard/preview/sg-improve-preview.md` if that directory does not exist. `.shipguard/preview/` is the **one exception** to "dry-run must not modify `.shipguard/`" — nothing else under `.shipguard/`, no GitHub issues, and no source files may be touched.
 
-```text
-visual-tests/_results/sg-improve-preview.md
-```
+The preview must include: the target files that would be written; the exact YAML entries, mistakes.md sections, and GitHub issue/comment body; signals ignored and why; the snapshot path real mode would create.
 
-If `visual-tests/_results/` does not exist, use `.shipguard/preview/sg-improve-preview.md`.
-
-The preview must include:
-- target files that would be written (`.shipguard/learnings.yaml`, `.shipguard/mistakes.md`, GitHub issue/comment);
-- exact YAML entries that would be added or updated;
-- exact mistakes.md sections that would be added or updated;
-- exact GitHub issue or comment body;
-- signals that were ignored and why;
-- rollback snapshot path that would be created in real mode.
-
-Dry-run must not modify `.shipguard/learnings.yaml`, `.shipguard/mistakes.md`, `.shipguard/history/`, GitHub issues, or repository source files.
-
-Deterministic dry-run smoke test:
+Deterministic dry-run smoke test (also validates fixture schemas against the producer contracts; `--keep-tmp`/`--debug` to inspect):
 
 ```bash
 node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-improve/improve-dry-run-smoke-test.mjs"
 ```
 
-The smoke test creates audit and visual fixtures, writes `visual-tests/_results/sg-improve-preview.md`, verifies `.shipguard/` target files are untouched, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated preview.
-
 ---
 
 ## Phase 0 — Snapshot (Safety Net)
 
-Before touching ANY file, take a snapshot. This is the rollback point.
-
-### What gets snapshotted
-
-Every file that sg-improve might modify:
-
-```
-.shipguard/
-  learnings.yaml      ← zone hints, audit hints, noise filters, session history
-  mistakes.md         ← coding error journal
-```
-
-### How snapshots work
+Before touching ANY file, take a snapshot — the rollback point. Skipped with `--github-only` (nothing local changes). Targets: `.shipguard/learnings.yaml` and `.shipguard/mistakes.md`.
 
 ```bash
-# Create snapshot directory
 mkdir -p .shipguard/history/{timestamp}
 
-# Copy current state
-cp .shipguard/learnings.yaml .shipguard/history/{timestamp}/learnings.yaml 2>/dev/null
-cp .shipguard/mistakes.md    .shipguard/history/{timestamp}/mistakes.md 2>/dev/null
+# Copy current state (only files that exist)
+cp .shipguard/learnings.yaml .shipguard/history/{timestamp}/ 2>/dev/null
+cp .shipguard/mistakes.md    .shipguard/history/{timestamp}/ 2>/dev/null
 
-# Write metadata
+# Metadata — record per-file PRE-EXISTENCE, not a fixed list
 cat > .shipguard/history/{timestamp}/meta.yaml << EOF
 timestamp: "{ISO 8601}"
 trigger: "sg-improve"
 mode: "{flags used}"
 audit_bugs: {count from audit-results.json or "unknown"}
-files_snapshotted:
-  - learnings.yaml
-  - mistakes.md
+files:
+  learnings.yaml: {existed|absent}
+  mistakes.md: {existed|absent}
+github: []
 EOF
 ```
 
-Use `{timestamp}` = `YYYYMMDD-HHMMSS` (e.g., `20260414-073000`).
+`{timestamp}` = `YYYYMMDD-HHMMSS`. After Phase 5, append every created GitHub issue/comment URL to `github:` in this meta.yaml.
 
 ### Retention
 
-Keep the last **5 snapshots**. When creating the 6th, delete the oldest. The user can override with `--keep-all` to never prune.
+Keep the last **5 snapshots**; when creating the 6th, delete the oldest. `--keep-all` disables pruning.
 
 ### --rollback
 
-When the user runs `/sg-improve --rollback`:
+1. List snapshots: `ls -1t .shipguard/history/` (newest first).
+2. Show the newest snapshot's metadata and ask: `Rollback? (yes/no)`
+3. If confirmed, apply the per-file pre-states from `meta.yaml`: `existed` → restore from the snapshot copy; `absent` → **delete** the file (the run created it; rollback removes it). Then delete the consumed snapshot directory.
+4. If `github:` has entries, print: `GitHub issue #N was NOT reverted — close it manually if needed.`
+5. Print: `Rolled back to state before {timestamp}.`
 
-1. List snapshots: `ls -1t .shipguard/history/` (newest first)
-2. Show the user the most recent snapshot with its metadata:
-   ```
-   Last sg-improve run: 2026-04-14 07:30:00
-   Audit bugs at time: 79
-   Files modified: learnings.yaml, mistakes.md
-   Rollback? (oui/non)
-   ```
-3. If confirmed:
-   ```bash
-   cp .shipguard/history/{latest}/learnings.yaml .shipguard/learnings.yaml
-   cp .shipguard/history/{latest}/mistakes.md    .shipguard/mistakes.md
-   rm -rf .shipguard/history/{latest}
-   ```
-4. Print: `Rolled back to state before {timestamp}. The changes from that sg-improve run are undone.`
+### --rollback=#N
 
-Deterministic rollback smoke test:
+Restore from snapshot `#N` with the same per-file rules, then delete `#N` **and** all newer snapshots (`#N` is consumed like plain `--rollback`; newer pre-states no longer describe reality). Print the GitHub warning for every deleted snapshot listing URLs. Then: `Rolled back to state #N ({date}). {M} newer snapshots removed.`
+
+### --history
+
+```
+  #1  2026-04-14 07:30  79 bugs  learnings.yaml + mistakes.md  (latest)
+  #2  2026-04-13 22:30  47 bugs  learnings.yaml
+  Rollback: /sg-improve --rollback     Specific: /sg-improve --rollback=#2
+```
+
+Deterministic rollback smoke test (covers restore-existing and first-run-delete cases):
 
 ```bash
 node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-improve/improve-rollback-smoke-test.mjs"
 ```
 
-The smoke test creates a temporary `.shipguard` fixture, mutates `learnings.yaml` and `mistakes.md`, restores both from the newest snapshot, verifies the consumed snapshot was removed, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated fixture.
-
-### --history
-
-Show all snapshots:
-
-```
-ShipGuard improve history:
-
-  #1  2026-04-14 07:30  79 bugs  learnings.yaml + mistakes.md  (latest)
-  #2  2026-04-13 22:30  47 bugs  learnings.yaml
-  #3  2026-04-12 15:00  23 bugs  learnings.yaml
-
-  Rollback: /sg-improve --rollback
-  Rollback to specific: /sg-improve --rollback=#2
-```
-
-### --rollback=#N
-
-Rollback to a specific snapshot (not just the latest):
-
-1. Find snapshot `#N` in the history
-2. Restore its files
-3. Delete all snapshots newer than `#N` (they're now invalid)
-4. Print: `Rolled back to state #N ({date}). {M} newer snapshots removed.`
-
 ---
 
 ## Phase 1 — Collect Structured Data
 
-Before scanning the conversation, gather the hard data. These files contain objective metrics that don't depend on parsing chat messages.
+Gather the hard data before scanning the conversation.
 
 ### Step 1: Find audit-results.json
 
 Check these paths in order (first found wins):
 1. `visual-tests/_results/audit-results.json`
-2. `.code-audit-results/audit-results.json`
+2. `.code-audit-results/audit-results.json` (legacy fallback)
 3. `audit-results.json` (repo root)
 
-If found, read it and extract:
+If found, extract:
 - `summary.total_bugs`, `summary.by_severity`, `summary.by_category`
-- `summary.duration_ms`, `agent_count` count (fallback to numeric `agents` for legacy reports)
+- `summary.duration_ms`, `agent_count` (fallback `agents.length` for legacy reports — never a bare `agents`)
+- `prompt_hash` — store it in this session's history entry (Phase 4)
 - `scope_info.mode`, `scope_info.total_in_scope` (if diff mode)
-- Count of `bugs` where `fix_applied: false` (deferred/unfixable)
-- Count of `bugs` where `confidence: "low"` (uncertain findings)
-- `verification.checked`, `verification.confirmed`, `verification.rejected` (if present — Phase 5.7 stats)
-- Count of `unverified_bugs` (findings rejected by confidence verification)
+- Bug counts: `fix_applied: false` (deferred), `confidence: "low"` (uncertain)
+- `verification.checked`/`.confirmed`/`.rejected`; count of `unverified_bugs`
 
-**Prefer TOON:** If `audit-results.toon` exists alongside the JSON, use it for LLM analysis (Phase 2+) — it's ~40% fewer tokens. Use the JSON only for structured field extraction in this step.
+**Prefer TOON:** if `audit-results.toon` exists, use it for LLM analysis (Phase 2+, ~40% fewer tokens); use the JSON for field extraction here.
 
 If not found, log: "No audit-results.json — extracting from conversation only."
 
 ### Step 2: Read zone JSON files
 
-Glob `visual-tests/_results/zone-*-r*.json` or `.code-audit-results/zone-*-r*.json`.
-
-For each zone file, extract:
-- `zone`, `files_audited`, `bugs` count
-- Whether the zone ID contains `a`/`b` suffix (indicates a re-split happened)
+Glob `visual-tests/_results/zone-*-r*.json` or `.code-audit-results/zone-*-r*.json`. Per file: `zone`, `files_audited`, `bugs` count, and whether the zone ID has an `a`/`b` suffix (a re-split happened).
 
 ### Step 3: Read regressions
 
-If `visual-tests/_regressions.yaml` exists, count entries and note any with `consecutive_passes >= 2` (about to be auto-removed — a success signal).
+If `visual-tests/_regressions.yaml` exists, count entries; note any with `consecutive_passes >= 2` (about to auto-remove — a success signal).
+
+### Step 3b: Read visual results
+
+If `visual-tests/_results/visual-results.json` exists, extract `summary.pass`, `summary.fail`, `summary.error`, `summary.stale` — these feed Phase 2's Success Signals.
 
 ### Step 4: Read git log
 
@@ -212,38 +147,38 @@ If `visual-tests/_regressions.yaml` exists, count entries and note any with `con
 git log --oneline --since="12 hours ago" | grep -c "audit-r[0-9]"
 ```
 
-Count audit-related commits. Check for any revert commits (signal of a bad fix).
+Count audit commits; check for reverts (signal of a bad fix).
 
 ### Step 5: Read existing learnings
 
-If `.shipguard/learnings.yaml` exists, read it. The update in Phase 4 must merge with existing data, not overwrite.
+If `.shipguard/learnings.yaml` exists, read it — Phase 4 merges with existing data, never overwrites.
 
 ---
 
 ## Phase 2 — Extract Friction Signals
 
-Now combine the structured data with conversation context. For each signal type below, check both the data (Phase 1) and the conversation history.
+Combine Phase 1 data with conversation context — check both per signal type.
 
 ### Error Signals
 
-| Signal | How to detect | From |
-|--------|--------------|------|
-| Context overflow | Zone IDs with `a`/`b` suffix in zone JSONs, or "Prompt is too long" in conversation | Data + conversation |
-| API overload | "529", "overloaded_error" in conversation | Conversation |
-| Post-merge syntax error | "IndentationError", "SyntaxError", "NameError" after a worktree merge | Conversation |
-| Browser collision | agent-browser returning `/` when a different URL was requested | Conversation |
-| Session expiry | Re-login needed mid-session | Conversation |
-| Docker failure | "unhealthy", "dependency failed" after rebuild | Conversation |
-| Merge conflict | "git merge --abort" in conversation | Conversation |
+| Signal | How to detect |
+|--------|--------------|
+| Context overflow | Zone IDs with `a`/`b` suffix, or "Prompt is too long" |
+| API overload | "529", "overloaded_error" |
+| Post-merge syntax error | "IndentationError"/"SyntaxError"/"NameError" after a worktree merge |
+| Browser collision | agent-browser returning `/` instead of the requested URL |
+| Session expiry | Re-login needed mid-session |
+| Docker failure | "unhealthy", "dependency failed" after rebuild |
+| Merge conflict | "git merge --abort" |
 
 ### Performance Signals
 
 | Signal | How to compute |
 |--------|----------------|
 | Overflow rate | (zones with a/b suffix) / (total original zones) |
-| Retry count | Count "retry" or "retrying" or "attempt" mentions in conversation |
-| Wall clock | `summary.duration_ms` from audit-results.json, or estimate from first/last audit commit timestamps |
-| Agent waste | Count of zone JSONs with duplicate zone paths (two agents did the same work) |
+| Retry count | "retry"/"retrying"/"attempt" mentions in conversation |
+| Wall clock | `summary.duration_ms`, or first-to-last audit commit timestamps |
+| Agent waste | Zone JSONs with duplicate zone paths |
 
 ### Quality Signals
 
@@ -251,39 +186,23 @@ Now combine the structured data with conversation context. For each signal type 
 |--------|----------------|
 | Noise ratio | `summary.by_severity.low` / `summary.total_bugs` |
 | Top noise pattern | Most frequent `category` among `low` severity bugs |
-| Deferred count | Count of `fix_applied: false` in bugs array |
-| Post-audit regression | Any Docker/build failure AFTER audit commits (check conversation) |
+| Deferred count | `fix_applied: false` count in bugs array |
+| Post-audit regression | Docker/build failure AFTER audit commits (conversation) |
 
 ### User Friction Signals
 
-Scan the **user's messages** (not assistant messages) in the current conversation for correction and frustration patterns. These indicate that ShipGuard or Claude's behavior was wrong — even if no error was thrown.
+Scan the **user's messages** (never assistant messages) for correction and frustration patterns — wrong behavior even when no error was thrown.
 
-| Signal | Regex patterns (case-insensitive) | Priority |
-|--------|----------------------------------|----------|
-| COMMAND_FAILURE | Tool use exit code != 0, stderr contains "error", "failed", "not found" | 100 |
-| USER_CORRECTION | `I said`, `you didn't`, `that's wrong`, `no not`, `pas ça`, `non c'est`, `j'ai dit` | 80 |
-| REPETITION | Same instruction given 2+ times (Jaccard similarity > 0.5 across last 10 user messages) | 60 |
-| TONE_ESCALATION | 3+ uppercase words in a row, 2+ exclamation marks, `for the last time`, `encore une fois`, `STOP` | 40 |
-| SKILL_OVERRIDE | User explicitly overrides a skill decision: `skip that`, `don't do`, `ignore`, `laisse tomber` | 75 |
-| REDO_REQUEST | `refais`, `recommence`, `redo`, `try again`, `re-run`, `relance` | 70 |
+| Signal | Patterns (case-insensitive) | Priority |
+|--------|----------------------------|----------|
+| COMMAND_FAILURE | Tool exit code != 0, stderr with "error", "failed", "not found" | 100 |
+| USER_CORRECTION | `I said`, `you didn't`, `that's wrong`, `no not` | 80 |
+| SKILL_OVERRIDE | `skip that`, `don't do`, `ignore` | 75 |
+| REDO_REQUEST | `redo`, `try again`, `re-run` | 70 |
+| REPETITION | Same instruction 2+ times (Jaccard > 0.5 over last 10 user messages) | 60 |
+| TONE_ESCALATION | 3+ uppercase words in a row, 2+ exclamation marks, `STOP` | 40 |
 
-**Detection rules:**
-- Scan only **user messages**, never assistant messages
-- A message can trigger multiple signals (e.g., correction + escalation)
-- For REPETITION: compare each user message against the previous 10 using Jaccard word similarity. If 3+ pairs score > 0.5, emit one REPETITION signal with count
-- For COMMAND_FAILURE: check tool results in the conversation, not user messages
-
-**Output per signal:**
-```yaml
-- signal: "user_correction"
-  count: 2
-  details: "User said 'pas ça' after audit hint was applied incorrectly"
-  priority: 80
-  type: "friction"
-  quote: "non c'est pas le bon fichier"  # exact user quote (truncated to 100 chars)
-```
-
-These signals feed into Phase 3 classification. A friction signal with priority >= 70 should generate either a local learning (if project-specific) or a GitHub issue (if generic to ShipGuard behavior).
+A message can trigger multiple signals; COMMAND_FAILURE comes from tool results, not user messages. Priority >= 70 must produce a local learning (project-specific) or a GitHub insight (generic).
 
 ### Success Signals
 
@@ -292,326 +211,157 @@ These matter just as much — they tell us what NOT to change.
 | Signal | How to detect |
 |--------|--------------|
 | Clean merge rate | (total zones - merge conflicts) / total zones |
-| Critical bug value | Count of `critical` + `high` severity bugs with `fix_applied: true` |
-| Visual verification | Count of PASS results in visual-run report |
-| Zero-retry zones | Zones that completed on first attempt |
+| Critical bug value | `critical` + `high` bugs with `fix_applied: true` |
+| Visual verification | `summary.pass` from visual-results.json (Step 3b) |
+| Zero-retry zones | Zones completed on first attempt |
 
-For each signal, record:
+Record every signal as:
+
 ```yaml
-- signal: "context_overflow"
-  count: 3
-  details: "z01 (172 files), z02 (178 files), z04 (214 files)"
-  impact: "Added ~10 min latency from re-splits and retries"
-  type: "error"  # error | performance | quality | success
+- signal: "user_correction"
+  count: 2
+  details: "User corrected the applied audit hint twice"
+  impact: "~10 min lost"
+  type: "friction"          # error | performance | quality | success | friction
+  priority: 80              # friction only
+  quote: "no, wrong file"   # exact user quote ≤100 chars, friction only
 ```
 
 ---
 
 ## Phase 3 — Classify
 
-For each signal, decide where it belongs:
-
 | Classification | Rule of thumb | Destination |
 |----------------|--------------|-------------|
-| **project-specific** | Mentions a file path, service name, port, or timing specific to this repo | `.shipguard/learnings.yaml` only |
-| **generic** | Would help ANY repo using ShipGuard — a missing step, bad default, or design flaw in the skill | GitHub issue |
-| **both** | A generic pattern that was observed through a project-specific symptom | Both |
+| **project-specific** | Mentions a file path, service, port, or timing specific to this repo | `.shipguard/learnings.yaml` only |
+| **generic** | Would help ANY repo using ShipGuard — missing step, bad default, design flaw | GitHub issue |
+| **both** | Generic pattern observed through a project-specific symptom | Both (GitHub side sanitized per Phase 5) |
 
-When in doubt, classify as **both**. It's better to have a slightly noisy GitHub issue than to lose a generic insight.
+When in doubt, classify as **LOCAL ONLY** — a lost generic insight is recoverable; leaked project content is not.
 
 ---
 
 ## Phase 4 — Local Learnings
 
-Write to `{repo_root}/.shipguard/learnings.yaml`. Create the `.shipguard/` directory if it doesn't exist.
-
-### Schema (v2)
-
-```yaml
-# .shipguard/learnings.yaml
-# Auto-maintained by /sg-improve. Read by /sg-code-audit at startup.
-# Manual edits are preserved — the skill only appends/updates, never deletes.
-schema_version: 2
-last_updated: "2026-04-14T07:00:00Z"
-
-zone_hints:
-  # Directories where the default zone sizing caused overflow.
-  # sg-code-audit reads these to cap files-per-zone during zone discovery.
-  - path: "apps/uranus/src/hooks/"
-    max_files: 80
-    reason: "172 files overflowed Sonnet context (2026-04-13)"
-    last_seen: "2026-04-14"
-    occurrences: 1
-
-infra_hints:
-  # Service-specific knowledge that helps with rebuild timing,
-  # post-audit verification, and Docker dependency ordering.
-  - service: "api-synthesia"
-    startup_time_seconds: 240
-    note: "Needs (healthy) before uranus can start"
-    last_seen: "2026-04-14"
-
-audit_hints:
-  # Codebase-specific bug patterns to prioritize.
-  # Injected into agent prompts as additional checklist items.
-  - pattern: ".first() without None guard"
-    severity: critical
-    note: "SQLAlchemy returns None silently. 5 crash sites in rag_tasks.py."
-    first_seen: "2026-04-14"
-    occurrences: 5
-
-noise_filters:
-  # Patterns that generate high volume, low value findings.
-  # sg-code-audit batches these into a single summary entry.
-  - pattern: "f-string in logger"
-    action: "batch"
-    reason: "13% of findings, all low severity"
-
-success_patterns:
-  # Things that worked well — do NOT change these in the skill.
-  - pattern: "worktree isolation for agents"
-    note: "Clean merges on 10/13 zones. Isolation prevents cross-agent conflicts."
-  - pattern: "severity calibration examples in prompt"
-    note: "Agents consistently rated severity correctly. Keep the examples table."
-
-session_history:
-  # Last 10 sessions. Older entries auto-pruned on update.
-  - date: "2026-04-14"
-    mode: "standard"
-    files: 2574
-    bugs_found: 79
-    bugs_fixed: 77
-    critical: 9
-    overflow_rate: 0.23
-    wall_clock_minutes: 90
-```
+Write to `{repo_root}/.shipguard/learnings.yaml` (create `.shipguard/` if needed). Sections: `zone_hints`, `infra_hints`, `audit_hints`, `noise_filters`, `success_patterns`, `session_history`. Full v2 schema: see [references/formats.md](references/formats.md).
 
 ### Update Rules
 
-1. **Read first.** If the file exists, load it entirely before making changes.
-2. **Merge, don't overwrite.** Match entries by `path` (zone_hints), `service` (infra_hints), `pattern` (audit/noise/success). If a match exists, update `last_seen`, increment `occurrences`, and update `note` if the new observation adds information.
-3. **Append new entries** for signals not already present.
-4. **Prune session_history** to the last 10 entries.
-5. **Never delete** zone_hints, audit_hints, or success_patterns — the user prunes manually. If an old hint seems stale (last_seen > 90 days), add a `possibly_stale: true` flag instead of removing it.
-6. **Preserve comments and manual edits.** Read the file as text, parse YAML, modify in memory, write back. If the file has comments that don't parse, preserve them as-is at the top.
-
----
-
-## Phase 5 — GitHub Issue
-
-### Pre-flight
-
-1. Check `gh auth status` — if not authenticated, skip this phase with a message: "GitHub CLI not authenticated. Run `gh auth login` to enable issue filing. Local learnings saved."
-2. Detect the repo: read `origin` remote URL from the ShipGuard plugin installation directory. Fallback: `bacoco/ShipGuard`.
-
-### Deduplication
-
-Before creating a new issue, check for existing ones:
-
-```bash
-gh issue list --repo bacoco/ShipGuard --state open --label improvement --limit 30 --json number,title,body
-```
-
-For each insight you want to file:
-1. Extract keywords from the insight title (e.g., "context overflow", "retry backoff", "syntax validation")
-2. Search existing issue titles and bodies for those keywords
-3. **If a matching open issue exists:** add a comment with the new data point instead of creating a duplicate. Format: `### New data point ({repo_name}, {date})\n{details}`
-4. **If no match:** create a new issue
-
-This is important because multiple users running `/sg-improve` on different projects will generate similar insights. Commenting on existing issues builds evidence ("3 users hit this") rather than fragmenting it across duplicates.
-
-### Issue Format
-
-```markdown
-## Session Insights — {repo_name} ({date})
-
-**Audit:** {mode} mode | {files} files | {zones} zones | {bugs} bugs ({critical} critical)
-**Timing:** {minutes} min wall clock | {overflow_count} overflows | {retry_count} retries
-
-### Improvements
-
-#### 1. {Title}
-**What happened:** {concrete description of the friction}
-**Impact:** {time lost, bugs missed, or user confusion caused}
-**Proposed fix:** {specific change to make in the skill prompt or code}
-**Skill:** `sg-code-audit` | `sg-visual-run` | `sg-visual-review`
-
-### What Worked Well
-{Bullet list — these are signals to KEEP, not change}
-
-### Summary
-| # | Issue | Impact | Effort | Skill |
-|---|-------|--------|--------|-------|
-
----
-*Filed by `/sg-improve` from {repo_name}*
-```
-
-### Labels
-
-Always add `improvement`. Then add skill-specific labels based on content:
-- `sg-code-audit` — zone sizing, agent prompts, merge logic
-- `sg-visual-run` — browser execution, auth, screenshots
-- `sg-visual-review` — dashboard, report generation
-- `dx` — developer experience, UX friction, confusing output
-- `bug` — a skill instruction that produced incorrect behavior (not just suboptimal)
-
----
-
-## Phase 6 — Summary
-
-Display a concise report:
-
-```
-/sg-improve complete
-
-Local (.shipguard/learnings.yaml):
-  + {N} zone hints (max_files constraints for next audit)
-  + {M} audit hints (codebase-specific patterns to check)
-  + {K} noise filters (low-value patterns to batch)
-  + {S} success patterns (what to keep)
-  Session #{H} recorded
-
-GitHub:
-  {IF new issue} Created bacoco/ShipGuard#{number} — "{title}"
-  {IF commented} Updated bacoco/ShipGuard#{number} with new data point
-  {IF skipped} Skipped (--local-only or gh not authenticated)
-
-Next /sg-code-audit on this repo will:
-  - Cap {path} zones at {max_files} files
-  - Add {N} project-specific patterns to agent checklists
-  - Batch {K} noise patterns into summary entries
-```
-
----
-
-## Edge Cases
-
-### No audit-results.json found
-The skill can still extract signals from conversation history (retries, errors, timing). Local learnings will be thinner but still useful. Log: "No audit artifacts found — using conversation context only."
-
-### First run (no existing learnings.yaml)
-Create the file from scratch. All signals become new entries. session_history starts with one entry.
-
-### User ran /sg-improve twice in the same session
-The second run should detect that session_history already has an entry for today. Update it rather than appending a duplicate.
-
-### Rollback fixture test
-When changing this skill, test rollback with a disposable `.shipguard` fixture:
-1. Create fixture `learnings.yaml` and `mistakes.md`.
-2. Run the real write path on the fixture so Phase 0 creates `.shipguard/history/{timestamp}`.
-3. Run `--rollback` against that fixture.
-4. Confirm both files match their pre-run content and the latest snapshot was removed.
-
-### gh CLI not installed or not authenticated
-Skip Phase 5 entirely. Print the issue body to the terminal so the user can file it manually if they want.
-
-### The conversation is very long (>100K tokens)
-Don't try to re-read the entire conversation. Focus on:
-1. The structured data from Phase 1 (audit-results.json, zone JSONs)
-2. The last 20 messages in the conversation (most recent friction)
-3. Any messages containing error keywords (grep-style scan)
-
-### No ShipGuard skills were used this session
-If the conversation doesn't contain evidence of `/sg-code-audit`, `/sg-visual-run`, or `/sg-visual-review` usage, ask the user what they want to capture: "I don't see a ShipGuard session in this conversation. What would you like me to analyze?"
+1. **Read first.** Load the existing file entirely before changing it.
+2. **Merge, don't overwrite.** Match by `path` (zone_hints), `service` (infra_hints), `pattern` (audit/noise/success). On match: update `last_seen`, increment `occurrences`, enrich `note`. Append entries for new signals.
+3. **session_history:** prune to the last 10 entries. Each entry records the audit's `prompt_hash`. When the current hash differs from the previous session's, flag: "baseline discontinuity — audit prompt changed; treat count deltas across this boundary as non-comparable."
+4. **Never delete** zone_hints, audit_hints, or success_patterns — the user prunes manually. Mark stale entries (`last_seen` > 90 days) with `possibly_stale: true` instead.
+5. **Preserve comments and manual edits.** Parse the YAML, modify in memory, write back with comments intact.
 
 ---
 
 ## Phase 4b — Mistakes File (Coding Memory)
 
-In addition to `learnings.yaml` (machine-readable, audit-focused), maintain a **human-readable mistakes file** that Claude reads at every coding session — not just during audits.
+Alongside `learnings.yaml`, maintain a human-readable journal at `{repo_root}/.shipguard/mistakes.md`, read at every coding session. Header: `# Mistakes not to repeat`. Entry format: see [references/formats.md](references/formats.md).
 
-Write to `{repo_root}/.shipguard/mistakes.md`. This file is referenced from the project's `CLAUDE.md` so that Claude Code loads it at session start.
+Only **real bugs found in THIS project** — not generic best practices. Each entry: the bad pattern actually written, the fix, and context (files, instance count, what broke).
 
-### Format
+Update rules: read the existing file first — don't overwrite. For each `critical`/`high` audit bug: if a similar pattern exists, update instance count and context; otherwise add an entry under the language section. No `low` severity entries. One screen of code max per entry. Refresh the "last updated" date.
+
+### CLAUDE.md wiring
+
+The skill **suggests** the reference line below for the project's `CLAUDE.md` and **never edits CLAUDE.md itself** — show it to the user and let them add it, so every session (not just audits) benefits:
 
 ```markdown
-# Erreurs à ne pas répéter
-
-## {Language}
-
-### {Rule title}
-\```{language}
-# ❌ Bad pattern
-bad_code_here()
-
-# ✅ Good pattern
-good_code_here()
-\```
-*{Where found, when, how many instances}*
+## Recurring Mistakes
+**Full mistakes journal: `.shipguard/mistakes.md`** — READ this file at the start of every session.
 ```
 
-### What goes in mistakes.md
+---
 
-Only **real bugs found in THIS project** — not generic best practices. Each entry must have:
-1. A bad pattern (code that was actually written and caused a bug)
-2. The fix (what it should have been)
-3. Context (which files, how many instances, what broke)
+## Phase 5 — GitHub Issue
 
-### Update Rules
+### Target repo
 
-1. Read the existing file first — don't overwrite
-2. For each `critical` or `high` severity bug from the audit:
-   - Check if a similar pattern already exists in mistakes.md
-   - If yes: update the instance count and add the new file to the context
-   - If no: add a new entry under the appropriate language section
-3. Don't add `low` severity bugs (too noisy for a coding reference)
-4. Keep entries concise — one screen of code max per entry
-5. Add a "last updated" date at the bottom
+Define `{target_repo}` **once**: the `origin` remote of the ShipGuard **plugin installation directory** (never the project under test); fallback `bacoco/ShipGuard`. Sanity check: if the resolved name does not contain "ShipGuard"/"shipguard", warn and fall back to `bacoco/ShipGuard`. Use `{target_repo}` in every `gh` command below.
 
-### How it's consumed
+### Pre-flight
 
-The project's `CLAUDE.md` should reference this file:
-```markdown
-## Erreurs Recurrentes
-**Cahier d'erreurs complet : `.shipguard/mistakes.md`** — LIRE ce fichier au debut de chaque session.
+Check `gh auth status` — if not authenticated, skip this phase: "GitHub CLI not authenticated. Run `gh auth login` to enable issue filing. Local learnings saved."
+
+### Sanitization (MANDATORY — the target repo is public)
+
+Issue and comment bodies must contain:
+- **NO code excerpts** from the project under test
+- **NO file paths** from the project under test
+- **NO internal URLs or hostnames**
+- **NO secrets** (keys, tokens, credentials)
+- **NOT the project name**, unless the user explicitly consents
+
+Describe frictions generically — "a FastAPI project with a Celery queue", never repo names or paths.
+
+**Confirmation gate:** in real mode, render the full body and ask the user before **every** `gh issue create` and `gh issue comment` (`--dry-run` already previews without filing).
+
+### Deduplication and cardinality
+
+**One session issue per run, maximum; individual insights matching an existing open issue become comments on it.**
+
+```bash
+gh issue list --repo {target_repo} --state open --label improvement --limit 30 --json number,title,body
 ```
 
-This means every Claude Code session — not just audits — benefits from accumulated knowledge. When a developer asks Claude to write a new hook, Claude already knows "don't use `|| []` in Zustand selectors" because it read mistakes.md at session start.
+For each insight: extract keywords from its title; if an open issue matches, add a comment with the new data point (builds cross-user evidence instead of duplicates). All remaining insights go into the single new session issue:
+
+```bash
+gh issue create --repo {target_repo} --title "{title}" --label improvement --body "{sanitized body}"
+```
+
+Issue body format, comment format, and label taxonomy: see [references/formats.md](references/formats.md).
+
+Record every created issue/comment URL in the snapshot's `meta.yaml` `github:` list (Phase 0).
+
+---
+
+## Phase 6 — Summary
+
+```
+/sg-improve complete
+
+Local (.shipguard/learnings.yaml):
+  + {N} zone hints   + {M} audit hints   + {K} noise filters   + {S} success patterns
+  Session #{H} recorded {— baseline discontinuity flagged, if prompt_hash changed}
+
+GitHub:
+  {Created {target_repo}#{number} — "{title}" | Commented on #{number} | Skipped (reason)}
+
+Next /sg-code-audit will: cap {path} zones at {max_files} files,
+add {N} patterns to agent checklists, batch {K} noise patterns.
+```
 
 ---
 
 ## How sg-code-audit Consumes Learnings
 
-For the feedback loop to work, `/sg-code-audit` must read `.shipguard/learnings.yaml` at startup. Here's the integration point (to be added to sg-code-audit Phase 3 — Discover Zones):
+sg-code-audit reads `.shipguard/learnings.yaml` at its Step 1.5 (zone_hints caps, audit_hints and noise_filters injected into agent prompts). See that skill.
+The loop: a `max_files` hint saved today re-splits that zone on the next audit; a saved audit_hint lands in every agent's checklist.
 
-```
-If {repo_root}/.shipguard/learnings.yaml exists:
-  1. Read the file
-  2. zone_hints: during zone splitting, if a directory matches a hint's path,
-     cap that zone at hint.max_files (override the default 30/80 thresholds)
-  3. audit_hints: append each pattern to the language-specific checklist
-     in the agent prompt, with its severity and note
-  4. noise_filters: for patterns with action "batch", add to the agent prompt:
-     "For {pattern}: report ONE summary entry with total count, not individual bugs"
-  5. success_patterns: no action needed — these are for /sg-improve's reference only
-  6. Print: "Loaded {N} learnings from .shipguard/learnings.yaml"
-```
+---
 
-This creates the reinforcement loop:
-```
-Audit 1: hooks overflow at 172 files → /sg-improve saves max_files: 80
-Audit 2: sg-code-audit reads hint → splits hooks into 2 zones → no overflow ✓
+## Edge Cases
 
-Audit 1: .first() crashes found 5 times → /sg-improve saves audit_hint
-Audit 2: agents see the pattern in their checklist → catch it on first scan ✓
-
-Audit 1: f-string loggers = 13% of findings → /sg-improve saves noise_filter
-Audit 2: agents batch into "42 f-string calls in 12 files" → cleaner report ✓
-```
+- **No audit-results.json:** extract signals from conversation only; learnings will be thinner.
+- **First run (no learnings.yaml):** create it from scratch; session_history starts with one entry.
+- **/sg-improve twice in one session:** update today's session_history entry, don't append a duplicate.
+- **gh CLI missing or unauthenticated:** skip Phase 5; print the sanitized issue body for manual filing.
+- **Very long conversation (>100K tokens):** rely on Phase 1 data, the last 20 messages, and a grep-style scan for error keywords.
+- **No ShipGuard skills used this session:** ask: "I don't see a ShipGuard session in this conversation. What would you like me to analyze?"
 
 ---
 
 ## Final Checklist
 
-- [ ] **Snapshot taken BEFORE any modification** (Phase 0)
-- [ ] audit-results.json read (if exists)
-- [ ] Zone JSONs scanned for overflow indicators
-- [ ] Git log checked for audit commits and reverts
-- [ ] Conversation scanned for error/performance/quality/success signals
-- [ ] Each signal classified (project-specific / generic / both)
-- [ ] `.shipguard/learnings.yaml` created or merged (unless `--github-only`)
+- [ ] Snapshot taken BEFORE any modification; per-file pre-existence in meta.yaml (skipped only with `--github-only`)
+- [ ] audit-results.json (incl. `prompt_hash`), visual-results.json, zone JSONs, git log read where present
+- [ ] Conversation scanned for error/performance/quality/friction/success signals
+- [ ] Each signal classified (project-specific / generic / both; when in doubt → LOCAL ONLY)
+- [ ] `.shipguard/learnings.yaml` merged; `prompt_hash` recorded; discontinuity flagged if changed (unless `--github-only`)
 - [ ] `.shipguard/mistakes.md` updated with critical/high bug patterns (unless `--github-only`)
-- [ ] Existing GitHub issues checked for duplicates (unless `--local-only`)
-- [ ] GitHub issue created or existing issue commented (unless `--local-only`)
+- [ ] GitHub bodies sanitized (no code, paths, hostnames, secrets, or project name without consent)
+- [ ] User confirmed before every `gh issue create` / `gh issue comment` (unless `--local-only` or `--dry-run`)
+- [ ] At most one new session issue; matching insights become comments; URLs recorded in meta.yaml
 - [ ] Summary displayed with concrete "next run will..." predictions
