@@ -27,4 +27,5 @@ labels: bug
 - OS: 
 - agent-browser version: 
 - Claude Code version: 
+- Codex CLI version (if applicable): 
 - Framework (Next.js, React, Vue, etc.): 

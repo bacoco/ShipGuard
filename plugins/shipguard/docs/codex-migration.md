@@ -53,6 +53,15 @@ The expected entry is `shipguard@shipguard` at the current plugin version.
 
 ## 4. Refresh Claude
 
+If Claude Code does not have ShipGuard yet, install it from the marketplace:
+
+```bash
+claude plugin marketplace add bacoco/shipguard
+claude plugin install shipguard@shipguard
+```
+
+If it is already installed that way, update it:
+
 ```bash
 claude plugin update shipguard@shipguard
 claude plugin list
@@ -61,6 +70,15 @@ claude plugin list
 Restart Claude Code after updating. Claude and Codex use separate plugin caches, so updating one side does not refresh the other.
 
 ## 5. Validate
+
+The smoke-test scripts ship inside the plugin; they only appear under `visual-tests/` after the `sg-visual-review` bootstrap copies them into a project. On a fresh install, run them straight from the plugin:
+
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/review-smoke-test.mjs" --port=23101
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/monitor-smoke-test.mjs" --port=23102
+```
+
+Or run `/sg-visual-review` once in your project (the bootstrap copies the scripts), then:
 
 ```bash
 node visual-tests/review-smoke-test.mjs --port=23101

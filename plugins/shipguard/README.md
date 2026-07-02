@@ -6,17 +6,37 @@
 
 Five AI-powered modules. Use one, some, or all. No test files to write.
 
-| | 📸 **Visual E2E Debugger** | 🎬 **Macro Recorder** | 🔍 **Code Audit** | 🧪 **Process Check** |
-|---|---|---|---|---|
-| **What** | Auto-discover routes, generate tests, mark bugs on screenshots — AI fixes the code | Record your browser interactions and turn them into replayable tests | Parallel AI agents scan your codebase, find bugs, fix them | Simulate the process your diff touched (runs the code "in its head") before/after, report how the behavior moved |
-| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-process-check` |
-| **Output** | Screenshots + annotation cards + auto-fix | YAML test manifests + test library cards | Bug report + auto-fixes + Mission Control dashboard | Before/after behavior report + `process-results.json` |
+| | 📸 **Visual E2E Debugger** | 🎬 **Macro Recorder** | 🔍 **Code Audit** | 🧪 **Process Check** | 🧠 **Self-Improving Engine** |
+|---|---|---|---|---|---|
+| **What** | Auto-discover routes, generate tests, mark bugs on screenshots — AI fixes the code | Record your browser interactions and turn them into replayable tests | Parallel AI agents scan your codebase, find bugs, fix them | Simulate the process your diff touched (runs the code "in its head") before/after, report how the behavior moved | Learn from every session — save what worked, scout GitHub for new techniques |
+| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-process-check` | `/sg-improve` |
+| **Output** | Screenshots + annotation cards + auto-fix | YAML test manifests + test library cards | Bug report + auto-fixes + Mission Control dashboard | Before/after behavior report + `process-results.json` | `.shipguard/learnings.yaml` + GitHub issues |
+
+One orchestrator ties them together: `/sg-ship` runs audit → process check → visual → review on your diff.
+
+### All 12 skills
+
+| Skill | Purpose |
+|-------|---------|
+| `/sg-ship` | One-command pipeline: code audit → process check → visual run → unified review, scoped to your diff |
+| `/sg-code-audit` | Dispatch parallel AI agents to audit changed or scoped code for bugs |
+| `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |
+| `/sg-visual-discover` | Scan the codebase and generate YAML visual test manifests per route |
+| `/sg-visual-run` | Execute visual test manifests with agent-browser |
+| `/sg-visual-review` | Interactive review dashboard — Visual Tests, Code Audit, Process, and Recorded Tests tabs |
+| `/sg-visual-fix` | Trace human annotations on screenshots to source code and fix them |
+| `/sg-visual-review-stop` | Stop the review HTTP server |
+| `/sg-change-report` | Save before/after UI evidence as durable PR/client change reports |
+| `/sg-record` | Record browser interactions as replayable test manifests |
+| `/sg-improve` | Capture session learnings and improvement issues, with snapshot/rollback safety |
+| `/sg-scout` | Research GitHub for techniques that improve ShipGuard's audits and visual runs |
 
 ### Install
 
 ```bash
 # Claude Code
-claude plugin add bacoco/shipguard
+claude plugin marketplace add bacoco/shipguard
+claude plugin install shipguard@shipguard
 
 # Codex
 codex plugin marketplace add bacoco/shipguard
@@ -40,15 +60,19 @@ Don't want to run the lanes by hand? `/sg-ship` runs the whole pipeline on your 
 /sg-ship                 # audit + process-check + visual + review, scoped to what changed
 /sg-ship deep --all      # full-repo, deeper audit
 /sg-ship --no-visual     # headless project / no UI
-/sg-ship --report-only   # find & observe, fix nothing
+/sg-ship --fix           # opt into fix mode (default is report-only: find & observe, fix nothing)
+/sg-ship --diff=main --focus=src/   # explicit base ref + directory focus
+/sg-ship --mode=execute  # process lane: literal before/after execution
 ```
+
+Full signature: `/sg-ship [quick|standard|deep|paranoid] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]`. Diffs use the three-dot convention (`git diff {base}...HEAD` — committed changes only), and the resolved base is passed explicitly to every lane.
 
 ```
 static FIND ──► dynamic SIMULATE ──► visual CONFIRM ──► human DECIDES
 sg-code-audit    sg-process-check      sg-visual-run        sg-visual-review
 ```
 
-It's a **thin sequencer** over the skills below — same scope threaded through every lane, connected by the `--from-audit` / `--from-process` bridges, no new analysis. Skips any lane that doesn't apply (no UI → no browser pass) and says so. You can still run each skill individually.
+It's a **thin sequencer** over the skills below — same scope threaded through every lane, connected by the `--from-audit` / `--from-process` bridges (the visual lane receives both and unions their routes), no new analysis. Skips any lane that doesn't apply (no UI → no browser pass) and says so. You can still run each skill individually.
 
 ---
 
@@ -285,7 +309,7 @@ At startup, the audit offers to open the Mission Control dashboard. The **Code A
 
 ### Output
 
-Results are written to `audit-results.json`:
+Results are written to `visual-tests/_results/audit-results.json` (the directory is created if missing; legacy `.code-audit-results/` is read as a fallback):
 
 - `summary` — totals by severity and category
 - `bugs[]` — file, line, severity, description, fix status
@@ -350,6 +374,31 @@ Static find → dynamic process check → visual confirm → human decides.
 
 ---
 
+## Self-Improving Engine
+
+### `/sg-improve` — learn from sessions
+
+After an audit or visual session, `/sg-improve` extracts what worked and what didn't into `.shipguard/learnings.yaml` and `mistakes.md` (zone hints, bug patterns, noise filters), and can file generic improvements as GitHub issues. Every run snapshots state first, so it is always reversible.
+
+```bash
+/sg-improve                  # Full loop — local learnings + GitHub issue
+/sg-improve --history        # List all snapshots
+/sg-improve --rollback[=#N]  # Undo the last (or a specific) run
+/sg-improve --keep-all       # Never prune old snapshots (default keeps last 5)
+```
+
+### `/sg-scout` — learn from the ecosystem
+
+Scans GitHub for techniques that could make ShipGuard better, scoring each on impact, novelty, applicability, and effort. High-scoring ideas become GitHub issues; all findings accumulate in `docs/scout-reports/techniques-library.md`.
+
+```bash
+/sg-scout                                # Full ecosystem scan
+/sg-scout https://github.com/owner/repo  # Deep-dive on one repo
+/sg-scout --topic=self-improving         # Focus on one topic
+```
+
+---
+
 ## Compatibility
 
 Built for **Claude Code**. Partial support for other AI CLIs:
@@ -362,6 +411,7 @@ Built for **Claude Code**. Partial support for other AI CLIs:
 | Macro Recorder | ✅ Full | ✅ Playwright is CLI-independent |
 | Review Dashboard | ✅ Full | ✅ Pure Node.js |
 | Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
+| Self-Improving Engine | ✅ Full | ✅ gh CLI is universal |
 
 The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
 
@@ -373,7 +423,8 @@ Community adapters welcome.
 
 ```bash
 # Install
-claude plugin add bacoco/shipguard
+claude plugin marketplace add bacoco/shipguard
+claude plugin install shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 
 # Everything at once, scoped to your diff
