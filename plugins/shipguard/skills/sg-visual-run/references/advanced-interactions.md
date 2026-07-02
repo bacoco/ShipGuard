@@ -260,7 +260,8 @@ agent-browser --session-name myapp open http://localhost:6969   # auth restored
 **Direct manipulation:**
 ```bash
 agent-browser cookies get
-agent-browser cookies set --name session --value "abc123" --domain localhost --path /
+agent-browser cookies set session "abc123" --domain localhost --path /
+# name and value are positional; valid flags: --url, --domain, --path, --httpOnly, --secure, --sameSite, --expires
 agent-browser cookies clear
 
 agent-browser storage local                  # dump localStorage
@@ -426,12 +427,13 @@ agent-browser find alt "Logo" click
 
 Avoid `@eN` refs in reusable tests — refs change every snapshot. `testid` is stable.
 
-**Disambiguation:**
+**Disambiguation:** `first`, `last`, and `nth` are locator TYPES of their own — they take a selector value and are NOT chainable after `find text`:
 ```bash
-agent-browser find text "Edit" first click        # 1st match
-agent-browser find text "Edit" nth 2 click        # 3rd match (0-indexed)
-agent-browser find text "Edit" last click
+agent-browser find first ".item" click        # 1st match of the selector
+agent-browser find last ".item" click         # last match
+agent-browser find nth 2 "a" hover            # 3rd match (0-indexed)
 ```
+To disambiguate a text match, narrow the locator instead — use `testid`, `role ... --name`, or a more specific CSS selector with `first`/`last`/`nth`.
 
 ---
 
@@ -472,8 +474,8 @@ agent-browser --auto-connect snapshot
 # Option 4: State file (CI)
 agent-browser --state ./auth.json open http://localhost:6969
 
-# Option 5: Auth Vault
-agent-browser auth save myapp --url http://localhost:6969/login --username vlad --password loic
+# Option 5: Auth Vault — never inline real credentials; pass the password on stdin
+printf '%s' "$APP_PASSWORD" | agent-browser auth save myapp --url http://localhost:6969/login --username "$APP_USERNAME" --password-stdin
 agent-browser auth login myapp
 ```
 

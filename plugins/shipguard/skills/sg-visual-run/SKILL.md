@@ -1,6 +1,6 @@
 ---
 name: sg-visual-run
-description: Run ShipGuard visual test manifests with agent-browser, scoped by natural language, diff, audit results, or regressions.
+description: Use when UI changes need visual verification — after an audit or process check flags routes, after frontend edits, or on demand to run or re-run the project's visual test manifests.
 context: conversation
 argument-hint: "[tests to run or natural language description] [--from-audit] [--from-process] [--regressions] [--all] [--diff=ref]"
 ---
@@ -9,7 +9,7 @@ argument-hint: "[tests to run or natural language description] [--from-audit] [-
 
 Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid execution: mechanical steps run directly, complex assertions delegate to LLM evaluation.
 
-> **Recommended model: Sonnet 4.6.** This skill runs scripted steps (click, fill, screenshot) + lightweight LLM assertions. Opus 4.7 provides no measurable quality gain here. Use `/model sonnet` before invoking to save Opus weekly quota.
+> **Model guidance:** This skill runs scripted steps (click, fill, screenshot) plus lightweight LLM assertions. A top-tier reasoning model provides no measurable quality gain here — prefer a fast, capable model to conserve quota.
 
 ## Invocations
 
@@ -17,8 +17,9 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 |---------|----------|
 | `/sg-visual-run` | **Interactive** — asks what to test |
 | `/sg-visual-run <text>` | Natural language — figures out what tests to run |
-| `/sg-visual-run --from-audit` | Run tests for `impacted_ui_routes` from `audit-results.json` |
-| `/sg-visual-run --from-process` | Run tests for `impacted_ui_routes` from `process-results.json` |
+| `/sg-visual-run --from-audit` | Run tests for `impacted_ui_routes` from `visual-tests/_results/audit-results.json` |
+| `/sg-visual-run --from-process` | Run tests for `impacted_ui_routes` from `visual-tests/_results/process-results.json` |
+| `/sg-visual-run --from-audit --from-process` | **Union mode** — merge routes from both files (see invocation-modes.md) |
 | `/sg-visual-run --diff=main` | Run tests impacted by changes since `main` |
 | `/sg-visual-run --all` | Full suite (skip interactive menu) |
 | `/sg-visual-run --regressions` | Re-run tests that failed last run |
@@ -30,27 +31,21 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 Sandbox note: browser sockets, local network, and cache writes may require explicit permission in Codex/Claude. See [../../docs/sandbox.md](../../docs/sandbox.md).
 
 1. Verify `agent-browser --version` is available
-2. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/sg-visual-discover`)
-3. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error
-4. Create `{screenshots_dir}` if missing
-5. Read `visual-tests/_regressions.yaml` (create empty if missing)
+2. Load the CLI's own reference (`agent-browser skills get core --full`) as ground truth for command syntax when unsure.
+3. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/sg-visual-discover`)
+4. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error. On failure, run `agent-browser close` before aborting (see cleanup invariant below).
+5. Create `{screenshots_dir}` and `visual-tests/_results/` if missing (`mkdir -p`)
+6. Read `visual-tests/_regressions.yaml` (create empty if missing)
 
 ## Build execution list
 
-Priority order:
-
-1. **`--from-audit`** → severity-ordered list from `impacted_ui_routes` (see invocation-modes.md)
-2. **`--from-process`** → process-confirmation list from `process-results.json`
-3. **`--diff` or "Only what changed"** → diff-based routes + regressions
-4. **Natural language** → intent analysis + generate missing tests
-5. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` desc
-6. **`--all` or "Full suite"** → all manifests, regressions first, then priority `high`→`medium`→`low`
-
-**Always skip** manifests with `deprecated: true`. **Regressions among matched tests always run first** (except `--from-audit`, where severity wins).
+Scope-source precedence (bridge flags > `--diff` > natural language > `--regressions` > `--all`), the union rule for `--from-audit --from-process`, the `deprecated: true` skip, and the regressions-first ordering are defined once, authoritatively, in [references/invocation-modes.md — "Build Execution List — priority order"](references/invocation-modes.md). Follow that list; do not restate it here.
 
 ## Execution strategy
 
 **All browser tests run sequentially** in a single browser session. One login, one browser, one agent.
+
+> **Cleanup invariant (hard rule):** On ANY exit — success, failure, abort, or interrupt — run `agent-browser close` (and `agent-browser close --all` if named sessions were used). Ignore errors from close. This covers the 3-consecutive-ERROR abort path (Browser crash recovery below), pre-flight reachability failure, and mid-run interrupts.
 
 > **CRITICAL: NEVER call multiple `agent-browser` commands in parallel Bash calls.** agent-browser uses a single Playwright daemon. Parallel calls cause navigations to race to the same page, producing wrong URLs and corrupted screenshots. Even separate Bash tool calls in the same message execute concurrently. Always chain browser commands sequentially.
 
@@ -120,7 +115,7 @@ If any `agent-browser` command returns non-zero exit code or times out:
 3. If `requires_auth`: re-login
 4. Retry the failed step once
 5. If retry fails → test `ERROR`, next test
-6. If 3 consecutive `ERROR` across different tests → **abort entire run** with "Browser unstable — check agent-browser installation"
+6. If 3 consecutive `ERROR` across different tests → **abort entire run** with "Browser unstable — check agent-browser installation". Per the cleanup invariant, still run `agent-browser close` (ignore errors) before exiting.
 
 ## Update regressions
 
@@ -134,9 +129,9 @@ After all tests complete, update `visual-tests/_regressions.yaml`:
 
 ## Generate report
 
-Write the canonical machine-readable result to `visual-tests/_results/visual-results.json`. `report.md` is a human-readable rendering only and must not be the only status source.
+Write the canonical machine-readable result to `visual-tests/_results/visual-results.json` (create the directory with `mkdir -p` if missing). `report.md` is a human-readable rendering only and must not be the only status source.
 
-Minimum JSON shape:
+Minimum JSON shape (stub — the authoritative full schema lives in [references/report-formats.md](references/report-formats.md)):
 
 ```json
 {
@@ -144,39 +139,9 @@ Minimum JSON shape:
   "run_id": "visual-20260629-133000",
   "timestamp": "2026-06-29T13:30:00Z",
   "base_url": "http://127.0.0.1:8001",
-  "scope": {
-    "type": "from-audit",
-    "source": "visual-tests/_results/audit-results.json",
-    "selected_routes": ["/"],
-    "selected_manifests": ["visual-tests/pages/root-index.yaml"],
-    "uncovered_routes": [
-      {"route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest"},
-      {"route": "/assets/downloads/file.zip", "status": "skipped", "reason": "non_html_asset"}
-    ],
-    "selected_total": 1,
-    "full_suite_total": 28
-  },
-  "summary": {
-    "total": 1,
-    "pass": 1,
-    "fail": 0,
-    "error": 0,
-    "stale": 0,
-    "skipped": 0,
-    "duration_ms": 36800
-  },
-  "tests": [
-    {
-      "id": "pages/root-index",
-      "manifest": "visual-tests/pages/root-index.yaml",
-      "name": "Accueil",
-      "url": "/",
-      "status": "PASS",
-      "duration_ms": 1200,
-      "screenshot": "screenshots/root-index.png",
-      "failure_reason": null
-    }
-  ]
+  "scope": {"type": "from-audit", "selected_total": 1, "full_suite_total": 28},
+  "summary": {"total": 1, "pass": 1, "fail": 0, "error": 0, "stale": 0, "skipped": 0, "duration_ms": 36800},
+  "tests": [{"id": "pages/root-index", "url": "/", "status": "PASS", "screenshot": "screenshots/root-index.png", "failure_reason": null}]
 }
 ```
 
@@ -204,8 +169,8 @@ Display a concise summary: pass/total, failures (one line each), stale tests (wi
 | `eval <js>` | Run JS in page | `agent-browser eval 'document.querySelector("input").id'` |
 | `screenshot <path>` | Viewport screenshot | `agent-browser screenshot /tmp/x.png` |
 | `screenshot --full <path>` | Full-page screenshot | `agent-browser screenshot --full /tmp/x.png` |
-| `wait <selector> [timeout]` | Wait for element | `agent-browser wait "#result" 5000` |
-| `find <text>` | Find by visible text | `agent-browser find "Submit"` |
+| `wait <selector>` | Wait for element (single arg; also accepts ms, `--url`, `--load`, `--fn`, `--text`) | `agent-browser wait "#result"` |
+| `find <locator> <value> [action]` | Find by locator type, optionally act | `agent-browser find text "Submit" click` |
 | `get url` | Current URL | `agent-browser get url` |
 | `close` | Close browser | `agent-browser close` |
 
@@ -225,7 +190,7 @@ Before considering the run complete:
 - [ ] Every screenshot read and visually validated
 - [ ] `_regressions.yaml` updated (failures added, 3 passes → removed)
 - [ ] Report written to `{report_path}`
-- [ ] Browser closed
+- [ ] Browser closed — `agent-browser close` ran (cleanup invariant: always, even on failure or abort; `close --all` if named sessions were used)
 - [ ] Summary displayed (pass/fail/stale)
 - [ ] If this run supports UI-visible code changes, invoke `sg-change-report` and commit the resulting `change-reports/<report-id>` and generated `persona-reports/<report-id>` artifacts with the PR
 - [ ] Do not commit `visual-tests/_results/review.html` or `visual-tests/_results/.server.pid`

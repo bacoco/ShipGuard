@@ -6,22 +6,24 @@ Templates for `_regressions.yaml`, `visual-results.json`, `report.md`, and final
 
 ## `_regressions.yaml` format
 
+Canonical format (matches `examples/_regressions.yaml`): timestamps are ISO 8601; `screenshot` is the bare filename inside `{screenshots_dir}` (no directory prefix).
+
 ```yaml
 # Auto-maintained by /sg-visual-run — do not edit manually
 regressions:
   - test: dashboard/file-upload
-    first_failed: "2026-03-22"
-    last_failed: "2026-03-24"
+    first_failed: "2026-03-22T14:30:00Z"
+    last_failed: "2026-03-24T09:12:00Z"
     consecutive_passes: 0
     failure_reason: "Pipeline timeout after 90s"
-    screenshot: "_results/screenshots/upload-pdf-fail.png"
+    screenshot: "upload-pdf-fail.png"
 ```
 
 ### Add / update failures
 
 For each test that FAILED, STALE, or ERROR:
-- If already in regressions: update `last_failed`, `failure_reason`, reset `consecutive_passes: 0`
-- If new failure: add entry with `first_failed: today`, `consecutive_passes: 0`
+- If already in regressions: update `last_failed` (ISO 8601 timestamp), `failure_reason`, reset `consecutive_passes: 0`
+- If new failure: add entry with `first_failed:` set to the current ISO 8601 timestamp, `consecutive_passes: 0`
 - STALE entries use `failure_reason: "Element not found: {target}"`
 - ERROR entries use `failure_reason: "Browser crash / agent-browser error"`
 
@@ -35,7 +37,7 @@ For each test that PASSED and is in regressions:
 
 ## `visual-results.json` format
 
-Write to `visual-tests/_results/visual-results.json` after every run. This is the machine contract consumed by `sg-visual-review`; `report.md` is only the human-readable rendering.
+Write to `visual-tests/_results/visual-results.json` after every run (create the directory with `mkdir -p` if missing). **This is the authoritative schema** — SKILL.md and invocation-modes.md carry only stubs/pointers to this section. It is the machine contract consumed by `sg-visual-review`; `report.md` is only the human-readable rendering.
 
 ```json
 {
@@ -46,8 +48,8 @@ Write to `visual-tests/_results/visual-results.json` after every run. This is th
   "scope": {
     "type": "from-audit",
     "source": "visual-tests/_results/audit-results.json",
-    "selected_routes": ["/dashboard"],
-    "selected_manifests": ["visual-tests/pages/dashboard.yaml"],
+    "selected_routes": ["/"],
+    "selected_manifests": ["visual-tests/pages/root-index.yaml"],
     "uncovered_routes": [
       {"route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest"},
       {"route": "/assets/report.zip", "status": "skipped", "reason": "non_html_asset"}
@@ -68,7 +70,7 @@ Write to `visual-tests/_results/visual-results.json` after every run. This is th
     {
       "id": "pages/root-index",
       "manifest": "visual-tests/pages/root-index.yaml",
-      "name": "Accueil",
+      "name": "Home",
       "url": "/",
       "status": "PASS",
       "duration_ms": 1200,
@@ -80,6 +82,8 @@ Write to `visual-tests/_results/visual-results.json` after every run. This is th
 ```
 
 Allowed test statuses: `PASS`, `FAIL`, `ERROR`, `STALE`, `SKIPPED`.
+
+For union runs (`--from-audit --from-process`), `scope.type` is `"union"` and `scope.source` lists both consumed files (see invocation-modes.md, Union Mode).
 
 For scoped runs, `summary.total` is the selected run total. Preserve the global suite size in `scope.full_suite_total`, and preserve routes that were not executable as `scope.uncovered_routes` rather than dropping them from the machine contract.
 

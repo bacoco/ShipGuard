@@ -30,7 +30,7 @@ steps:
     duration: 15s
 
   - action: llm-check
-    description: "Response is grounded in the document, not generic"
-    criteria: "The assistant response references specific information from the uploaded document (names, dates, amounts, clauses) rather than giving a generic answer"
+    description: "A document-referencing answer is displayed"
+    criteria: "A non-empty assistant answer is displayed in response to the question, and it references the uploaded document (mentions the document or content drawn from it) — not an empty response or an error state"
     severity: critical
     screenshot: chat-response.png

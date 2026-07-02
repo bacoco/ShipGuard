@@ -1,16 +1,21 @@
 # Invocation modes — detailed reference
 
-## Flag parsing order
+## Flag parsing
 
-Before entering any mode, check scope override flags:
+Recognized scope flags:
 
-1. Check `--all`. If present → full suite, skip interactive menu.
-2. Check `--diff=<ref>`. If present → use that ref for "only what changed" logic, skip menu.
-3. If BOTH `--all` and `--diff` present → error: `Cannot use --all and --diff together.`
-4. Check `--from-audit`. If present → read `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json`. `--from-audit` wins over `--diff` if both present.
-5. Check `--from-process`. If present → read `impacted_ui_routes` from `process-results.json`. `--from-process` wins over `--diff` and loses to `--from-audit` if both bridge flags are present.
-6. Check `--regressions`. If present → read `_regressions.yaml`, run only those tests, skip menu.
-7. No scope flags → Interactive Mode or Natural Language Mode.
+- `--all` → full suite, skip interactive menu.
+- `--diff=<ref>` → "only what changed" logic against that ref, skip menu.
+- `--from-audit` → read `impacted_ui_routes` (or legacy `impacted_routes`) from audit results (see From-Audit Mode).
+- `--from-process` → read `impacted_ui_routes` from process-check results (see From-Process Mode).
+- `--from-audit` AND `--from-process` together → **Union Mode** (see below).
+- `--regressions` → read `_regressions.yaml`, run only those tests, skip menu.
+- Free text, no flags → Natural Language Mode.
+- Nothing → Interactive Mode.
+
+Validation: if BOTH `--all` and `--diff` are present → error: `Cannot use --all and --diff together.`
+
+**Precedence when multiple scope sources are present is defined once — and only there — in [Build Execution List — priority order](#build-execution-list--priority-order) at the end of this file.**
 
 ---
 
@@ -23,7 +28,7 @@ Ask the user via AskUserQuestion:
 **Options:**
 1. **Only what changed** — tests impacted by code changes since detected base ref
 2. **Only regressions** — re-run previously failed tests
-3. **Full suite** — all tests (~40 min)
+3. **Full suite** — all tests (duration depends on suite size)
 4. *(Other — user types what they want)*
 
 ### "Only what changed" flow
@@ -87,7 +92,7 @@ Run everything.
 3. **Generate missing tests** — if the described scope has no existing test:
    - Invoke `/sg-visual-discover --diff=HEAD~1` (narrow scope) to read the component and produce a manifest skeleton.
    - Generate a new manifest with real steps and assertions.
-   - Tag with `auto_generated: true`, `generated_by: visual-run`, `generated_date: "{date}"` in frontmatter.
+   - Tag with `auto_generated: true`, `generated_by: visual-run`, `generated_date: "{date}"` as top-level manifest keys.
    - Save to the test tree.
    - Execute it.
    - Report auto-generated manifests separately. After 3 consecutive passes, **auto-remove** (same rule as regressions).
@@ -109,16 +114,15 @@ Run everything.
 
 ## From-Audit Mode (`--from-audit`)
 
-Overrides smart scope flags. If `--from-audit` and `--diff=<ref>` are both present, `--from-audit` wins.
+Precedence vs other scope flags: see [Build Execution List — priority order](#build-execution-list--priority-order).
 
 ### Flow
 
 1. Read `audit-results.json`:
-   - Check `visual-tests/_results/audit-results.json` first
-   - Then `{repo_root}/audit-results.json`
-   - Then `.code-audit-results/audit-results.json`
+   - Check `visual-tests/_results/audit-results.json` first (the location producers always write, `mkdir -p`)
+   - Then legacy `.code-audit-results/audit-results.json`
    - Fail with clear message if not found.
-2. Extract `impacted_ui_routes` array (fall back to legacy `impacted_routes` if absent).
+2. Extract the `impacted_ui_routes` array. Each entry has the shape `{"route": "/dashboard", "reason": "...", "severity": "high", "bug_count": 2}` — `severity` ∈ `critical | high | medium | low`; `bug_count` is audit-only. Fall back to legacy `impacted_routes` (bare route strings, no severity) if `impacted_ui_routes` is absent; order legacy entries by manifest `priority` only.
 3. For each route, find matching manifests via **pathname matching**:
    - Extract pathname from `manifest.steps[0].url` by stripping `{base_url}` or any `http(s)://host:port` prefix.
      - `{base_url}/chat` → `/chat`
@@ -132,23 +136,7 @@ Overrides smart scope flags. If `--from-audit` and `--diff=<ref>` are both prese
 5. Run matched manifests, highest `impacted_route.severity` first; manifest `priority` as secondary sort.
 6. Report: routes visually verified, uncovered routes, code-audit findings visually confirmed vs not reproduced.
 
-The resulting `visual-results.json` must preserve bridge scope:
-
-```json
-{
-  "scope": {
-    "type": "from-audit",
-    "source": "visual-tests/_results/audit-results.json",
-    "selected_routes": ["/"],
-    "selected_manifests": ["visual-tests/pages/root-index.yaml"],
-    "uncovered_routes": [
-      {"route": "/review.html", "status": "uncovered", "reason": "no_visual_manifest"}
-    ],
-    "selected_total": 1,
-    "full_suite_total": 28
-  }
-}
-```
+The resulting `visual-results.json` must preserve bridge scope: `scope.type` (`"from-audit"`), `scope.source` (the consumed file), `selected_routes`, `selected_manifests`, `uncovered_routes`, `selected_total`, `full_suite_total`. The authoritative schema is in [report-formats.md](report-formats.md).
 
 `summary.total` is the selected run total. Do not rewrite unselected manifests as `STALE` during review rebuild.
 
@@ -158,24 +146,39 @@ The resulting `visual-results.json` must preserve bridge scope:
 
 Same matching and reporting rules as `--from-audit`, but read `impacted_ui_routes` from:
 
-1. `visual-tests/_results/process-results.json`
-2. `{repo_root}/process-results.json`
-3. `.process-check-results/process-results.json`
+1. `visual-tests/_results/process-results.json` (the location producers always write, `mkdir -p`)
+2. Legacy `.process-check-results/process-results.json`
+
+Entries have the shape `{"route": "/dashboard", "reason": "...", "severity": "high"}` (`severity` ∈ `critical | high | medium | low`; no `bug_count` — that field is audit-only).
 
 Use `scope.type: "from-process"` and `scope.source` pointing to the consumed file.
 
 ---
 
+## Union Mode (`--from-audit --from-process` together)
+
+When BOTH bridge flags are passed:
+
+1. Read BOTH results files, using each mode's search order above. If either file is not found, fail with a clear message naming the missing file — do not silently degrade to single-source mode.
+2. Take the **union** of the two `impacted_ui_routes` arrays.
+3. **Dedupe by `route`**: when both sources list the same route, keep the entry with the highest severity (`critical` > `high` > `medium` > `low`). Preserve `bug_count` from the audit entry when present.
+4. **Order severity-first**; tie-break equal severities by manifest `priority` (`high` > `medium` > `low`).
+5. Matching, uncovered-route handling, and reporting follow the From-Audit rules.
+6. In `visual-results.json`, use `scope.type: "union"` and set `scope.source` to both consumed files, e.g. `"visual-tests/_results/audit-results.json + visual-tests/_results/process-results.json"`.
+
+---
+
 ## Build Execution List — priority order
 
-Priority order when building the final execution list:
+**This is the single authoritative statement of scope precedence** (SKILL.md and the Flag parsing section above defer to it). When multiple scope sources are present, the highest entry in this list wins — bridge flags (`--from-audit`, `--from-process`, union) win over `--diff` AND over `--all`:
 
-1. **`--from-audit`** → severity-ordered list from `impacted_ui_routes`
-2. **`--from-process`** → visual confirmation list from `process-results.json`
-3. **`--diff=<ref>` or "Only what changed"** → diff-based route detection + regressions
-4. **Natural language** → intent analysis + generate missing tests
-5. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` descending
-6. **`--all` or "Full suite"** → all manifests, regressions first, then by priority `high` → `medium` → `low`
+1. **`--from-audit` + `--from-process` (Union Mode)** → merged, severity-ordered list (dedupe by route, highest severity kept; tie-break by manifest `priority`)
+2. **`--from-audit`** → severity-ordered list from audit `impacted_ui_routes`
+3. **`--from-process`** → severity-ordered list from process-check `impacted_ui_routes`
+4. **`--diff=<ref>` or "Only what changed"** → diff-based route detection + regressions
+5. **Natural language** → intent analysis + generate missing tests
+6. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` descending
+7. **`--all` or "Full suite"** → all manifests, regressions first, then by priority `high` → `medium` → `low`
 
-**Always skip** manifests with `deprecated: true`.
-**Regressions among matched tests always run first** (except in `--from-audit` mode, where severity order takes precedence).
+**Always skip** manifests with `deprecated: true` (top-level key).
+**Regressions among matched tests always run first** (except in bridge modes — `--from-audit`, `--from-process`, union — where severity order takes precedence).
