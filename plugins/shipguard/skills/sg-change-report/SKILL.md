@@ -1,6 +1,6 @@
 ---
 name: sg-change-report
-description: Create durable ShipGuard before/after reports for UI-visible changes after visual runs, screenshots, frontend PRs, or stakeholder review.
+description: Use after visual runs, screenshot capture, frontend PRs, or before stakeholder review — creates the durable ShipGuard before/after report for UI-visible changes.
 context: conversation
 argument-hint: "<report-id> [optional: summary or screenshot paths]"
 ---
@@ -8,6 +8,12 @@ argument-hint: "<report-id> [optional: summary or screenshot paths]"
 # /sg-change-report - Durable Visual Change Report
 
 Create the persistent before/after artifact that travels with a UI change. This skill turns visual test evidence into committed PR review material.
+
+## Arguments
+
+- `<report-id>` — stable kebab-case id matching the feature, route, or PR scope.
+- Optional **summary text** — seeds `report.json.summary` (workflow step 4).
+- Optional **screenshot paths** — copied into `visual-tests/_results/change-reports/<report-id>/screenshots/` and referenced as before/after `src` values in `report.json` (workflow steps 3-4).
 
 ## Output Contract
 
@@ -21,17 +27,24 @@ visual-tests/_results/change-reports/<report-id>/screenshots/
 Then run the review builder to generate audience-specific HTML:
 
 ```bash
-node visual-tests/build-review.mjs --serve --port=<free-port>
+node visual-tests/build-review.mjs
 ```
 
-Generated reports are written to:
+(`--serve --port=<free-port>` is optional, for browsing the result locally; stop the server afterwards with `/sg-visual-review-stop`.)
 
-```text
-visual-tests/_results/persona-reports/<report-id>/index.html
-visual-tests/_results/persona-reports/<report-id>/<audience>.html
-```
+Generated artifacts, written under `visual-tests/_results/persona-reports/<report-id>/`:
 
-If a project already uses a simpler static convention, such as `change-reports/<report-id>/index.html`, preserve that convention too. The durable source of truth remains the change-report folder.
+| Artifact | Purpose | Committed? |
+|---|---|---|
+| `index.html` | audience picker for the report | yes |
+| `<audience>.html` | one page per audience (e.g. `client.html`, `engineering.html`) | yes |
+| `client-invite-email.md` | ready-to-send invite for external reviewers | yes |
+| `client-response-email.md` | reply template for collected feedback | yes |
+| `proposal-trace.md` / `proposal-trace.json` | trace of the proposals and decisions behind the change | yes |
+
+The builder also refreshes the top-level `visual-tests/_results/persona-reports/index.html` (committed) and the transient `visual-tests/_results/review.html` and `.server.pid` (never committed — see below).
+
+The canonical schema is `normalizeChangeReport()` in `visual-tests/build-review.mjs`: every field is optional with a default (`status` defaults to `draft`). `report.json` is the durable source of truth; persona-reports are its rendered views.
 
 ## Required `report.json`
 
@@ -68,24 +81,27 @@ Use this minimum shape:
 }
 ```
 
-Add `client` and `validation` fields when the report will be sent outside the team. See `skills/sg-visual-review/examples/change-report.json` for a full example.
+Add `client` and `validation` fields when the report will be sent outside the team. See `$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/examples/change-report.json` for a full example.
+
+> SHIPGUARD_PLUGIN_ROOT = the plugin root directory, resolved as two levels up from this skill's SKILL.md (or `$CLAUDE_PLUGIN_ROOT` when the harness sets it).
 
 ## Workflow
 
 1. Run or reuse relevant visual evidence from `sg-visual-run`, `sg-visual-review`, or `sg-visual-fix`.
 2. Choose a stable kebab-case `<report-id>` matching the feature, route, or PR scope.
-3. Copy only review-relevant screenshots into `change-reports/<report-id>/screenshots/`.
-4. Write `report.json` with before screenshots when available and after screenshots for the final state.
-5. Run `node visual-tests/build-review.mjs --serve --port=<free-port>`.
-6. Verify the generated report URL returns `200 OK`.
-7. Stage the durable report artifacts with the UI change:
+3. Copy only review-relevant screenshots into `visual-tests/_results/change-reports/<report-id>/screenshots/`. Screenshot paths passed as arguments are copied here and referenced as before/after `src` values in `report.json`.
+4. Write `report.json` with before screenshots when available and after screenshots for the final state. A summary passed as an argument seeds `report.json.summary`.
+5. Bootstrap check: if `visual-tests/build-review.mjs` or `visual-tests/_review-template.html` is missing in the project, copy them from `$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/`.
+6. Run `node visual-tests/build-review.mjs`. Add `--serve --port=<free-port>` only to browse the result; stop the server afterwards with `/sg-visual-review-stop`.
+7. Verify deterministically (no server needed): `visual-tests/_results/persona-reports/<report-id>/index.html` exists and at least one `visual-tests/_results/persona-reports/<report-id>/<audience>.html` exists.
+8. Stage the durable report artifacts with the UI change:
 
 ```bash
 git add visual-tests/_results/change-reports/<report-id>
 git add visual-tests/_results/persona-reports/<report-id> visual-tests/_results/persona-reports/index.html
 ```
 
-If the project uses `change-reports/<report-id>/index.html` as the canonical rendered report, stage that folder as well.
+Gitignore caveat: host projects often ignore `_results/`. If `git status` does not show the report files after staging, use `git add -f` on the two folders above, or adjust the ignore rule (e.g. add `!visual-tests/_results/change-reports/` and `!visual-tests/_results/persona-reports/`).
 
 ## What Not To Commit
 
@@ -96,7 +112,7 @@ visual-tests/_results/review.html
 visual-tests/_results/.server.pid
 ```
 
-`review.html` is the interactive local workspace. `change-reports` and `persona-reports` are the durable PR artifacts.
+`review.html` is the interactive local workspace. `change-reports` and `persona-reports` are the durable PR artifacts and are committed.
 
 ## PR Text
 

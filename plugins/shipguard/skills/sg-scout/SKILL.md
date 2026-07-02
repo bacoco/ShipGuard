@@ -1,6 +1,6 @@
 ---
 name: sg-scout
-description: Research GitHub and similar tools for ShipGuard audit, visual, and self-improvement techniques.
+description: Use when looking for techniques to improve ShipGuard itself — researches GitHub and similar tools and files scored proposals from the ShipGuard checkout.
 context: conversation
 argument-hint: "[url] [--topic=eval|self-improving|audit|visual] [--dry-run] [--offline --from <repos.json>]"
 ---
@@ -11,7 +11,19 @@ Scan the GitHub ecosystem for techniques that could make ShipGuard better. Parse
 
 Think of it as a research assistant that reads other people's code so you don't have to, then brings back only what's worth stealing.
 
-> **Recommended model: Sonnet 4.6.** Web search + repo scanning + summary writing — mechanical research work where Opus 4.7 provides no measurable quality gain. Use `/model sonnet` before invoking to save Opus weekly quota.
+> **Recommended model:** a fast, capable model. Web search + repo scanning + summary writing is mechanical research work where a top-tier reasoning model provides no measurable quality gain. Prefer a faster model (e.g. `/model sonnet`) before invoking to conserve premium quota.
+
+## Preconditions
+
+**The publish phases require the ShipGuard repo checkout.** Writing `docs/scout-reports/`, updating the techniques library, and filing GitHub issues only make sense inside the ShipGuard repository itself. Verify:
+
+```bash
+git remote -v | grep -q "bacoco/ShipGuard"   # or the detected ShipGuard origin
+```
+
+Anywhere else — the installed plugin cache, a host project — automatically behave as `--dry-run`: write the preview to `visual-tests/_results/scout-report.md` only, and tell the user why ("not running from the ShipGuard checkout, publishing skipped"). This check is applied at the start of Phase 5.
+
+The research phases (1–4) can run from anywhere that has network access and an authenticated `gh` CLI.
 
 ## Invocations
 
@@ -23,8 +35,10 @@ Think of it as a research assistant that reads other people's code so you don't 
 | `/sg-scout --topic=self-improving` | Focus: auto-optimization, mutation, feedback loops |
 | `/sg-scout --topic=audit` | Focus: code review, static analysis, bug detection |
 | `/sg-scout --topic=visual` | Focus: visual regression, screenshot testing, UI automation |
-| `/sg-scout --dry-run` | Produce a local preview report; don't create issues or update the techniques library |
-| `/sg-scout --offline --from fixtures/scout-repos.json` | Analyze a local repo fixture; no GitHub search or network |
+| `/sg-scout --dry-run` | Produce a local preview report; never writes the techniques library, never creates issues |
+| `/sg-scout --offline --from "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/fixtures/scout-repos.json"` | Analyze a local repo fixture; no GitHub search or network, no issues |
+
+> SHIPGUARD_PLUGIN_ROOT = the plugin root directory, resolved as two levels up from this skill's SKILL.md (or `$CLAUDE_PLUGIN_ROOT` when the harness sets it).
 
 Sandbox note: GitHub search and issue creation need network/auth. Use `--dry-run` or `--offline` when network is blocked. See [../../docs/sandbox.md](../../docs/sandbox.md).
 
@@ -36,9 +50,9 @@ Sandbox note: GitHub search and issue creation need network/auth. Use `--dry-run
 
 If a URL is provided (`/sg-scout https://github.com/owner/repo`), skip the search phase. Go directly to Phase 2 with that repo.
 
-### Full Scan Mode
+### Offline Mode
 
-If `--offline` is present, skip GitHub entirely. Read repos from the JSON file passed by `--from`; if omitted, use `fixtures/scout-repos.json` when present. Expected shape:
+If `--offline` is present, skip GitHub entirely. Read repos from the JSON file passed by `--from`; if omitted, use `$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/fixtures/scout-repos.json` when present. Expected shape:
 
 ```json
 {
@@ -55,7 +69,9 @@ If `--offline` is present, skip GitHub entirely. Read repos from the JSON file p
 }
 ```
 
-If the fixture is missing or invalid, write `visual-tests/_results/scout-report.md` with the error and stop cleanly. Do not create issues.
+`readme` and `files[].content` are dual-typed. A value is treated as a **path** if and only if it starts with `./` or `/` **and** that file exists; otherwise it is **literal text**.
+
+If the fixture is missing or invalid, write `visual-tests/_results/scout-report.md` with the error and stop cleanly. Do not create issues. `--offline` never creates GitHub issues; the techniques library is only updated by a full online run from the ShipGuard checkout (see Phase 5).
 
 Deterministic fixture smoke test:
 
@@ -64,9 +80,17 @@ node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/offline-dry-run-smoke-test.mjs"
 node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/offline-dry-run-smoke-test.mjs" --from "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/fixtures/scout-repos.json"
 ```
 
-The smoke test writes only a temporary `visual-tests/_results/scout-report.md`, verifies no techniques library or GitHub side effect is produced, and removes the fixture on success. Use `--keep-tmp` or `--debug` to inspect the generated report.
+The smoke test validates the fixture shape (`repos[].{full_name,url,readme,files[].{path,content}}`), writes a temporary `visual-tests/_results/scout-report.md` inside an isolated temp directory, asserts the report reflects the fixture's repo names and counts, and removes its temporary directory on success (the fixture file is never touched); `--keep-tmp` or `--debug` keeps it for inspection.
 
-Search GitHub for repos relevant to ShipGuard's domains. Run these queries via `gh api`:
+### Full Scan Mode
+
+Search GitHub for repos relevant to ShipGuard's domains. The per-topic query bank and the list of known valuable seed repos (always included in a full scan when not already in results) live in a versioned source file:
+
+```text
+$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/fixtures/scout-sources.json
+```
+
+Load it, pick the queries for `--topic` (or all topics if none — run 4-6 queries total), and run each via `gh api`:
 
 ```bash
 gh api search/repositories -X GET \
@@ -74,15 +98,7 @@ gh api search/repositories -X GET \
   -f sort=stars -f per_page=10
 ```
 
-**Query bank** (run 4-6 queries based on `--topic` or all if no topic):
-
-| Topic | Queries |
-|-------|---------|
-| audit | `"claude skill" code audit`, `"code review" "parallel agents"`, `"static analysis" AI agent` |
-| eval | `"eval" "claude skill"`, `"benchmark" "agent skill"`, `"self-improving" evaluation` |
-| self-improving | `"self-improving" agent skill`, `"auto-optimize" prompt`, `"mutation" "agent" skill` |
-| visual | `"visual regression" AI`, `"screenshot testing" agent`, `"agent-browser" OR "playwright" skill` |
-| general | `claude plugin`, `"awesome-claude"`, `"claude code" skill` |
+Scout runs may themselves propose updates to `scout-sources.json` (new queries, new seed repos, removals) through the normal proposal flow — score the change and file it like any other technique proposal.
 
 **Filters** (applied after search):
 - Keep repos with: stars ≥ 3 OR pushed within last 90 days
@@ -90,11 +106,6 @@ gh api search/repositories -X GET \
 - Deduplicate by repo full_name
 
 **Cap:** 20 repos maximum per run. If more found, sort by stars descending and take top 20.
-
-**Known valuable repos** (always include if not already in results):
-- `Alexmacapple/alex-claude-skill` — eval-robuste (statistical evaluation)
-- `Shubhamsaboo/awesome-llm-apps` — self-improving agent skills
-- `anthropics/claude-code` — official Claude Code (check for new skill patterns)
 
 Store the repo list:
 ```yaml
@@ -106,7 +117,7 @@ repos:
     query_matched: "claude skill code audit"
 ```
 
-If GitHub or network access fails, do not stop with an opaque error. Write a local report to `visual-tests/_results/scout-report.md` containing the failing command, error summary, topic, and any partial repos already collected. Suggest rerunning with `--offline --from fixtures/scout-repos.json`.
+If GitHub or network access fails, do not stop with an opaque error. Write a local report to `visual-tests/_results/scout-report.md` containing the failing command, error summary, topic, and any partial repos already collected. Suggest rerunning with `--offline --from "$SHIPGUARD_PLUGIN_ROOT/skills/sg-scout/fixtures/scout-repos.json"`.
 
 ---
 
@@ -156,7 +167,7 @@ For each technique extracted, score on 4 axes (1-5 scale):
 |------|--------|----------|
 | **Impact** | ×2.0 | How much would this improve ShipGuard's audit quality, speed, or UX? |
 | **Novelty** | ×1.5 | Does ShipGuard already do this? (5=completely new, 1=already implemented) |
-| **Applicability** | ×1.0 | Can this plug into sg-code-audit, sg-visual-run, or sg-improve? |
+| **Applicability** | ×1.0 | Can this plug into an existing ShipGuard skill? (see the **Affected skill** list in Phase 4) |
 | **Effort** | ×0.5 | How easy to implement? (5=trivial, 1=major rewrite) |
 
 **Composite score** = (Impact×2 + Novelty×1.5 + Applicability×1 + Effort×0.5) / 5
@@ -202,7 +213,7 @@ Group findings by theme. For each theme with ≥1 technique scoring ≥ 3.0:
 **Example:**
 {Code snippet, prompt fragment, or architecture diagram showing the change}
 
-**Affected skill:** `sg-code-audit` | `sg-improve` | `sg-visual-run`
+**Affected skill:** `sg-code-audit` | `sg-improve` | `sg-visual-run` | `sg-visual-review` | `sg-visual-fix` | `sg-visual-discover` | `sg-record` | `sg-process-check` | `sg-ship` | `sg-change-report` | `sg-scout` | `(multi)`
 **Mutation type:** `add_example` | `add_constraint` | `restructure` | `add_edge_case`
 ```
 
@@ -212,7 +223,24 @@ The `mutation type` classifies what kind of change this would be (inspired by th
 
 ## Phase 5 — Publish
 
-### Techniques Library (always updated)
+**Checkout gate (run this first).** Publishing requires the ShipGuard repo checkout (see Preconditions):
+
+```bash
+git remote -v | grep -q "bacoco/ShipGuard"   # or the detected ShipGuard origin
+```
+
+If the check fails, downgrade the run to `--dry-run` behavior: write the preview to `visual-tests/_results/scout-report.md`, skip the techniques library, the dated scout report, and GitHub issues, and state why ("not running from the ShipGuard checkout").
+
+Publish matrix:
+
+| Mode | Preview (`visual-tests/_results/scout-report.md`) | Dated scout report | Techniques library | GitHub issues |
+|------|---|---|---|---|
+| Full online run from the ShipGuard checkout | — | yes | yes | yes (score ≥ 3.0) |
+| `--offline` (from the ShipGuard checkout) | yes | yes | no | never |
+| `--dry-run` | yes | never | never | never |
+| Any run outside the ShipGuard checkout | yes (forced dry-run) | no | no | no |
+
+### Techniques Library (full online runs from the ShipGuard checkout only)
 
 Append to `docs/scout-reports/techniques-library.md`:
 
@@ -221,14 +249,21 @@ Append to `docs/scout-reports/techniques-library.md`:
 - **Source:** [{repo}]({url})
 - **Score:** {composite}/5.0
 - **Category:** {category}
-- **Status:** `proposed` | `implemented` | `rejected`
+- **Status:** `proposed` | `implementing` | `implemented` | `rejected`
 - **ShipGuard skill:** {which skill it improves}
 - **Date scouted:** {date}
 
 {Description + adaptation proposal}
 ```
 
-If an entry for this technique already exists (match by name or source repo), update it instead of duplicating.
+Before appending, dedup mechanically:
+
+```bash
+grep -in "{repo_full_name}" docs/scout-reports/techniques-library.md \
+  || grep -in "{technique_name}" docs/scout-reports/techniques-library.md
+```
+
+If either grep matches, update the existing entry in place (refresh score, status, date) instead of appending a duplicate.
 
 ### Scout Report (per run)
 
@@ -256,7 +291,7 @@ Write to `docs/scout-reports/{YYYY-MM-DD}-scout.md`:
 |------|-------|------------|-----------|
 ```
 
-### GitHub Issues (score ≥ 3.0, unless --dry-run)
+### GitHub Issues (score ≥ 3.0; full online runs from the ShipGuard checkout only — never under `--dry-run` or `--offline`)
 
 For each proposal with score ≥ 3.0:
 
@@ -273,7 +308,7 @@ gh issue create --repo bacoco/ShipGuard \
 
 ### Dry Run (--dry-run)
 
-Print all proposals to terminal and write `visual-tests/_results/scout-report.md`. Do not update `docs/scout-reports/techniques-library.md` and do not create or comment on GitHub issues. End with: "Run without --dry-run to publish these findings."
+Print all proposals to terminal and write `visual-tests/_results/scout-report.md`. `--dry-run` never writes `docs/scout-reports/` (neither the techniques library nor the dated report) and never creates or comments on GitHub issues. End with: "Run without --dry-run to publish these findings."
 
 ---
 
@@ -283,10 +318,10 @@ Print all proposals to terminal and write `visual-tests/_results/scout-report.md
 /sg-scout complete:
   Repos scanned: {N}
   Techniques found: {T}
-  Proposals filed: {P} issues on bacoco/ShipGuard
-  Library updated: docs/scout-reports/techniques-library.md ({L} entries)
+  Proposals filed: {P} issues on bacoco/ShipGuard (full online run from the ShipGuard checkout only)
+  Library updated: docs/scout-reports/techniques-library.md ({L} entries) (full online run only)
   Report: docs/scout-reports/{date}-scout.md
-  Preview: visual-tests/_results/scout-report.md (dry-run/offline/network-failure)
+  Preview: visual-tests/_results/scout-report.md (dry-run / offline / network failure / outside the ShipGuard checkout)
 
   Top 3 findings:
   1. {technique} (score {s}/5) — {one-line summary}
@@ -299,7 +334,7 @@ Print all proposals to terminal and write `visual-tests/_results/scout-report.md
 ## Edge Cases
 
 ### GitHub API rate limit
-`gh api` is rate-limited to 5000 requests/hour. A full scout run uses ~50-80 requests (search queries + README reads + tree listings). If rate-limited, log the error and continue with repos already fetched.
+GitHub **search** endpoints (`gh api search/repositories`) are limited to about 30 requests/minute when authenticated; core REST endpoints (readme, tree listings) allow 5000 requests/hour. A full scout run uses ~50-80 requests total, but the 4-6 search queries can hit the search limit if retried in quick succession. Check the `x-ratelimit-remaining` header on search responses (e.g. `gh api rate_limit --jq '.resources.search'`) and back off when it is low. If rate-limited anyway, log the error and continue with repos already fetched.
 
 ### Repo has no README or useful content
 Skip it. Log: "Skipped {repo} — no README or skill definitions found."
@@ -317,12 +352,13 @@ Skip GitHub search. If a URL was provided, try `WebFetch` as fallback. Otherwise
 
 ## Final Checklist
 
-- [ ] Search queries executed (or single URL parsed)
+- [ ] Search queries executed from `fixtures/scout-sources.json` (or single URL parsed)
 - [ ] Up to 3 files read per repo
 - [ ] Techniques extracted with structured data
 - [ ] Each technique scored on 4 axes
 - [ ] Proposals written for score ≥ 3.0
-- [ ] Techniques library updated (append, not overwrite)
+- [ ] Checkout gate applied at Phase 5 (forced dry-run outside the ShipGuard checkout)
+- [ ] Techniques library updated (full online run only; grep-dedup before append, not overwrite)
 - [ ] Scout report written
-- [ ] GitHub issues created/commented (deduplicated)
+- [ ] GitHub issues created/commented (deduplicated; full online run only)
 - [ ] Summary displayed
