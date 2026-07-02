@@ -7,7 +7,6 @@ tags: [pipeline, upload, critical]
 
 data:
   pdf_file: "data-sample/sample-contract.pdf"
-  expected_entities: [party_a, party_b, date, amount]
 
 steps:
   - action: open
@@ -36,7 +35,7 @@ steps:
     screenshot: upload-entity-check.png
 
   - action: llm-check
-    description: "Extracted entities are relevant to the document type"
-    criteria: "The extracted entities should include persons, dates, and addresses from the document."
+    description: "Extraction results are displayed"
+    criteria: "The results panel lists extracted entities (at least one) with type labels — not an empty panel or an error state"
     severity: critical
     screenshot: entities-extracted.png

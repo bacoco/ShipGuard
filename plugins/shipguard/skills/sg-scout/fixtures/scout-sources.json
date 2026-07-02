@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "Seed sources for /sg-scout full scans: known valuable repos always included when not already in search results, and the per-topic GitHub search query bank. Scout runs may propose updates to this file through the normal proposal flow (score the change, file it like any other technique proposal).",
+  "known_repos": [
+    {
+      "full_name": "Alexmacapple/alex-claude-skill",
+      "url": "https://github.com/Alexmacapple/alex-claude-skill",
+      "why": "eval-robuste (statistical evaluation)"
+    },
+    {
+      "full_name": "Shubhamsaboo/awesome-llm-apps",
+      "url": "https://github.com/Shubhamsaboo/awesome-llm-apps",
+      "why": "self-improving agent skills"
+    },
+    {
+      "full_name": "anthropics/claude-code",
+      "url": "https://github.com/anthropics/claude-code",
+      "why": "official Claude Code (check for new skill patterns)"
+    }
+  ],
+  "query_bank": {
+    "audit": [
+      "\"claude skill\" code audit",
+      "\"code review\" \"parallel agents\"",
+      "\"static analysis\" AI agent"
+    ],
+    "eval": [
+      "\"eval\" \"claude skill\"",
+      "\"benchmark\" \"agent skill\"",
+      "\"self-improving\" evaluation"
+    ],
+    "self-improving": [
+      "\"self-improving\" agent skill",
+      "\"auto-optimize\" prompt",
+      "\"mutation\" \"agent\" skill"
+    ],
+    "visual": [
+      "\"visual regression\" AI",
+      "\"screenshot testing\" agent",
+      "\"agent-browser\" OR \"playwright\" skill"
+    ],
+    "general": [
+      "claude plugin",
+      "\"awesome-claude\"",
+      "\"claude code\" skill"
+    ]
+  }
+}

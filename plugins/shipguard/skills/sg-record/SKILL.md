@@ -1,8 +1,8 @@
 ---
 name: sg-record
-description: Record browser interactions as replayable ShipGuard test manifests with agent-browser.
+description: Use when a user flow should be captured by demonstration — records browser interactions with Playwright into a replayable ShipGuard visual test manifest.
 context: conversation
-argument-hint: "<url> [--name <name>] [--storage <auth.json>] [--save-storage <path>] | --check"
+argument-hint: "<url> [--name <name>] [--storage <auth.json>] [--save-storage <path>] [--check-timeout <ms>] | --check"
 ---
 
 # /sg-record — Macro Recorder
@@ -27,7 +27,10 @@ sg-record (human)         ───┘
 | `/sg-record http://localhost:6969 --name login-flow` | Record with a preset manifest name |
 | `/sg-record http://localhost:6969 --storage auth.json` | Skip login by loading saved auth state |
 | `/sg-record http://localhost:6969 --save-storage auth.json` | Save auth state after recording (for reuse) |
+| `/sg-record http://localhost:6969 --check-timeout 30000` | Raise the preflight GUI-launch timeout (ms, also applies to `--check`) |
 | `/sg-record --check` | Check Playwright, Chromium, and headed browser launch prerequisites |
+
+All value flags accept both forms: `--name login-flow` and `--name=login-flow` (same for `--storage`, `--save-storage`, `--check-timeout`).
 
 ## How It Works
 
@@ -49,9 +52,12 @@ The user navigates the app normally. Every interaction is captured automatically
 |-------------|-------------|
 | Click a button/link | `action: click, target: "Button text"` |
 | Fill an input field | `action: fill, target: "Field label", value: "typed text"` |
+| Press Enter in a form field | `action: press, key: "Enter"` |
 | Select a dropdown option | `action: select, target: "Label", value: "Option"` |
-| Upload a file | `action: upload, file: "filename.pdf"` |
+| Upload a file | `action: upload, file: "{data.upload_file}"` — `upload.file` must be a project-relative path, so the recorder emits a `{data.*}` placeholder plus a `data:` stub you must point at a real file |
 | Navigate to a new page | `action: open, url: "/new-page"` |
+
+The manifest always starts with an `open` step for the URL the recorder was launched on. New tabs and popups get the toolbar injected too (best effort) — a popup that closes before injection completes (e.g. an instant OAuth redirect window) records nothing.
 
 ### 3. Toolbar Controls
 
@@ -74,17 +80,18 @@ Click **Check** to enter assertion mode:
 2. Hover over elements to see what will be captured (amber highlight)
 3. Click on the element you want to verify
 4. The recorder captures its text content as an `assert_text` step
-5. If the text is long (>80 chars), it becomes an `llm-check` instead (AI judges the assertion at replay time)
+5. If the text is long (>80 chars), it becomes an `llm-check` instead (severity `warning`; AI judges the assertion at replay time)
 6. A screenshot is auto-captured at each check point
 7. Check mode deactivates after one capture
 
 ### 5. Stop and Save
 
 Click **Stop** in the toolbar:
-1. If no `--name` was given, the recorder asks for a manifest name
+1. If no `--name` was given, the recorder asks for a manifest name (interactive terminals only — when stdin is not a TTY the recorder refuses to start without `--name`)
 2. Actions are converted to ShipGuard YAML format
 3. Manifest saved to `visual-tests/manifests/recorded-<name>.yaml`
-4. Terminal shows the command to replay: `sg-visual-run --manifests manifests/recorded-<name>.yaml`
+4. Terminal shows the replay hint: `/sg-visual-run recorded-<name>` (sg-visual-run has no `--manifests` flag — specific manifests are selected by natural language)
+5. If upload steps were recorded, the terminal lists the recorded filenames and reminds you to point the manifest's `data.upload_file*` entries at real project files
 
 ## Output Format
 
@@ -92,7 +99,7 @@ The recorder produces standard ShipGuard YAML manifests:
 
 ```yaml
 name: "login-flow"
-description: "Recorded session — login-flow"
+description: "Recorded session for login-flow"
 priority: medium
 requires_auth: false
 timeout: 60s
@@ -105,25 +112,29 @@ steps:
     url: "{base_url}/login"
 
   - action: fill
-    target: "Nom d'utilisateur"
-    value: "vlad"
+    target: "Username"
+    value: "demo-user"
 
   - action: fill
     target: "Mot de passe"
-    value: "loic"
+    value: "{credentials.password}"
 
   - action: click
     target: "Se connecter"
 
   - action: assert_text
     expected: "Tableau de bord"
-    screenshot: "login-flow-check-1.png"
 
   - action: screenshot
-    path: "login-flow-check-1.png"
+    filename: "login-flow-check-1.png"
 ```
 
-The `source: recorded` field distinguishes recorded manifests from auto-generated ones (`source: discovered`).
+Notes on the format:
+
+- Standalone `screenshot` steps use `filename:` (the `screenshot:` key exists only as evidence on `llm-check` steps, which the recorder does not emit).
+- Screenshot filenames are namespaced with the manifest name (`<name>-check-N.png`, `<name>-final.png`) so parallel manifests never collide.
+- `requires_auth: true` tells the runner to execute `_shared/login.yaml` BEFORE the steps. The recorder sets it to `true` only when auth was external to the recording (`--storage` was used). A recording that captured its own login keeps `requires_auth: false` — otherwise the runner would log in twice.
+- The `source: recorded` field distinguishes recorded manifests from auto-generated ones (`source: discovered`).
 
 ## Test Library in Review Page
 
@@ -138,8 +149,8 @@ Recorded manifests appear as cards in a dedicated **"Recorded Tests"** tab in th
 
 Playwright opens a fresh Chromium — the user is not logged in by default.
 
-- **Without `--storage`**: Login manually during recording. Login steps become part of the manifest.
-- **With `--storage auth.json`**: Load saved cookies/localStorage to skip login.
+- **Without `--storage`**: Login manually during recording. Login steps become part of the manifest, and the manifest gets `requires_auth: false` (it logs itself in).
+- **With `--storage auth.json`**: Load saved cookies/localStorage to skip login. The manifest gets `requires_auth: true` so the runner executes `_shared/login.yaml` before replaying the steps.
 - **First time**: Use `--save-storage auth.json` to capture auth state after logging in. Reuse with `--storage auth.json` on subsequent recordings.
 
 Sandbox note: Playwright/browser sockets and dependency installs may need explicit permission. See [../../docs/sandbox.md](../../docs/sandbox.md).
@@ -248,19 +259,24 @@ Where `<url_origin>` is extracted from the user's URL (e.g., `http://localhost:3
 
 ### Step 6: Launch the recorder
 
+For agent-driven runs, two rules are MANDATORY:
+
+1. **Always pass `--name <name>`.** The recorder cannot prompt for a name when stdin is not a TTY — it refuses to start without `--name` in that case. Derive a name from the user's request (e.g. `login-flow`) or ask before launching.
+2. **Run in the background** (Bash tool with `run_in_background: true`). A foreground Bash call times out mid-recording while the user is still interacting with the browser.
+
 ```bash
-node visual-tests/sg-record.mjs <url> <flags>
+node visual-tests/sg-record.mjs <url> --name <name> <flags>
 ```
 
 Tell the user: "Browser is open. Navigate your app, click Check to mark verifications, click Stop when done."
 
 ### Step 7: Wait and report
 
-Wait for the process to complete (the user clicks Stop in the browser toolbar).
+The recording ends when the user clicks Stop in the browser toolbar. Check the background task for completion (poll its output; the process prints `Saved N steps to ...` and exits when done) — do not block a foreground shell on it.
 
-Report: manifest path, step count, and the command to replay.
+Report: manifest path, step count, and the replay hint: `/sg-visual-run recorded-<name>`. If upload steps were recorded, relay the terminal warning — the manifest's `data.upload_file*` entries must be pointed at real project-relative files before replay.
 
-Offer: "Want to run these tests now with `/sg-visual-run`? Or see all recordings with `/sg-visual-review`?"
+Offer: "Want to run these tests now with `/sg-visual-run recorded-<name>`? Or see all recordings with `/sg-visual-review`?"
 
 ## File Structure (after bootstrap)
 

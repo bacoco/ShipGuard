@@ -11,6 +11,5 @@ dependencies:
     - type: "shell"
       value: "git"
       description: "Resolve diffs and before/after references."
-    - type: "shell"
-      value: "node"
-      description: "Optional lightweight execution for hybrid or execute mode."
+  # hybrid/execute seams run in the target project's own runtime
+  # (e.g. python for FastAPI targets) — no extra tool dependency.

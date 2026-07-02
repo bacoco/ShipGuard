@@ -1,8 +1,17 @@
 {
   "name": "shipguard",
-  "description": "ShipGuard — AI-powered code audit + visual E2E testing. Audit the code first, verify visually second. Zero tests written.",
-  "version": "2.3.8",
+  "description": "ShipGuard — AI-assisted code audit, process behavior simulation, and visual E2E review for changed code. Audit the code, simulate the process, verify visually. Zero test files to write.",
+  "version": "2.4.0",
   "author": {
     "name": "bacoco"
-  }
+  },
+  "homepage": "https://github.com/bacoco/shipguard",
+  "repository": "https://github.com/bacoco/shipguard",
+  "license": "MIT",
+  "keywords": [
+    "code-audit",
+    "visual-testing",
+    "process-check",
+    "regression-testing"
+  ]
 }

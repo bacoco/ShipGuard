@@ -2,11 +2,12 @@
   "repo": "shipguard-improve-fixture",
   "timestamp": "2026-06-29T13:30:00Z",
   "mode": "quick",
+  "prompt_hash": "1f4a9c2e6b8d0357a1c3e5f7092b4d6e8f0a1b2c3d4e5f60718293a4b5c6d7e8",
   "rounds": 1,
-  "agent_count": 2,
+  "agent_count": 1,
   "agents": [
     {
-      "id": "z1",
+      "id": "z01",
       "label": "Zone 1",
       "status": "completed",
       "files_audited": 3,
@@ -15,6 +16,9 @@
       "paths": ["src/*.js"]
     }
   ],
+  "scope_info": {
+    "mode": "full"
+  },
   "summary": {
     "total_bugs": 1,
     "by_severity": {"critical": 0, "high": 1, "medium": 0, "low": 0},
@@ -22,24 +26,48 @@
     "files_audited": 3,
     "files_modified": 0,
     "duration_ms": 1200,
-    "risk_score": 15
+    "risk_score": 15,
+    "lifecycle": {
+      "new": 1,
+      "persistent": 0,
+      "fixed": 0,
+      "not_rechecked": 0,
+      "compared_to": null
+    }
   },
   "impacted_ui_routes": [
     {"route": "/", "reason": "Fixture route", "severity": "high", "bug_count": 1}
   ],
+  "impacted_backend": [
+    {"endpoint": "GET /api/demo", "reason": "Fixture endpoint", "severity": "high"}
+  ],
+  "verification": {
+    "checked": 1,
+    "confirmed": 1,
+    "uncertain": 0,
+    "rejected": 0,
+    "skipped": 0
+  },
   "bugs": [
     {
-      "id": "r1-z1-001",
+      "id": "r1-z01-001",
       "severity": "high",
       "category": "logic-error",
+      "subcategory": "null-check",
       "file": "src/demo.js",
       "line": 10,
       "title": "Fixture bug",
       "description": "Fixture bug used by sg-improve dry-run smoke test.",
       "fix_applied": false,
+      "fix_commit": null,
+      "confidence": "high",
+      "verification_score": 0.9,
+      "verified": true,
+      "lifecycle": "new",
       "impacted_routes": ["/"]
     }
   ],
   "unverified_bugs": [],
-  "accepted_bugs": []
+  "accepted_bugs": [],
+  "fixed_since_last_run": []
 }

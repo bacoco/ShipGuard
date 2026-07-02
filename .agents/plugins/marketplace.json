@@ -6,6 +6,7 @@
   "plugins": [
     {
       "name": "shipguard",
+      "description": "AI-assisted code audit, process behavior simulation, and visual E2E review for changed code.",
       "source": {
         "source": "local",
         "path": "./plugins/shipguard"

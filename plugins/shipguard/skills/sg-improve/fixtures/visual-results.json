@@ -1,7 +1,17 @@
 {
   "schema_version": "1.0",
+  "run_id": "20260629-133000",
   "timestamp": "2026-06-29T13:30:00Z",
   "base_url": "http://127.0.0.1:8001",
+  "scope": {
+    "type": "full",
+    "source": "all manifests",
+    "selected_routes": ["/"],
+    "selected_manifests": ["visual-tests/pages/root-index.yaml"],
+    "uncovered_routes": [],
+    "selected_total": 1,
+    "full_suite_total": 1
+  },
   "summary": {
     "total": 1,
     "pass": 1,

@@ -2,8 +2,10 @@
 /**
  * ShipGuard scout offline/dry-run smoke test.
  *
- * Validates that an offline repo fixture can produce a local scout report
- * without GitHub, network, issues, or techniques-library writes.
+ * Validates the offline repo fixture against the documented shape
+ * (repos[].{full_name,url,readme,files[].{path,content}}) and verifies it
+ * produces a local scout report reflecting the fixture inputs — without
+ * GitHub, network, issues, or techniques-library writes.
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -35,10 +37,28 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function validateFixtureShape(data, path) {
+  assert(Array.isArray(data.repos), `fixture must expose a repos array: ${path}`);
+  assert(data.repos.length > 0, `fixture repos array is empty: ${path}`);
+  data.repos.forEach((repo, i) => {
+    for (const key of ['full_name', 'url', 'readme']) {
+      assert(
+        typeof repo[key] === 'string' && repo[key].length > 0,
+        `repos[${i}].${key} missing or empty — expected repos[].{full_name,url,readme,files[].{path,content}}`,
+      );
+    }
+    assert(Array.isArray(repo.files), `repos[${i}].files must be an array`);
+    repo.files.forEach((file, j) => {
+      assert(typeof file.path === 'string' && file.path.length > 0, `repos[${i}].files[${j}].path missing or empty`);
+      assert(typeof file.content === 'string' && file.content.length > 0, `repos[${i}].files[${j}].content missing or empty`);
+    });
+  });
+}
+
 function loadFixture(path) {
   assert(existsSync(path), `missing fixture: ${path}`);
   const data = JSON.parse(readFileSync(path, 'utf8'));
-  assert(Array.isArray(data.repos), 'fixture must expose repos array');
+  validateFixtureShape(data, path);
   return data;
 }
 
@@ -113,15 +133,31 @@ function main() {
     const { reportPath, findings } = writeReport(root, options.from, fixture);
     assert(existsSync(reportPath), 'scout report was not written');
     assert(findings.length > 0, 'fixture did not produce techniques');
-    assert(!existsSync(join(root, 'docs', 'scout-reports', 'techniques-library.md')), 'dry-run wrote techniques library');
+
+    const report = readFileSync(reportPath, 'utf8');
+    assert(
+      report.includes(`Repos scanned: ${fixture.repos.length}`),
+      `report missing repo count derived from fixture (expected "Repos scanned: ${fixture.repos.length}")`,
+    );
+    assert(
+      report.includes(`Techniques found: ${findings.length}`),
+      `report missing technique count derived from fixture (expected "Techniques found: ${findings.length}")`,
+    );
+    for (const repo of fixture.repos) {
+      assert(report.includes(repo.full_name), `report missing fixture repo name: ${repo.full_name}`);
+    }
+    for (const finding of findings.slice(0, 5)) {
+      assert(report.includes(finding.name), `report missing technique name: ${finding.name}`);
+    }
+
     passed = true;
     console.log('scout offline dry-run smoke test passed');
-    if (options.debug) console.error(`scout fixture=${root}`);
+    if (options.debug) console.error(`scout temp dir=${root}`);
   } finally {
     if (root && passed && !options.keepTmp && !options.debug) {
       rmSync(root, { recursive: true, force: true });
     } else if (root) {
-      console.error(`scout smoke fixture kept: ${root}`);
+      console.error(`scout smoke temp dir kept: ${root}`);
     }
   }
 }

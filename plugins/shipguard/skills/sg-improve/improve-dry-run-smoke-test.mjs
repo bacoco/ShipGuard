@@ -34,8 +34,39 @@ function createFixture() {
   mkdirSync(resultsDir, { recursive: true });
   copyFileSync(join(FIXTURE_DIR, 'audit-results.json'), join(resultsDir, 'audit-results.json'));
   copyFileSync(join(FIXTURE_DIR, 'visual-results.json'), join(resultsDir, 'visual-results.json'));
-  writeFileSync(join(resultsDir, 'fix-manifest.json'), JSON.stringify({ action: 'validate-and-fix', tests: [] }, null, 2), 'utf8');
   return root;
+}
+
+/**
+ * Assert that both fixtures carry the fields the producers (sg-code-audit,
+ * sg-visual-run) are contracted to emit. Producer-schema drift must fail here.
+ */
+function validateFixtureSchemas(root) {
+  const resultsDir = join(root, 'visual-tests', '_results');
+  const audit = JSON.parse(readFileSync(join(resultsDir, 'audit-results.json'), 'utf8'));
+  assert(typeof audit.prompt_hash === 'string' && audit.prompt_hash.length > 0, 'audit fixture missing prompt_hash');
+  assert(audit.scope_info && typeof audit.scope_info.mode === 'string', 'audit fixture missing scope_info.mode');
+  assert(audit.verification && Number.isInteger(audit.verification.checked), 'audit fixture missing verification.checked');
+  assert(Number.isInteger(audit.verification.confirmed), 'audit fixture missing verification.confirmed');
+  assert(audit.summary?.lifecycle && Number.isInteger(audit.summary.lifecycle.new), 'audit fixture missing summary.lifecycle');
+  assert(Array.isArray(audit.impacted_backend), 'audit fixture missing impacted_backend');
+  assert(Array.isArray(audit.fixed_since_last_run), 'audit fixture missing fixed_since_last_run');
+  assert(Array.isArray(audit.agents) && Number.isInteger(audit.agent_count), 'audit fixture missing agents/agent_count');
+  assert(audit.agent_count === audit.agents.length, 'audit fixture agent_count must equal agents.length');
+  const bug = audit.bugs?.[0];
+  assert(bug, 'audit fixture missing bugs[0]');
+  assert(typeof bug.verification_score === 'number', 'audit fixture bug missing verification_score');
+  assert(typeof bug.verified === 'boolean', 'audit fixture bug missing verified');
+  assert(typeof bug.lifecycle === 'string', 'audit fixture bug missing lifecycle');
+
+  const visual = JSON.parse(readFileSync(join(resultsDir, 'visual-results.json'), 'utf8'));
+  assert(typeof visual.run_id === 'string' && visual.run_id.length > 0, 'visual fixture missing run_id');
+  assert(visual.scope && typeof visual.scope.type === 'string', 'visual fixture missing scope.type');
+  assert(Number.isInteger(visual.scope.selected_total), 'visual fixture missing scope.selected_total');
+  assert(Number.isInteger(visual.scope.full_suite_total), 'visual fixture missing scope.full_suite_total');
+  assert(Array.isArray(visual.scope.selected_manifests), 'visual fixture missing scope.selected_manifests');
+  assert(Array.isArray(visual.scope.uncovered_routes), 'visual fixture missing scope.uncovered_routes');
+  assert(Number.isInteger(visual.summary?.pass), 'visual fixture missing summary.pass');
 }
 
 function buildPreview(root) {
@@ -50,7 +81,8 @@ function buildPreview(root) {
     '## Structured Data',
     '',
     `- Audit mode: ${audit.mode}`,
-    `- Agent count: ${audit.agent_count || audit.agents}`,
+    `- Audit prompt hash: ${audit.prompt_hash}`,
+    `- Agent count: ${audit.agent_count ?? audit.agents?.length}`,
     `- Bugs: ${audit.summary?.total_bugs || 0}`,
     `- Visual pass: ${visual.summary?.pass || 0}/${visual.summary?.total || 0}`,
     '',
@@ -83,6 +115,7 @@ function main() {
   let passed = false;
   try {
     root = createFixture();
+    validateFixtureSchemas(root);
     const previewPath = buildPreview(root);
     assert(existsSync(previewPath), 'preview was not written');
     assert(!existsSync(join(root, '.shipguard', 'learnings.yaml')), 'dry-run wrote learnings.yaml');

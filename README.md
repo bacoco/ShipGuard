@@ -96,10 +96,10 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 
 ### 🔗 One pipeline — `/sg-ship`
 
-Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Run all of it on your diff with one command — **`/sg-ship`** — or use any subset.
+Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Run all of it on your diff with one command — **`/sg-ship`** — or use any subset. Report-only by default; `--fix` opts in.
 
 ```
-/sg-ship
+/sg-ship [quick|standard|deep|paranoid] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]
 ```
 
 </td>
@@ -110,7 +110,8 @@ Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-che
 
 ```bash
 # Claude Code
-claude plugin add bacoco/shipguard
+claude plugin marketplace add bacoco/shipguard
+claude plugin install shipguard@shipguard
 
 # Codex
 codex plugin marketplace add bacoco/shipguard
@@ -144,11 +145,12 @@ Mark bugs directly on screenshots. The AI traces each annotation to source code 
 | `/sg-visual-run [what]` | Execute manifests — natural language or flags |
 | `/sg-visual-review` | Launch interactive screenshot review dashboard |
 | `/sg-visual-fix` | Auto-fix bugs annotated in the review dashboard |
+| `/sg-change-report` | Save before/after UI evidence as durable PR/client change reports |
 | `/sg-visual-review-stop` | Stop the review server |
 
 ### Client Validation Reports
 
-Generate static HTML decision pages from before/after visual evidence so a client or stakeholder can validate UI changes without reading the technical dashboard.
+Generate static HTML decision pages from before/after visual evidence so a client or stakeholder can validate UI changes without reading the technical dashboard. Run `/sg-change-report` after UI-visible work to save that before/after evidence as a durable report under `visual-tests/_results/change-reports/`.
 
 ![Client Validation Report](docs/screenshots/client-validation-report.png)
 
@@ -190,11 +192,12 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 /sg-visual-run                                  # Interactive — choose scope
 /sg-visual-run I changed the sidebar, check it  # Natural language
 /sg-visual-run --from-audit                     # Test audit-impacted routes
+/sg-visual-run --from-process                   # Test routes flagged by process check
 /sg-visual-run --regressions                    # Re-run previously failed tests
 /sg-visual-run --all                            # Full suite
 ```
 
-`--from-audit` reads `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json` — a natural bridge between Code Audit and Visual Debugger.
+`--from-audit` reads `impacted_ui_routes` (or legacy `impacted_routes`) from `visual-tests/_results/audit-results.json` — a natural bridge between Code Audit and Visual Debugger. `--from-process` does the same with `process-results.json`; combined, the two flags union their routes (that's how `/sg-ship` invokes the visual lane).
 
 ### Discover options
 
@@ -282,23 +285,23 @@ Dispatch parallel AI agents to audit your entire codebase. Each agent reviews a 
 
 ### Model Configuration
 
-By default, `auto` mode uses Haiku for R1 (fast surface scan) and **Opus 4.7 for R2/R3** (deep bug hunt — the +8 points SWE-bench Verified gap over Sonnet 4.6 translates to real cross-file bugs caught). Override with `--model` to control which model runs all rounds:
+By default, `auto` mode dispatches audit agents on **Opus 4.7** (deep bug hunt — the +8 points SWE-bench Verified gap over Sonnet 4.6 translates to real cross-file bugs caught) and verifies their findings with **Sonnet** verification agents. Override with `--model` to control which model runs the audit agents:
 
 | Flag | Behavior |
 |------|----------|
-| `--model=auto` | Haiku for R1, **Opus** for R2/R3 (default) — depth where it matters |
-| `--model=haiku` | Haiku everywhere — fast triage, more noise |
+| `--model=auto` | **Opus** dispatch + **Sonnet** verification (default) — depth where it matters |
 | `--model=sonnet` | Sonnet everywhere — balanced, use when Opus weekly quota is saturated |
-| `--model=opus` | Opus everywhere — maximum depth (R1 too), highest token cost |
+| `--model=opus` | Opus everywhere — maximum depth, highest token cost |
+
+Haiku is banned for audit work — the skill refuses `--model=haiku` (too shallow for real bug hunting).
 
 ```bash
-/sg-code-audit deep --model=opus          # Critical audit with maximum depth (R1 too)
-/sg-code-audit --model=haiku --all        # Quick full-repo sweep, minimal cost
+/sg-code-audit deep --model=opus          # Critical audit with maximum depth
 /sg-code-audit --model=sonnet             # Run when Opus weekly cap is tight
 /sg-code-audit deep --model=opus --focus=src/auth/  # Max rigor on auth code
 ```
 
-**Why R2/R3 uses Opus by default:** Surface pattern scans (R1) are bulk work — Haiku handles them fine. Deep/paranoid rounds hunt subtle cross-file and logic bugs, where Opus 4.7's reasoning advantage turns into real findings. Anthropic's benchmarks show Opus 4.7 at 87.6% SWE-bench Verified vs 79.6% for Sonnet 4.6.
+**Why Opus dispatch by default:** Deep/paranoid rounds hunt subtle cross-file and logic bugs, where Opus 4.7's reasoning advantage turns into real findings. Anthropic's benchmarks show Opus 4.7 at 87.6% SWE-bench Verified vs 79.6% for Sonnet 4.6.
 
 ### Smart Scope
 
@@ -333,7 +336,7 @@ After zone agents return findings, ShipGuard independently verifies each critica
 **Two-stage filter:**
 
 1. **Constitutional pre-filter (zero LLM cost)** — checks the cited file exists, line number is in range, bug ID format is valid. Catches obvious hallucinations instantly.
-2. **Haiku verification agents** — one agent per finding, all dispatched in parallel. Each reads the actual file:line and scores 0-100.
+2. **Sonnet verification agents** — one agent per finding, all dispatched in parallel. Each reads the actual file:line and scores 0-100.
 
 | Score | Verdict | Action |
 |-------|---------|--------|
@@ -363,7 +366,7 @@ A single 0-100 number representing codebase risk. Uses geometric weighting — m
 
 ### Output
 
-Results are written to two formats:
+Results are written to `visual-tests/_results/` (created if missing; legacy `.code-audit-results/` is read as a fallback), in two formats:
 
 **`audit-results.json`** (canonical):
 - `summary` — totals by severity, category, and `risk_score` (0-100)
@@ -399,11 +402,12 @@ No ML model. No fine-tuning. Just structured memory and adaptive prompts — eac
 After each audit or test session, extract what worked and what didn't.
 
 ```bash
-/sg-improve              # Full loop — local learnings + GitHub issue
-/sg-improve --local-only # Save learnings locally, skip GitHub
-/sg-improve --dry-run    # Preview what would be saved
-/sg-improve --rollback   # Undo the last sg-improve (safety net)
-/sg-improve --history    # List all snapshots
+/sg-improve                  # Full loop — local learnings + GitHub issue
+/sg-improve --local-only     # Save learnings locally, skip GitHub
+/sg-improve --dry-run        # Preview what would be saved
+/sg-improve --rollback[=#N]  # Undo the last (or a specific) sg-improve (safety net)
+/sg-improve --history        # List all snapshots
+/sg-improve --keep-all       # Never prune old snapshots (default keeps last 5)
 ```
 
 **What gets learned:**
@@ -487,7 +491,8 @@ Community adapters welcome.
 
 ```bash
 # Install
-claude plugin add bacoco/shipguard
+claude plugin marketplace add bacoco/shipguard
+claude plugin install shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 
 # Everything at once, scoped to your diff
@@ -517,6 +522,8 @@ credentials:
   password: "testpass"
 build_command: "docker compose up -d --build frontend"  # optional
 ```
+
+See [`examples/`](examples/) for canonical manifest examples (config, shared login, and auth/chat/documents test manifests).
 
 ## License
 

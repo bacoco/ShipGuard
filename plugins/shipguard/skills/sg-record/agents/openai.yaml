@@ -9,8 +9,8 @@ policy:
 dependencies:
   tools:
     - type: "shell"
-      value: "agent-browser"
-      description: "Drive the browser recorder."
-    - type: "shell"
       value: "node"
-      description: "Run the recording helper script."
+      description: "Run the recording helper script (requires the `playwright` npm package installed in the target project)."
+    - type: "shell"
+      value: "npx playwright install chromium"
+      description: "Install the Playwright Chromium browser that drives the headed recorder."

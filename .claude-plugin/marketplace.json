@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "shipguard",
-      "description": "AI-powered code audit + visual E2E testing. Zero tests written.",
+      "description": "AI-assisted code audit, process behavior simulation, and visual E2E review for changed code.",
       "source": "./plugins/shipguard",
       "category": "testing",
       "homepage": "https://github.com/bacoco/shipguard"

@@ -8,12 +8,14 @@
  *
  * Security note: All data is generated at build time from trusted local
  * YAML files and report.md. The HTML is a static artifact with no user
- * input at runtime. innerHTML is used for rendering pre-sanitized,
- * build-time-escaped strings only.
+ * input at runtime. Data is escaped once at the serialization boundary
+ * (embedJson) when inlined into the template; the template renders
+ * dynamic strings via textContent only.
  */
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, unlinkSync } from 'fs';
 import { join, relative, basename, dirname, resolve, isAbsolute } from 'path';
+import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 
 // Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
@@ -122,16 +124,44 @@ function yamlParse(text) {
 
 const yaml = { load: yamlParse };
 
-const ROOT = dirname(new URL(import.meta.url).pathname);
+const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESULTS_DIR = join(ROOT, '_results');
 const SCREENSHOTS_DIR = join(RESULTS_DIR, 'screenshots');
 const VISUAL_RESULTS_PATH = join(RESULTS_DIR, 'visual-results.json');
 const REPORT_PATH = join(RESULTS_DIR, 'report.md');
+const PROCESS_RESULTS_PATH = join(RESULTS_DIR, 'process-results.json');
 const REGRESSIONS_PATH = join(ROOT, '_regressions.yaml');
 const CONFIG_PATH = join(ROOT, '_config.yaml');
 const OUTPUT_PATH = join(RESULTS_DIR, 'review.html');
 const CHANGE_REPORTS_DIR = join(RESULTS_DIR, 'change-reports');
 const PERSONA_REPORTS_DIR = join(RESULTS_DIR, 'persona-reports');
+const PID_FILE = join(RESULTS_DIR, '.server.pid');
+
+// Check whether a PID refers to a live process (EPERM = alive but not ours)
+function pidExists(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; }
+}
+
+// ── --stop: short-circuit before any config parse / build / persona work ──
+if (process.argv.includes('--stop')) {
+  if (existsSync(PID_FILE)) {
+    const pid = parseInt(readFileSync(PID_FILE, 'utf8').split('\n')[0].trim(), 10);
+    if (isNaN(pid)) {
+      console.error('Invalid PID file. If a server is still running, kill it by port (see /sg-visual-review-stop).');
+      process.exit(1);
+    }
+    if (pidExists(pid)) {
+      try { process.kill(pid); } catch { /* died in between */ }
+      console.log(`Server stopped (PID ${pid}).`);
+    } else {
+      console.log(`No server process with PID ${pid} — cleaning up stale PID file.`);
+    }
+    try { unlinkSync(PID_FILE); } catch { /* ignore */ }
+  } else {
+    console.log('No server running.');
+  }
+  process.exit(0);
+}
 
 // Dynamically discover test categories by scanning subdirectories (fixes #20)
 const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
@@ -141,6 +171,10 @@ const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
   .sort();
 
 // ── 1. Parse config ──
+if (!existsSync(CONFIG_PATH)) {
+  console.error('Error: visual-tests/_config.yaml missing — run /sg-visual-discover first.');
+  process.exit(1);
+}
 const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
 
 function normalizeStatus(value) {
@@ -167,24 +201,36 @@ function parseVisualResults() {
     if (raw.tests != null && !Array.isArray(raw.tests)) throw new Error('tests must be an array');
 
     const statusMap = {};
+    const durationMap = {};
+    const slugOwners = {}; // slug -> Set of full ids, to detect ambiguous slug-only matches (B19)
     for (const test of raw.tests || []) {
       if (!test || typeof test !== 'object') continue;
       const status = normalizeStatus(test.status);
+      const duration = Number.isFinite(test.duration_ms) ? test.duration_ms : null;
       const keys = [
         normalizeTestId(test.id),
         normalizeTestId(test.manifest),
       ].filter(Boolean);
       for (const key of keys) {
         statusMap[key] = status;
+        if (duration != null) durationMap[key] = duration;
         const slug = key.split('/').pop();
-        if (slug) statusMap[slug] = status;
+        if (slug) {
+          if (slug !== key) (slugOwners[slug] = slugOwners[slug] || new Set()).add(key);
+          statusMap[slug] = status;
+          if (duration != null) durationMap[slug] = duration;
+        }
       }
     }
+    const ambiguousSlugs = Object.keys(slugOwners).filter(slug => slugOwners[slug].size > 1);
 
     const summary = raw.summary && typeof raw.summary === 'object' ? raw.summary : {};
     return {
       source: 'json',
       statusMap,
+      durationMap,
+      ambiguousSlugs,
+      runTimestamp: raw.timestamp || null,
       run_id: raw.run_id || null,
       scope: raw.scope && typeof raw.scope === 'object' ? raw.scope : null,
       total: Number.isFinite(summary.total) ? summary.total : (raw.tests || []).length,
@@ -286,29 +332,25 @@ function walkDir(dir, category, tests) {
   }
 }
 
-// Escape for safe embedding in JSON (no HTML escaping — data lives in JS, not in DOM)
-function sanitize(s) {
-  return String(s)
-    .replace(/\\/g, '\\\\')
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e');
-}
+// NOTE (B9): data is kept clean here and escaped once at the serialization
+// boundary (see embedJson) when it is inlined into the HTML template. The
+// canonical visual-results.json therefore contains unmangled values.
 
 function buildEntry(id, category, manifest) {
   const slug = id.split('/').pop();
   return {
-    id: sanitize(id),
-    category: sanitize(category),
-    name: sanitize(manifest.name || slug),
-    description: sanitize(manifest.description || ''),
-    priority: sanitize(manifest.priority || 'medium'),
-    tags: (manifest.tags || []).map(sanitize),
+    id: String(id),
+    category: String(category),
+    name: String(manifest.name || slug),
+    description: String(manifest.description || ''),
+    priority: String(manifest.priority || 'medium'),
+    tags: (manifest.tags || []).map(t => String(t)),
     requiresAuth: manifest.requires_auth ?? true,
-    featureFlag: manifest.feature_flag ? sanitize(manifest.feature_flag) : null,
+    featureFlag: manifest.feature_flag ? String(manifest.feature_flag) : null,
     url: extractUrl(manifest.steps || []),
     steps: (manifest.steps || []).map(s => {
       const step = {};
-      for (const k in s) { step[k] = sanitize(s[k]); }
+      for (const k in s) { step[k] = String(s[k]); }
       return step;
     }),
     screenshot: findScreenshot(id, slug, manifest.steps || []),
@@ -323,7 +365,7 @@ function buildEntry(id, category, manifest) {
 function extractUrl(steps) {
   const openStep = steps.find(s => s.action === 'open' && s.url);
   if (!openStep) return '';
-  return sanitize(openStep.url.replace('{base_url}', config.base_url || 'http://localhost:6969'));
+  return String(openStep.url).replace('{base_url}', config.base_url || 'http://localhost:6969');
 }
 
 function getScreenshotMtime(id, slug, steps) {
@@ -365,17 +407,24 @@ function findScreenshot(id, slug, steps) {
 
 // ── 5. Merge status from report ──
 function mergeStatus(tests, report, regressions) {
+  const ambiguous = new Set(report.ambiguousSlugs || []);
+  const durationMap = report.durationMap || {};
   for (const t of tests) {
     const slug = t.id.split('/').pop();
-    // Match by full path first, then by slug
+    // Match by full category/slug id first, then fall back to slug only (B19)
     if (report.statusMap[t.id]) {
       t.status = normalizeStatus(report.statusMap[t.id]);
+      if (Number.isFinite(durationMap[t.id])) t.durationMs = durationMap[t.id];
     } else if (report.statusMap[slug]) {
+      if (ambiguous.has(slug)) {
+        console.warn(`  WARN: test slug "${slug}" matches several results across categories; using the last status seen. Prefer full category/slug ids in visual-results.json.`);
+      }
       t.status = normalizeStatus(report.statusMap[slug]);
+      if (Number.isFinite(durationMap[slug])) t.durationMs = durationMap[slug];
     }
     const reg = regressions[t.id] || regressions[slug];
     if (reg) {
-      t.failureReason = sanitize(reg.failure_reason || '');
+      t.failureReason = String(reg.failure_reason || '');
       if (t.status === 'STALE') t.status = 'FAIL';
       // consecutive_passes === 0 means currently broken = at least 1 fix cycle attempted
       if (typeof reg.consecutive_passes === 'number' && reg.consecutive_passes === 0) {
@@ -419,7 +468,9 @@ function buildVisualResultsContract(data, statusSource) {
   return {
     schema_version: '1.0',
     ...(statusSource.run_id ? { run_id: statusSource.run_id } : {}),
-    timestamp: data.generated,
+    // Preserve the producer's run timestamp (B11); generated_at is the build time.
+    timestamp: statusSource.runTimestamp || data.generated,
+    generated_at: data.generated,
     base_url: config.base_url || statusSource.baseUrl || null,
     ...(scope ? { scope } : {}),
     summary: {
@@ -437,7 +488,8 @@ function buildVisualResultsContract(data, statusSource) {
       name: test.name,
       url: test.url || '',
       status: test.status,
-      duration_ms: null,
+      // Preserve the producer's per-test duration when available (B11)
+      duration_ms: Number.isFinite(test.durationMs) ? test.durationMs : null,
       screenshot: test.screenshot,
       failure_reason: test.failureReason || null,
     })),
@@ -611,7 +663,11 @@ function collectChangeReports() {
     if (!entry.isDirectory()) continue;
     const reportPath = join(CHANGE_REPORTS_DIR, entry.name, 'report.json');
     if (!existsSync(reportPath)) continue;
-    reports.push(normalizeChangeReport(entry.name, readJson(reportPath)));
+    try {
+      reports.push(normalizeChangeReport(entry.name, readJson(reportPath)));
+    } catch (e) {
+      console.warn(`  WARN: Skipping change report "${entry.name}": ${e.message}`);
+    }
   }
   return reports;
 }
@@ -635,7 +691,7 @@ function renderShot(report, label, shot) {
   if (!shot) {
     return `<div class="shot empty"><div class="shot-label"><strong>${escapeHtml(label)}</strong><span>No screenshot provided</span></div></div>`;
   }
-  const href = reportAssetHref(report, shot.src);
+  const href = escapeHtml(reportAssetHref(report, shot.src));
   return `
     <a class="shot" href="${href}">
       <div class="shot-label"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(shot.caption || '')}</span></div>
@@ -1057,70 +1113,91 @@ if (existsSync(MANIFESTS_DIR)) {
   console.log('  Found ' + recordedTests.length + ' recorded manifests');
 }
 
+// ── Collect process-check results (sg-process-check → Process tab) ──
+let processResults = null;
+if (existsSync(PROCESS_RESULTS_PATH)) {
+  try {
+    const parsed = JSON.parse(readFileSync(PROCESS_RESULTS_PATH, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      processResults = parsed;
+      console.log('  Process check results: found');
+    } else {
+      console.warn('  WARN: process-results.json is not a JSON object — Process tab shows its empty state');
+    }
+  } catch (e) {
+    console.warn(`  WARN: process-results.json is invalid JSON (${e.message}) — Process tab shows its empty state`);
+  }
+}
+
+// Escape once at the serialization boundary (B9): neutralize </script>
+// injection and JS line separators when inlining data into the template.
+function embedJson(value) {
+  return JSON.stringify(value ?? null)
+    .replace(/</g, '\\u003c')
+    .replace(/[\u2028\u2029]/g, m => (m === '\u2028' ? '\\u2028' : '\\u2029'));
+}
+
 const template = getHtmlTemplate();
+// Function replacement (B7) so `$&`/`$'` patterns in the data are not expanded.
 const html = template
-  .replace('"__PLACEHOLDER_VISUAL_DATA__"', JSON.stringify(data))
-  .replace('"__PLACEHOLDER_RECORDED_DATA__"', JSON.stringify(recordedTests));
+  .replace('"__PLACEHOLDER_VISUAL_DATA__"', () => embedJson(data))
+  .replace('"__PLACEHOLDER_RECORDED_DATA__"', () => embedJson(recordedTests))
+  .replace('"__PLACEHOLDER_PROCESS_DATA__"', () => embedJson(processResults));
 writeFileSync(OUTPUT_PATH, html, 'utf8');
 
 console.log(`  Output: ${OUTPUT_PATH}`);
 
 // ── Generate thumbnails (macOS sips, no dependency) ──
-const THUMBS_DIR = join(RESULTS_DIR, 'thumbs');
-if (!process.argv.includes('--stop')) {
-  mkdirSync(THUMBS_DIR, { recursive: true });
-  let thumbCount = 0;
-  for (const t of tests) {
-    if (!t.screenshot) continue;
-    const src = join(RESULTS_DIR, t.screenshot);
-    const thumbName = t.screenshot.replace('screenshots/', '');
-    const dest = join(THUMBS_DIR, thumbName);
-    if (!existsSync(src)) continue;
-    if (existsSync(dest) && statSync(dest).mtimeMs >= statSync(src).mtimeMs) { thumbCount++; continue; }
-    try {
-      // macOS: sips (built-in). Linux: convert (ImageMagick) or cp as fallback.
-      if (process.platform === 'darwin') {
-        execFileSync('sips', ['-Z', '400', src, '--out', dest], { stdio: 'pipe' });
-      } else {
-        try {
-          execFileSync('convert', [src, '-resize', '400x>', dest], { stdio: 'pipe' });
-        } catch {
-          execFileSync('cp', [src, dest], { stdio: 'pipe' }); // no resize, just copy
-        }
-      }
-      thumbCount++;
-    } catch { /* thumbnail generation failed — grid uses full images */ }
+const THUMBS_DIR = resolve(join(RESULTS_DIR, 'thumbs'));
+mkdirSync(THUMBS_DIR, { recursive: true });
+let thumbCount = 0;
+for (const t of tests) {
+  if (!t.screenshot) continue;
+  const src = join(RESULTS_DIR, t.screenshot);
+  const thumbName = t.screenshot.replace('screenshots/', '');
+  const dest = resolve(THUMBS_DIR, thumbName);
+  // B17: refuse thumbnail destinations that escape the thumbs directory
+  const destRel = relative(THUMBS_DIR, dest);
+  if (destRel.startsWith('..') || isAbsolute(destRel)) {
+    console.warn(`  WARN: skipping thumbnail for "${t.screenshot}" — name escapes the thumbs directory`);
+    continue;
   }
-  console.log(`  Thumbnails: ${thumbCount}/${tests.filter(t => t.screenshot).length}`);
+  if (!existsSync(src)) continue;
+  if (existsSync(dest) && statSync(dest).mtimeMs >= statSync(src).mtimeMs) { thumbCount++; continue; }
+  try {
+    // macOS: sips (built-in). Linux: convert (ImageMagick) or cp as fallback.
+    if (process.platform === 'darwin') {
+      execFileSync('sips', ['-Z', '400', src, '--out', dest], { stdio: 'pipe' });
+    } else {
+      try {
+        execFileSync('convert', [src, '-resize', '400x>', dest], { stdio: 'pipe' });
+      } catch {
+        execFileSync('cp', [src, dest], { stdio: 'pipe' }); // no resize, just copy
+      }
+    }
+    thumbCount++;
+  } catch { /* thumbnail generation failed — grid uses full images */ }
 }
+console.log(`  Thumbnails: ${thumbCount}/${tests.filter(t => t.screenshot).length}`);
 
 const personaReportCount = generatePersonaReports();
 if (personaReportCount > 0) {
   console.log(`  Persona reports: ${personaReportCount} pages`);
 }
 
-// ── Server PID file ──
-const PID_FILE = join(RESULTS_DIR, '.server.pid');
-
-// --stop: kill existing server
-if (process.argv.includes('--stop')) {
-  if (existsSync(PID_FILE)) {
-    const pid = parseInt(readFileSync(PID_FILE, 'utf8').trim(), 10);
-    if (isNaN(pid)) { console.error('Invalid PID file'); process.exit(1); }
-    try { process.kill(pid); } catch { /* already dead */ }
-    writeFileSync(PID_FILE, '', 'utf8');
-    console.log(`Server stopped (PID ${pid}).`);
-  } else {
-    console.log('No server running.');
-  }
-  process.exit(0);
-}
-
-// --serve: start HTTP server with PID file
+// --serve: start HTTP server with PID file (--stop is handled at the top of the script)
 if (process.argv.includes('--serve')) {
+  // Kill a previously started server, then wait (up to ~2s) for it to exit
+  // so the port is free before we listen (B10/B16).
   if (existsSync(PID_FILE)) {
-    const oldPid = readFileSync(PID_FILE, 'utf8').trim();
-    if (oldPid) try { process.kill(parseInt(oldPid)); } catch { /* already dead */ }
+    const oldPid = parseInt(readFileSync(PID_FILE, 'utf8').split('\n')[0].trim(), 10);
+    if (!isNaN(oldPid) && oldPid !== process.pid && pidExists(oldPid)) {
+      try { process.kill(oldPid); } catch { /* already dead */ }
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline && pidExists(oldPid)) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
   }
 
   const http = await import('http');
@@ -1128,7 +1205,12 @@ if (process.argv.includes('--serve')) {
   const { extname } = await import('path');
 
   const MIME = { '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.css': 'text/css', '.js': 'text/javascript' };
-  const PORT = parseInt(process.argv.find(a => a.startsWith('--port='))?.split('=')[1] || '8888');
+  const portArg = process.argv.find(a => a.startsWith('--port='))?.split('=')[1];
+  const PORT = portArg === undefined ? 8888 : Number(portArg);
+  if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
+    console.error(`Invalid --port value "${portArg}" — expected an integer between 0 and 65535.`);
+    process.exit(1);
+  }
   const HOST = process.argv.find(a => a.startsWith('--host='))?.split('=')[1] || '127.0.0.1';
   const RESULTS_ROOT = resolve(RESULTS_DIR);
   if (HOST === '0.0.0.0') {
@@ -1177,15 +1259,24 @@ if (process.argv.includes('--serve')) {
     return new Promise((resolve, reject) => {
       let body = '';
       let size = 0;
+      let tooLarge = false;
       req.on('data', chunk => {
+        if (tooLarge) return;
         size += chunk.length;
-        if (size > maxBytes) { req.destroy(); reject(new Error('Payload too large')); return; }
+        if (size > maxBytes) {
+          // Pause (do not destroy) so the caller can still send a 413 response.
+          tooLarge = true;
+          req.pause();
+          reject(new Error('Payload too large'));
+          return;
+        }
         body += chunk;
       });
       req.on('end', () => {
+        if (tooLarge) return;
         try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
       });
-      req.on('error', reject);
+      req.on('error', err => { if (!tooLarge) reject(err); });
     });
   }
 
@@ -1207,10 +1298,34 @@ if (process.argv.includes('--serve')) {
     return { path: target };
   }
 
-  // Wildcard CORS: intentional for local browser tooling; default bind is 127.0.0.1.
-  const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' };
+  // ── Origin policy (B3): no wildcard CORS on a server with writable endpoints.
+  // Allowed: requests without an Origin header (same-origin navigations, curl,
+  // Node clients) and browser requests originating from this server itself.
+  let actualPort = PORT; // updated on listen (supports --port=0)
+  function originAllowed(req) {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    if (origin === `http://127.0.0.1:${actualPort}` || origin === `http://localhost:${actualPort}`) return true;
+    // True same-origin on a non-loopback bind (e.g. --host=0.0.0.0 on a LAN)
+    if (req.headers.host && origin === `http://${req.headers.host}`) return true;
+    return false;
+  }
+  function corsHeaders(req) {
+    const origin = req.headers.origin;
+    if (!origin || !originAllowed(req)) return {};
+    return { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' };
+  }
 
   const server = http.createServer(async (req, res) => {
+    const CORS = corsHeaders(req);
+
+    // Reject cross-origin POSTs to writable endpoints (/save-manifest, monitor API)
+    if (req.method === 'POST' && !originAllowed(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Cross-origin POST rejected' }));
+      return;
+    }
+
     if (req.method === 'GET' && req.url === '/favicon.ico') {
       res.writeHead(204, CORS);
       res.end();
@@ -1321,53 +1436,89 @@ if (process.argv.includes('--serve')) {
 
     // POST /save-manifest — save fix manifest from review page
     if (req.method === 'POST' && req.url === '/save-manifest') {
-      const MAX_BODY = 5 * 1024 * 1024; // 5 MB
-      let body = '';
-      let bodySize = 0;
-      req.on('data', chunk => {
-        bodySize += chunk.length;
-        if (bodySize > MAX_BODY) {
-          // r1-z02-012: send response BEFORE destroying — headers must be sent first
-          res.writeHead(413, { 'Content-Type': 'application/json', ...CORS });
-          res.end(JSON.stringify({ error: 'Payload too large (max 5 MB)' }));
-          req.destroy();
+      try {
+        const data = await readBody(req);
+        // Server-side schema validation (B3): fix-manifest export contract
+        const validShape = data && typeof data === 'object' && !Array.isArray(data)
+          && data.action === 'validate-and-fix'
+          && Array.isArray(data.tests)
+          && data.tests.every(t => t && typeof t === 'object' && typeof t.test === 'string');
+        if (!validShape) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...CORS });
+          res.end(JSON.stringify({ error: "Invalid manifest: expected { action: 'validate-and-fix', tests: [{ test: string, ... }] }" }));
           return;
         }
-        body += chunk;
-      });
-      req.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          const manifestPath = join(RESULTS_DIR, 'fix-manifest.json');
-          writeFileSync(manifestPath, JSON.stringify(data, null, 2), 'utf8');
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ ok: true, path: manifestPath }));
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: e.message }));
-        }
-      });
+        const manifestPath = join(RESULTS_DIR, 'fix-manifest.json');
+        writeFileSync(manifestPath, JSON.stringify(data, null, 2), 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/json', ...CORS });
+        res.end(JSON.stringify({ ok: true, path: manifestPath }));
+      } catch (e) {
+        const tooLarge = e && e.message === 'Payload too large';
+        res.writeHead(tooLarge ? 413 : 400, { 'Content-Type': 'application/json', ...CORS });
+        // Send the response first, then drop the oversized upload (r1-z02-012).
+        res.end(JSON.stringify({ error: tooLarge ? 'Payload too large (max 5 MB)' : e.message }), () => {
+          if (tooLarge) req.destroy();
+        });
+      }
       return;
     }
     if (req.method === 'OPTIONS') {
-      res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' });
+      if (!originAllowed(req)) { res.writeHead(403); res.end(); return; }
+      res.writeHead(204, CORS);
       res.end();
+      return;
+    }
+
+    // ── Static files: GET/HEAD only (B18) ──
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { 'Allow': 'GET, HEAD', ...CORS });
+      res.end('Method not allowed');
       return;
     }
     const served = resolveServedPath(req.url);
     if (served.error) { res.writeHead(served.status); res.end(served.error); return; }
     const filePath = served.path;
     if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
+    // B2: only serve regular files — a directory GET must not crash the server
+    let fileStat;
+    try { fileStat = statSync(filePath); } catch { res.writeHead(404); res.end('Not found'); return; }
+    if (!fileStat.isFile()) { res.writeHead(403); res.end('Forbidden'); return; }
     const ext = extname(filePath);
     const noCache = { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' };
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', ...noCache });
-    createReadStream(filePath).pipe(res);
+    const stream = createReadStream(filePath);
+    stream.on('open', () => {
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', ...noCache });
+      stream.pipe(res);
+    });
+    stream.on('error', () => {
+      // B2: a failing read must not crash the server
+      stream.destroy();
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal server error');
+      } else {
+        res.destroy();
+      }
+    });
+  });
+
+  // B10: fail cleanly when the port is taken instead of throwing a stack trace
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`  Error: port ${PORT} busy — pass --port=<other> or run /sg-visual-review-stop`);
+    } else {
+      console.error(`  Server error: ${err && err.message ? err.message : err}`);
+    }
+    process.exit(1);
   });
 
   server.listen(PORT, HOST, () => {
-    writeFileSync(PID_FILE, String(process.pid), 'utf8');
-    console.log(`  Server: http://${HOST}:${PORT} (PID ${process.pid})`);
-    console.log('  Stop: node visual-tests/build-review.mjs --stop');
+    const addr = server.address();
+    actualPort = addr && typeof addr === 'object' ? addr.port : PORT;
+    // PID file contains two lines: <pid>\n<port> (used by /sg-visual-review-stop)
+    writeFileSync(PID_FILE, `${process.pid}\n${actualPort}\n`, 'utf8');
+    console.log(`  Server: http://${HOST}:${actualPort} (PID ${process.pid})`);
+    console.log('  Stop: node visual-tests/build-review.mjs --stop  (or /sg-visual-review-stop)');
   });
 } else {
   console.log('  Tip: --serve to start, --stop to stop');

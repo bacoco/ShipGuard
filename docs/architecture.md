@@ -6,7 +6,7 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 11 skills that form a pipeline from analysis to verification to repair, with self-improvement and macro recording. `sg-ship` orchestrates the three discovery lanes end to end.
+ShipGuard is composed of 12 skills that form a pipeline from analysis to verification to repair, with self-improvement, macro recording, and durable change reports. `sg-ship` orchestrates the three discovery lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
@@ -14,9 +14,10 @@ ShipGuard is composed of 11 skills that form a pipeline from analysis to verific
 | `sg-code-audit` | Parallel AI codebase audit -- dispatches agents to find and fix bugs | Repo source code | `audit-results.json` (structured bug list) |
 | `sg-process-check` | Diff-driven behavior simulation at the PROCESS level -- traces changed units before/after (reasoning by default, optional real execution), observe-not-fix | Git diff (+ optional running code) | `process-results.json` + `process-report.md` |
 | `sg-visual-discover` | Scan codebase for routes, navigation, forms -- generate YAML test manifests | Repo source code | `visual-tests/**/*.yaml` manifest tree |
-| `sg-visual-run` | Execute test manifests via agent-browser with hybrid assertions | YAML manifests | Screenshots + `report.md` + updated `_regressions.yaml` |
+| `sg-visual-run` | Execute test manifests via agent-browser with hybrid assertions | YAML manifests | Screenshots + `visual-results.json` (canonical) + `report.md` (human summary) + updated `_regressions.yaml` |
 | `sg-visual-review` | Build interactive HTML dashboard from test results + audit results | Manifests + screenshots + audit JSON | `review.html` (self-contained) + `fix-manifest.json` |
 | `sg-visual-fix` | Process human annotations -- trace to source, fix, capture before/after | `fix-manifest.json` | Code fixes + before/after screenshots |
+| `sg-change-report` | Save before/after UI evidence as durable, committable change reports (PR / client / persona views) | Visual run results + screenshots | `change-reports/<report-id>/` (+ `persona-reports/` HTML via `sg-visual-review`) |
 | `sg-visual-review-stop` | Stop the review HTTP server | PID file | Server terminated |
 | `sg-record` | Record browser interactions as replayable YAML test manifests | User browser session | `visual-tests/manifests/recorded-*.yaml` |
 | `sg-improve` | Analyze audit false positives/negatives, refine checklists and prompts | `audit-results.json` + user feedback | Updated `learnings.yaml` + checklist patches |
@@ -31,19 +32,23 @@ sg-code-audit --> audit-results.json --> sg-visual-run --from-audit
 sg-visual-discover --> visual-tests/**/*.yaml (manifest tree)
                                               |
                                               v
-sg-visual-run --> screenshots/ + report.md --> sg-visual-review (Visual Tests tab)
+sg-visual-run --> screenshots/ + visual-results.json + report.md --> sg-visual-review (Visual Tests tab)
 
-sg-visual-review --> fix-manifest.json --> sg-visual-fix
+sg-visual-review --> human annotations --> fix-manifest.json --> sg-visual-fix
+                                       --> sg-change-report --> change-reports/<id>/ --> persona-reports/<id>/ (HTML)
 
 sg-visual-fix --> before/after screenshots --> sg-visual-review (updated comparison)
+                                          --> sg-change-report (durable before/after evidence)
 
-sg-code-audit --> POST /api/monitor/* --> monitor-data.json --> Monitor tab (polling)
+sg-code-audit --> POST /api/monitor/* --> monitor-data.json --> Monitor view inside the Code Audit tab (polling)
 
 git diff --> sg-process-check --> process-results.json + process-report.md --> sg-visual-review (Process tab)
                                                        |
 sg-code-audit --> impacted_backend[] --> sg-process-check --from-audit
 sg-process-check --> impacted_ui_routes[] --> sg-visual-run --from-process (visual confirm)
 ```
+
+All result files live in `visual-tests/_results/` (created if missing): `audit-results.json`, `process-results.json`, `visual-results.json`, `report.md`, `fix-manifest.json`, `change-reports/`, `persona-reports/`. `visual-results.json` is the canonical machine-readable run output; `report.md` is its human-readable summary. Legacy `.code-audit-results/` and `.process-check-results/` directories are still read as fallbacks (read-only compat) but are no longer written.
 
 The entry points (`sg-code-audit`, `sg-visual-discover`, and `sg-process-check`) can run independently. `sg-visual-run --from-audit` bridges static→visual by reading `audit-results.json` impacted routes. `sg-process-check` adds the static→dynamic bridge: it reads `audit-results.json`'s `impacted_backend[]` (`--from-audit`) to dynamically exercise flagged endpoints, and emits `impacted_ui_routes[]` so the visual lane can confirm the user-facing effect of a behavior change. `sg-visual-review` merges all data sources into a single dashboard. `sg-ship` is the optional one-command orchestrator that runs all three lanes in order over a single resolved scope and opens that dashboard — it only sequences the lanes via these bridges; it adds no analysis of its own.
 
@@ -57,7 +62,7 @@ The orchestrator. It runs ShipGuard's three discovery lanes in order and opens o
 - **Sequences via existing bridges.** `sg-code-audit` → `sg-process-check --from-audit` → `sg-visual-run --from-audit --from-process` → `sg-visual-review`. The handoff is the result files each lane already writes (`audit-results.json`, `process-results.json`); `sg-ship` adds no schema or logic.
 - **Order matters.** Audit runs first because it produces `impacted_backend[]` / `impacted_ui_routes[]`, which the process and visual lanes consume.
 - **Degrades gracefully.** Lanes with nothing to do are skipped and logged (no backend → process-check reasons on functions only; no UI / no agent-browser / `--no-visual` → visual skipped). A failing lane doesn't abort the others.
-- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; fixing stays with `sg-visual-fix` / `sg-code-audit`. Flags (`quick|deep`, `--all`, `--diff`, `--report-only`, `--mode`) are passed through to the relevant lane.
+- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; fixing stays with `sg-visual-fix` / `sg-code-audit`. Flags (`quick|standard|deep|paranoid`, `--all`, `--diff=ref`, `--focus=path`, `--no-visual`, `--report-only|--fix`, `--mode=reason|hybrid|execute`) are passed through to the relevant lane. The audit lane defaults to report-only; `--fix` opts into fix mode. The resolved `--diff` is passed explicitly to every lane, and the visual lane is invoked with `--from-audit --from-process`, which union their impacted routes.
 
 ---
 
@@ -101,7 +106,7 @@ Rounds execute sequentially. Each round after R1 receives context about what pre
 Each zone gets one agent dispatched with:
 - **Isolation:** Git worktree (non-overlapping file scope enforced by zone boundaries)
 - **Execution:** Background (`run_in_background: true`)
-- **Model:** Sonnet (fast, cost-effective for audit work)
+- **Model:** opus dispatch / sonnet verification (`--model=auto`, the default); `--model=sonnet|opus` overrides the dispatch model, haiku is refused
 - **Prompt:** Zone scope + CLAUDE.md context (truncated to 3000 chars) + round-specific checklist + language-specific checklist + severity definitions + category taxonomy + output format
 
 If an agent hits a context overflow ("Prompt is too long"), the zone is automatically re-split into two halves and two new agents are dispatched.
@@ -396,11 +401,12 @@ Generates a self-contained HTML dashboard from test results, audit data, and scr
 
 **Inputs:**
 1. All YAML test manifests from `visual-tests/` (walks category directories, skips `_`-prefixed and `deprecated` manifests)
-2. `visual-tests/_results/report.md` -- parses PASS/FAIL status per test
+2. `visual-tests/_results/visual-results.json` -- canonical machine-readable run output (PASS/FAIL per test); `report.md` is parsed as the human-readable summary fallback
 3. `visual-tests/_regressions.yaml` -- failure reasons and regression tracking
 4. `visual-tests/_results/screenshots/` -- matched to tests by slug or manifest `screenshot` field
 5. `visual-tests/_results/audit-results.json` -- code audit data (optional, enables Code Audit tab)
-6. `visual-tests/_results/monitor-data.json` -- monitor state (optional, enables Monitor tab at runtime — fetched dynamically, not injected at build time)
+6. `visual-tests/_results/process-results.json` -- process-check data (optional, enables Process tab)
+7. `visual-tests/_results/monitor-data.json` -- monitor state (optional, enables the Monitor view inside the Code Audit tab at runtime — fetched dynamically, not injected at build time)
 
 **Processing:**
 1. Parse config (`_config.yaml`)
@@ -420,8 +426,9 @@ Generates a self-contained HTML dashboard from test results, audit data, and scr
 ### Tab System
 
 - **Visual Tests** (default) -- Grid of test cards with screenshots, status badges, filters
-- **Code Audit** -- Conditional on `data.audit` being non-null. Shows bug list from `audit-results.json` with severity and category breakdowns
-- **Monitor** -- Live Gantt timeline of audit agent progress. Shows per-agent duration, token usage, estimated cost, and bugs found. Appears when `monitor-data.json` exists or an audit is in progress. Polls every 3s.
+- **Code Audit** -- Conditional on `data.audit` being non-null. Shows bug list from `audit-results.json` with severity and category breakdowns. The live Monitor renders inside this tab: a Gantt timeline of audit agent progress with per-agent duration, token usage, estimated cost, and bugs found. It appears when `monitor-data.json` exists or an audit is in progress, and polls every 3s.
+- **Process** -- Conditional on `process-results.json`. Shows the before/after behavior table from `sg-process-check` (verdicts, reasoned vs measured evidence, surprises)
+- **Recorded Tests** -- Test library of manifests captured with `sg-record`; select tests and get the ready-to-copy run command
 
 ### Annotation System
 

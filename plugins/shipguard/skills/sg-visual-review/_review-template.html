@@ -385,6 +385,7 @@ body.light #bug-search{background:var(--surface)}
 <div class="main-tab-bar">
   <button class="main-tab-btn active" id="main-tab-audit" onclick="switchMainTab('audit')">Code Audit <span class="main-tab-badge" id="audit-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-visual" onclick="switchMainTab('visual')">Visual Tests</button>
+  <button class="main-tab-btn" id="main-tab-process" onclick="switchMainTab('process')">Process <span class="main-tab-badge" id="process-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-recorded" onclick="switchMainTab('recorded')">Recorded Tests <span class="main-tab-badge" id="recorded-tab-badge"></span></button>
 </div>
 
@@ -507,6 +508,53 @@ body.light #bug-search{background:var(--surface)}
 </div>
 </div><!-- /visual-view -->
 
+<!-- ════════════════ PROCESS TAB (sg-process-check) ════════════════ -->
+<div id="process-view" style="display:none">
+  <div style="padding:24px 28px">
+
+    <!-- Summary line (mode / timestamp / repo) -->
+    <div class="mc-summary-line" id="proc-summary-line" style="display:none"></div>
+
+    <!-- Summary chips -->
+    <div class="mc-stat-row" id="proc-stat-row" style="display:none"></div>
+
+    <!-- Checks table -->
+    <div id="proc-checks-section" style="display:none">
+      <div class="mc-section-header" id="proc-checks-header">Checks</div>
+      <table class="mc-table" id="proc-checks-table">
+        <thead><tr><th>Check</th><th>Before</th><th>After</th><th>Verdict</th><th>Evidence</th><th>Severity</th></tr></thead>
+        <tbody id="proc-checks-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Impacted UI routes -->
+    <div id="proc-routes-section" style="display:none;margin-top:28px">
+      <div class="mc-section-header">Impacted UI Routes</div>
+      <table class="mc-table">
+        <thead><tr><th>Route</th><th>Severity</th><th>Reason</th></tr></thead>
+        <tbody id="proc-routes-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Impacted backend -->
+    <div id="proc-backend-section" style="display:none;margin-top:28px">
+      <div class="mc-section-header">Impacted Backend</div>
+      <table class="mc-table">
+        <thead><tr><th>Endpoint</th><th>Severity</th><th>Reason</th></tr></thead>
+        <tbody id="proc-backend-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Empty state -->
+    <div id="proc-empty" class="mc-empty" style="display:none">
+      <div class="mc-empty-icon">&#9881;</div>
+      <p id="proc-empty-title">No process check results found.</p>
+      <p style="margin-top:8px">Run <code>/sg-process-check</code> to simulate before/after process behavior from your diff.</p>
+    </div>
+
+  </div>
+</div><!-- /process-view -->
+
 <!-- ════════════════ RECORDED TESTS TAB ════════════════ -->
 <div id="recorded-view" style="display:none">
 
@@ -627,6 +675,7 @@ body.light #bug-search{background:var(--surface)}
 <script>
 var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 var __RECORDED_DATA__ = "__PLACEHOLDER_RECORDED_DATA__";
+var __PROCESS_DATA__ = "__PLACEHOLDER_PROCESS_DATA__";
 
 // ════════════════ THEME ════════════════
 (function() {
@@ -1465,6 +1514,23 @@ function setTheme(t) {
   // ── Toast ──
   function showToast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2000);}
 
+  // ── Annotation export normalization (shared by Validate + Re-run) ──
+  // Converts card annotations to the export format: {x1,y1,x2,y2,note,severity}
+  function normalizeAnnotationsForExport(annots) {
+    return (annots || []).map(function(a) {
+      var out = { note: a.note || '', severity: a.severity || 'critical' };
+      if (a.zoneX1 !== undefined) {
+        // Zone rectangle — use exact zone bounds
+        out.x1 = a.zoneX1; out.y1 = a.zoneY1; out.x2 = a.zoneX2; out.y2 = a.zoneY2;
+      } else {
+        // Point pin — create small bounding box around pin (10% of image)
+        out.x1 = Math.max(0, a.pinX - 0.05); out.y1 = Math.max(0, a.pinY - 0.05);
+        out.x2 = Math.min(1, a.pinX + 0.05); out.y2 = Math.min(1, a.pinY + 0.05);
+      }
+      return out;
+    });
+  }
+
   // ── Action buttons ──
   document.getElementById('btn-validate').addEventListener('click', function() {
     var ids = Object.keys(selected);
@@ -1475,19 +1541,7 @@ function setTheme(t) {
       tests: ids.map(function(id) {
         var e = {test: id};
         if (annotationData[id]) {
-          // Convert card annotations to fix-manifest format (x1/y1/x2/y2 + note + severity)
-          e.annotations = annotationData[id].map(function(a) {
-            var out = { note: a.note || '', severity: a.severity || 'critical' };
-            if (a.zoneX1 !== undefined) {
-              // Zone rectangle — use exact zone bounds
-              out.x1 = a.zoneX1; out.y1 = a.zoneY1; out.x2 = a.zoneX2; out.y2 = a.zoneY2;
-            } else {
-              // Point pin — create small bounding box around pin (10% of image)
-              out.x1 = Math.max(0, a.pinX - 0.05); out.y1 = Math.max(0, a.pinY - 0.05);
-              out.x2 = Math.min(1, a.pinX + 0.05); out.y2 = Math.min(1, a.pinY + 0.05);
-            }
-            return out;
-          });
+          e.annotations = normalizeAnnotationsForExport(annotationData[id]);
         }
         if (redoFlags[id]) e.redo_entirely = true;
         if (revertFlags[id]) e.revert_to_before = true;
@@ -1515,7 +1569,8 @@ function setTheme(t) {
 
   document.getElementById('btn-rerun').addEventListener('click', function() {
     var ids = Object.keys(selected);
-    var tests = ids.map(function(id) { var e={test:id}; if(annotationData[id]) e.annotations=annotationData[id]; return e; });
+    // Same normalized annotation format as the Validate flow: {x1,y1,x2,y2,note,severity}
+    var tests = ids.map(function(id) { var e={test:id}; if(annotationData[id]) e.annotations=normalizeAnnotationsForExport(annotationData[id]); return e; });
     var json = JSON.stringify({action:'rerun',timestamp:new Date().toISOString(),tests:tests},null,2);
     var blob = new Blob([json],{type:'application/json'});
     var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='rerun-'+Date.now()+'.json';a.click();
@@ -1642,7 +1697,7 @@ function setTheme(t) {
 
 // ════════════════ MAIN TAB SWITCH ════════════════
 function switchMainTab(tab) {
-  ['audit', 'visual', 'recorded'].forEach(function(t) {
+  ['audit', 'visual', 'process', 'recorded'].forEach(function(t) {
     var btn = document.getElementById('main-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
     var view = document.getElementById(t + '-view');
@@ -1650,6 +1705,7 @@ function switchMainTab(tab) {
   });
   if (tab === 'audit') loadAuditData();
   else stopAuditPoll(); // stop polling when switching away from audit tab
+  if (tab === 'process') renderProcessTab();
   if (tab === 'recorded') renderRecordedGrid();
 }
 
@@ -2446,7 +2502,286 @@ function makeBugRow(bug) {
 // Single call — loadAuditData handles badge updates internally
 (function() {
   loadAuditData();
+  // Render the Process tab once at load so its badge reflects embedded data
+  if (typeof renderProcessTab === 'function') renderProcessTab();
 })();
+
+// ════════════════ PROCESS TAB (sg-process-check) ════════════════
+// Renders _results/process-results.json embedded at build time. The schema is
+// producer-owned and may evolve — everything below is defensive: it renders
+// whatever subset exists and falls back to a friendly empty state.
+// All dynamic strings are set via textContent — never innerHTML.
+
+function procAsText(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v === 'object') {
+    // sg-process-check before/after shape: { outcome, output, effects }
+    var parts = [];
+    ['outcome', 'output', 'effects'].forEach(function(k) {
+      if (v[k] !== undefined && v[k] !== null && v[k] !== '') parts.push(procAsText(v[k]));
+    });
+    if (parts.length) return parts.join(' — ');
+    try { return JSON.stringify(v); } catch (e) { return String(v); }
+  }
+  return String(v);
+}
+
+function procChecksOf(data) {
+  if (Array.isArray(data.checks)) return data.checks;
+  if (Array.isArray(data.units)) return data.units;
+  return [];
+}
+
+function procFirstAction(check) {
+  return (Array.isArray(check.actions) && check.actions.length && check.actions[0] && typeof check.actions[0] === 'object')
+    ? check.actions[0] : null;
+}
+
+function procVerdictOf(check) {
+  var action = procFirstAction(check);
+  return procAsText(check.verdict || check.status || (action && action.delta) || '');
+}
+
+function procVerdictBadge(verdict) {
+  var span = document.createElement('span');
+  var v = (verdict || '').toLowerCase();
+  if (!v) { span.style.color = 'var(--muted)'; span.textContent = '—'; return span; }
+  if (v.indexOf('error') !== -1 || v.indexOf('fail') !== -1 || v.indexOf('regress') !== -1) {
+    span.className = 'mc-sev mc-sev-critical';
+  } else if (v.indexOf('changed') !== -1 || v.indexOf('change') !== -1 || v.indexOf('surprise') !== -1) {
+    span.className = 'mc-sev mc-sev-high';
+  } else if (v === 'unchanged' || v === 'pass' || v === 'ok' || v === 'same') {
+    span.className = 'badge badge-pass';
+  } else {
+    span.className = 'mc-sev mc-sev-low';
+  }
+  span.textContent = verdict;
+  return span;
+}
+
+function procEvidenceOf(check) {
+  var action = procFirstAction(check);
+  var ev = check.evidence_type || (typeof check.evidence === 'string' ? check.evidence : null) || (action && action.evidence) || '';
+  ev = procAsText(ev).toLowerCase();
+  return (ev === 'reasoned' || ev === 'measured') ? ev : '';
+}
+
+function procSeverityCell(sev) {
+  var td = document.createElement('td');
+  var s = procAsText(sev).toLowerCase();
+  if (['critical', 'high', 'medium', 'low'].indexOf(s) !== -1) {
+    var span = document.createElement('span');
+    span.className = 'mc-sev mc-sev-' + s;
+    span.textContent = s;
+    td.appendChild(span);
+  } else {
+    td.style.color = 'var(--muted)';
+    td.textContent = '—';
+  }
+  return td;
+}
+
+function procImpactRow(entry, primaryKeys) {
+  var tr = document.createElement('tr');
+  var primary = '', severity = '', reason = '';
+  if (typeof entry === 'string') primary = entry;
+  else if (entry && typeof entry === 'object') {
+    for (var i = 0; i < primaryKeys.length; i++) {
+      if (entry[primaryKeys[i]]) { primary = procAsText(entry[primaryKeys[i]]); break; }
+    }
+    severity = entry.severity || '';
+    reason = procAsText(entry.reason || '');
+  }
+  var td1 = document.createElement('td');
+  var code = document.createElement('code');
+  code.style.cssText = 'font-family:monospace;font-size:12px;color:var(--blue)';
+  code.textContent = primary || '(unknown)';
+  td1.appendChild(code);
+  tr.appendChild(td1);
+  tr.appendChild(procSeverityCell(severity));
+  var td3 = document.createElement('td');
+  td3.style.fontSize = '12px';
+  td3.textContent = reason;
+  tr.appendChild(td3);
+  return tr;
+}
+
+function updateProcessBadge(data) {
+  var badge = document.getElementById('process-tab-badge');
+  if (!badge) return;
+  badge.className = 'main-tab-badge';
+  badge.textContent = '';
+  if (!data || typeof data !== 'object') return;
+  var s = (data.summary && typeof data.summary === 'object') ? data.summary : {};
+  var changed = 0;
+  if (Number.isFinite(s.behavior_changes)) changed += s.behavior_changes;
+  if (Number.isFinite(s.new_errors)) changed += s.new_errors;
+  if (!changed) {
+    procChecksOf(data).forEach(function(c) {
+      var v = procVerdictOf(c).toLowerCase();
+      if (v && v !== 'unchanged' && v !== 'pass' && v !== 'ok' && v !== 'same') changed++;
+    });
+  }
+  if (changed > 0) {
+    badge.classList.add('main-tab-badge-bugs');
+    badge.textContent = changed + ' changed';
+  }
+}
+
+function renderProcessTab() {
+  var data = __PROCESS_DATA__;
+  var empty = document.getElementById('proc-empty');
+  var summaryLine = document.getElementById('proc-summary-line');
+  var statRow = document.getElementById('proc-stat-row');
+  var checksSection = document.getElementById('proc-checks-section');
+  var routesSection = document.getElementById('proc-routes-section');
+  var backendSection = document.getElementById('proc-backend-section');
+  if (!empty || !statRow) return;
+
+  if (!data || typeof data !== 'object') {
+    empty.style.display = 'block';
+    summaryLine.style.display = 'none';
+    statRow.style.display = 'none';
+    checksSection.style.display = 'none';
+    routesSection.style.display = 'none';
+    backendSection.style.display = 'none';
+    updateProcessBadge(null);
+    return;
+  }
+  empty.style.display = 'none';
+
+  var s = (data.summary && typeof data.summary === 'object') ? data.summary : {};
+  var checks = procChecksOf(data);
+
+  // ── Summary line: mode / repo / timestamp ──
+  var lineParts = [];
+  if (data.mode) lineParts.push('Mode: ' + procAsText(data.mode));
+  if (data.repo) lineParts.push(procAsText(data.repo));
+  if (data.base_ref || data.head_ref) lineParts.push(procAsText(data.base_ref || '?') + ' → ' + procAsText(data.head_ref || '?'));
+  if (data.timestamp) lineParts.push(procAsText(data.timestamp));
+  summaryLine.textContent = lineParts.join(' — ');
+  summaryLine.style.display = lineParts.length ? 'block' : 'none';
+
+  // ── Summary chips ──
+  statRow.textContent = '';
+  var mix = (s.evidence_mix && typeof s.evidence_mix === 'object') ? s.evidence_mix : {};
+  var chips = [
+    { n: Number.isFinite(s.units_checked) ? s.units_checked : (Number.isFinite(s.total) ? s.total : checks.length), l: 'Checks', c: 'total' },
+    { n: s.behavior_changes, l: 'Behavior Changes', c: 'high' },
+    { n: s.new_errors, l: 'New Errors', c: 'critical' },
+    { n: s.surprises, l: 'Surprises', c: 'medium' },
+    { n: mix.reasoned, l: 'Reasoned', c: 'low inert' },
+    { n: mix.measured, l: 'Measured', c: 'audited inert' }
+  ];
+  var shown = 0;
+  chips.forEach(function(chip) {
+    if (!Number.isFinite(chip.n)) return;
+    var card = document.createElement('div');
+    card.className = 'mc-stat inert ' + chip.c;
+    var num = document.createElement('div');
+    num.className = 'mc-stat-num';
+    num.textContent = chip.n;
+    var lbl = document.createElement('div');
+    lbl.className = 'mc-stat-label';
+    lbl.textContent = chip.l;
+    card.appendChild(num);
+    card.appendChild(lbl);
+    statRow.appendChild(card);
+    shown++;
+  });
+  statRow.style.display = shown ? 'flex' : 'none';
+
+  // ── Checks table ──
+  var tbody = document.getElementById('proc-checks-tbody');
+  tbody.textContent = '';
+  if (checks.length) {
+    checksSection.style.display = 'block';
+    document.getElementById('proc-checks-header').textContent = checks.length + ' check' + (checks.length !== 1 ? 's' : '');
+    checks.forEach(function(c) {
+      if (!c || typeof c !== 'object') return;
+      var action = procFirstAction(c);
+      var tr = document.createElement('tr');
+
+      var tdName = document.createElement('td');
+      var nameDiv = document.createElement('div');
+      nameDiv.style.fontSize = '13px';
+      nameDiv.textContent = procAsText(c.name || c.description || c.ref || c.id || '(unnamed check)');
+      tdName.appendChild(nameDiv);
+      var fileRef = procAsText(c.file || '');
+      if (fileRef) {
+        var fileDiv = document.createElement('div');
+        fileDiv.className = 'mc-file';
+        fileDiv.style.fontSize = '11px';
+        fileDiv.textContent = fileRef;
+        tdName.appendChild(fileDiv);
+      }
+      var obs = procAsText(c.observation || (action && action.observation) || '');
+      if (obs) {
+        var obsDiv = document.createElement('div');
+        obsDiv.style.cssText = 'font-size:11px;color:var(--muted);margin-top:2px';
+        obsDiv.textContent = obs;
+        tdName.appendChild(obsDiv);
+      }
+      tr.appendChild(tdName);
+
+      var beforeVal = c.before !== undefined ? c.before : (action ? action.before : undefined);
+      var afterVal = c.after !== undefined ? c.after : (action ? action.after : undefined);
+      [beforeVal, afterVal].forEach(function(v) {
+        var td = document.createElement('td');
+        td.style.cssText = 'font-size:12px;max-width:260px';
+        var txt = procAsText(v);
+        if (txt) td.textContent = txt;
+        else { td.style.color = 'var(--muted)'; td.textContent = '—'; }
+        tr.appendChild(td);
+      });
+
+      var tdVerdict = document.createElement('td');
+      tdVerdict.appendChild(procVerdictBadge(procVerdictOf(c)));
+      tr.appendChild(tdVerdict);
+
+      var tdEvidence = document.createElement('td');
+      var ev = procEvidenceOf(c);
+      if (ev) {
+        var evSpan = document.createElement('span');
+        evSpan.className = 'mc-cat';
+        evSpan.textContent = ev;
+        tdEvidence.appendChild(evSpan);
+      } else {
+        tdEvidence.style.color = 'var(--muted)';
+        tdEvidence.textContent = '—';
+      }
+      tr.appendChild(tdEvidence);
+
+      tr.appendChild(procSeverityCell(c.severity));
+      tbody.appendChild(tr);
+    });
+  } else {
+    checksSection.style.display = 'none';
+  }
+
+  // ── Impacted UI routes / backend ──
+  var routesTbody = document.getElementById('proc-routes-tbody');
+  routesTbody.textContent = '';
+  var routes = Array.isArray(data.impacted_ui_routes) ? data.impacted_ui_routes : [];
+  routes.forEach(function(r) { routesTbody.appendChild(procImpactRow(r, ['route', 'path'])); });
+  routesSection.style.display = routes.length ? 'block' : 'none';
+
+  var backendTbody = document.getElementById('proc-backend-tbody');
+  backendTbody.textContent = '';
+  var backend = Array.isArray(data.impacted_backend) ? data.impacted_backend : [];
+  backend.forEach(function(b) { backendTbody.appendChild(procImpactRow(b, ['endpoint', 'route', 'ref'])); });
+  backendSection.style.display = backend.length ? 'block' : 'none';
+
+  // File present but nothing renderable — still show a friendly state
+  if (!shown && !checks.length && !routes.length && !backend.length && !lineParts.length) {
+    empty.style.display = 'block';
+    document.getElementById('proc-empty-title').textContent = 'process-results.json found, but it contains no renderable data.';
+  }
+
+  updateProcessBadge(data);
+}
 
 // ════════════════ RECORDED TESTS ════════════════
 var recSelected = {};

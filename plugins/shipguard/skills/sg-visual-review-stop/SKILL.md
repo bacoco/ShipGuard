@@ -1,6 +1,6 @@
 ---
 name: sg-visual-review-stop
-description: Stop the ShipGuard visual review HTTP server.
+description: Use when the ShipGuard review dashboard server should be shut down after a review session — stops the sg-visual-review HTTP server via its PID file, with a port-based fallback.
 context: conversation
 ---
 
@@ -14,14 +14,17 @@ Stop the review page HTTP server.
 node visual-tests/build-review.mjs --stop
 ```
 
+`--stop` short-circuits: it only reads `visual-tests/_results/.server.pid`, kills that process, and removes the PID file — no rebuild, no config parsing.
+
 If no PID file exists, report "No server running."
 
-If `--stop` exits with a non-zero code or the PID file contains an invalid PID, fall back to:
+If `--stop` exits with a non-zero code, fall back to killing by port. The PID file contains two lines: `<pid>` then `<port>`.
 
 ```bash
-# Read the port from _results/.server.pid if present, otherwise default to 8888
-port=$(grep -m1 'port' visual-tests/_results/.server.pid 2>/dev/null | awk '{print $2}' || echo 8888)
-lsof -ti:${port} | xargs kill 2>/dev/null
+# Read the port from line 2 of the PID file; default to 8888 if missing
+port=$(sed -n '2p' visual-tests/_results/.server.pid 2>/dev/null)
+[ -z "$port" ] && port=8888
+lsof -ti:"$port" | xargs -r kill
 ```
 
 Print a warning if fallback was needed: "Warning: --stop failed, used lsof fallback to kill process on port {port}."
