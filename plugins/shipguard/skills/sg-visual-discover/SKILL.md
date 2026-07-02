@@ -1,6 +1,6 @@
 ---
 name: sg-visual-discover
-description: Discover UI routes and generate ShipGuard visual test manifests from project navigation or changed UI files.
+description: Use when a project needs visual test manifests created or refreshed — before the first visual run, after UI routes change, or when sg-visual-run reports uncovered routes.
 context: conversation
 argument-hint: "[project-path] [--all] [--diff=ref] [--refresh-existing]"
 ---
@@ -19,7 +19,8 @@ Explore the codebase of any web application, detect all user-facing routes and i
 | `/sg-visual-discover <path>` | Discover routes in specific project path |
 | `/sg-visual-discover --diff=main` | Generate manifests only for routes impacted by changes since `main` |
 | `/sg-visual-discover --all` | Discover all routes (skip scope question) |
-| `/sg-visual-discover --refresh-existing` | In diff mode, also regenerate existing manifests for impacted routes |
+| `/sg-visual-discover --refresh-existing` | Diff mode against the detected base, plus regenerate refresh-eligible manifests for impacted routes |
+| `/sg-visual-discover --all --refresh-existing` | Full discovery AND refresh every refresh-eligible existing manifest |
 
 ## Scope Detection
 
@@ -29,22 +30,8 @@ Before scanning the project, determine scope:
 2. Check for `--diff=<ref>` flag → use that ref.
 3. If BOTH `--all` and `--diff` → error: `Cannot use --all and --diff together.`
 4. If neither flag:
-   a. Detect base reference:
-      ```bash
-      current_branch=$(git rev-parse --abbrev-ref HEAD)
-      if [ "$current_branch" != "main" ] && [ "$current_branch" != "master" ]; then
-        if git show-ref --verify --quiet refs/heads/main; then
-          base=$(git merge-base HEAD main)
-        elif git show-ref --verify --quiet refs/heads/master; then
-          base=$(git merge-base HEAD master)
-        else
-          base="HEAD~1"
-        fi
-      else
-        base="HEAD~1"
-      fi
-      ```
-   b. Run `git diff --name-only {base}` → changed files.
+   a. Detect the base reference using the same base-resolution algorithm as `sg-code-audit` and `sg-visual-run` (merge-base with `main`/`master` when on a feature branch, else `HEAD~1`).
+   b. Run `git diff --name-only {base}...HEAD` → changed files.
    c. If changes detected, map to routes using the same generic route detection described in `sg-code-audit`.
    d. Ask user:
       > "I detected {N} files changed since `{base}`, impacting {R} routes. What scope?"
@@ -58,14 +45,18 @@ Before scanning the project, determine scope:
 **Flag combination:** `/sg-visual-discover <project-path> --diff=<ref>`
 Both apply: discover within project-path, but only generate manifests for routes impacted by the diff. The diff is computed on the whole repo, but only routes within project-path are considered.
 
-**`--refresh-existing` only applies in diff mode.** In full discovery, existing manifests are still skipped by default.
+**`--refresh-existing` scope:**
+- **Standalone `--refresh-existing`** implies diff mode against the detected base: create manifests for impacted routes that lack one, AND regenerate refresh-eligible existing manifests for impacted routes.
+- **Combined with `--all`**: full discovery AND refresh — discover every route, create missing manifests, and regenerate every refresh-eligible existing manifest.
+- In both cases, manifests without the auto-generated marker are never touched (see Phase 4.2).
 
 ## Prerequisites
 
 Before running, verify:
 1. `agent-browser --version` — must be installed
-2. The project has a web frontend (check for package.json with a framework)
+2. The project serves HTML (framework app, static files, or server-rendered)
 3. Identify the `visual-tests/` directory (create if missing)
+4. `base_url` reachable (optional, improves selector accuracy — see Key Rules)
 
 ## Phase 1: Detect Project Structure
 
@@ -74,89 +65,17 @@ Explore the codebase to identify:
 ### 1.1 Frontend Framework
 
 Search for framework indicators in this order:
-- `next.config.*` or `app/layout.tsx` → **Next.js (App Router)**
+- `next.config.*`, `app/layout.tsx`, or `src/app/layout.tsx` → **Next.js (App Router)** — the `src/app/` variant is as common as root `app/`
 - `pages/_app.tsx` or `pages/index.tsx` → **Next.js (Pages Router)**
-- `src/App.tsx` + `react-router` in package.json → **React Router**
+- `src/App.tsx` or `src/App.jsx` + `react-router`/`react-router-dom` in package.json → **React Router**
+- `vite.config.*` → **Vite app** — inspect `src/main.*` to find the actual router (React Router, Vue Router, plain SPA)
 - `src/router/index.ts` or `vue.config.*` → **Vue**
 - `angular.json` → **Angular**
-- Fallback: grep for route patterns (`<Route`, `path:`, `router.get`)
+- Fallback: grep for route patterns (`<Route`, `path:`, `router.get`, `createBrowserRouter`)
 
-### 1.2 Static HTML Fallback
+### 1.2 No Framework Detected — Fallback Discovery
 
-If NO framework is detected in Phase 1.1:
-
-1. Scan the project root, `src/`, and `public/` directories for `*.html` files
-2. Each `.html` file becomes a test manifest in a `pages/` category
-3. Derive the URL from the file path with these rules:
-   - Files inside `public/` → strip the `public/` prefix (e.g., `public/about.html` → `{base_url}/about.html`)
-   - `index.html` at any level → map to the directory URL (e.g., `public/index.html` → `{base_url}/`, `public/help/index.html` → `{base_url}/help/`)
-   - Other files → use the relative path as-is (e.g., `pages/contact.html` → `{base_url}/pages/contact.html`)
-4. Screenshot names must be unique per page — derive from the relative URL path, slugified (e.g., `public/help/index.html` → `pages-help-index.png`, `about.html` → `pages-about.png`)
-5. Generate a minimal manifest per page:
-
-```yaml
-name: "<filename without extension>"
-description: "Auto-generated from static HTML file"
-priority: medium
-requires_auth: false
-timeout: 30s
-tags: [auto-generated, static-html]
-
-steps:
-  - action: open
-    url: "{base_url}/<derived-url-path>"
-  - action: llm-check
-    description: "Page loads and renders content"
-    criteria: "Page content is visible, no blank screen, no broken images or missing resources"
-    severity: critical
-    screenshot: "pages-<slugified-path>.png"
-```
-
-6. **Element-aware manifest generation:** Before generating the minimal manifest, parse each HTML file for interactive elements and enrich the steps:
-   - If the file contains `<video>` or `<iframe>` → add: `- action: llm-check` with criteria "Media element loads and is playable/visible, no broken embed"
-   - If the file contains `<form>` → add: `- action: fill` + `- action: click` (submit button) + `- action: llm-check` with criteria "Form submission feedback is visible"
-   - If the file contains `<img>` (3+ images) → add: `- action: llm-check` with criteria "All images loaded, no broken image icons"
-   - If the file contains `role="tab"` or class containing `tab` → add tab click + assert steps (see SPA Tab Detection below)
-
-7. **Batch mode:** When invoked with `--all` on a static site, generate all manifests in a single pass without step-by-step user interaction. Print a summary at the end instead of asking confirmation per file.
-
-8. Log detection: "No framework detected — falling back to static HTML scan"
-9. If no `.html` files found either, ask the user to specify the route source
-
-### 1.2b SPA Tab Detection
-
-If no JS framework is detected AND only 1-3 HTML files are found, the site may be a single-page app with tabs:
-
-1. Scan each HTML file for tab indicators:
-   - `role="tab"` or `role="tablist"` attributes
-   - Elements with class containing `tab` (e.g., `nav-tabs`, `fr-tabs`, `tab-button`)
-   - `<a href="#section">` hash links that act as tab navigation
-2. Scan JS files for:
-   - Files named `tab-*.js`, `*-tab.js`, or `*tabs*.js`
-   - Hash route handling: `window.location.hash`, `hashchange` event
-3. For backend projects (FastAPI/Flask/Django), scan `server.py`, `app.py`, `main.py` for:
-   - `@app.get("...")` or `@app.route("...")` decorators → each is a route
-   - Hash routes in JS files (`#import`, `#clean`, etc.) → each is a tab/view
-4. For each detected tab/section:
-   - Generate a manifest with: `open` → `click` on the tab → `llm-check` "Tab content is visible and correct"
-   - Category: `tabs/` subdirectory
-   - Name derived from tab text or hash
-
-### 1.2c Auto-Detect Dev Server Command
-
-Before asking the user for `base_url`, auto-detect the dev server command:
-
-1. Check `playwright.config.js` or `playwright.config.ts` → look for `webServer.command` field
-2. Check `package.json` → look for `scripts.dev` or `scripts.start`
-3. Check for Python dev scripts: `scripts/*.py`, `run.py`, `server.py` with `uvicorn` or `flask` patterns
-4. Check for `docker-compose.yml` or `docker-compose.yaml` → propose `docker compose up -d`
-
-If found, propose the result as `build_command` in `_config.yaml`:
-```yaml
-build_command: "<detected command>"  # auto-detected from {source}
-```
-
-If nothing detected, leave as `build_command: null`.
+If no framework is detected in 1.1, follow `references/static-html-discovery.md`: static `.html` file scan (§1.2), SPA tab detection (§1.2b), and dev-server / `base_url` auto-detection (§1.2c). Log: `No framework detected — falling back to static HTML scan`. If the reference procedure finds no `.html` files either, ask the user to specify the route source.
 
 ### 1.3 Route Definitions
 
@@ -164,14 +83,19 @@ Based on the detected framework:
 
 | Framework | Where to look |
 |-----------|--------------|
-| Next.js App Router | `app/**/page.tsx` — each directory = route |
+| Next.js App Router | `app/**/page.tsx` or `src/app/**/page.tsx` — each directory = route; route groups `(group)` do NOT contribute a URL segment; parallel routes `@slot` are slots, not standalone routes |
 | Next.js Pages | `pages/**/*.tsx` — file path = route |
-| React Router | Router config files, `<Route path=...>` patterns |
+| React Router | Router config files, `<Route path=...>` patterns; for v6.4+ also `createBrowserRouter([...])` / `createRoutesFromElements` route objects |
 | Vue Router | `router/index.ts`, `routes: [...]` |
 | Angular | `*-routing.module.ts` |
 | Generic | Grep for `path:`, `route:`, URL patterns in config |
 
 Collect: route path, page component file, any associated layout.
+
+**Dynamic route segments** (`[id]`, `[slug]`, `:id`): a parameterized route needs a concrete value before it can be tested. In order of preference:
+1. Source a real value from Phase 1.7 test data into the manifest `data:` section — e.g. `data: { id: "..." }` and `url: "{base_url}/dossier/{data.id}"`.
+2. Otherwise generate steps that navigate from the parent list page (open the list route, click the first row/item).
+3. If neither is possible, still emit the manifest with a top-level `todo: "needs a fixture id"` key and report the route as unmapped.
 
 ### 1.4 Navigation Structure
 
@@ -219,15 +143,17 @@ If `visual-tests/_config.yaml` does not exist, create it:
 
 ```yaml
 # visual-tests/_config.yaml — Generated by /sg-visual-discover
-base_url: "<detected_url>"       # from dev server config, docker-compose, or README
+base_url: "<detected_url>"       # derived — see rule below
 credentials:
   username: "<detected>"
   password: "<detected>"
 screenshots_dir: "visual-tests/_results/screenshots"
 report_path: "visual-tests/_results/report.md"
-agent_browser_path: "agent-browser"
+# agent_browser_path: "agent-browser"   # uncomment only to override the binary on PATH
 build_command: null              # set to rebuild command (e.g. "docker compose up -d --build frontend") or leave null if no rebuild needed
 ```
+
+**Deriving `base_url`:** extract host and port from the detected dev command — dev script flags (`next dev -p 3001` → `http://localhost:3001`), docker-compose published ports (`"8051:3000"` → `http://localhost:8051`), or the framework default port when nothing explicit is set (Next.js/CRA 3000, Vite 5173, Angular 4200, Vue CLI 8080, Flask 5000, uvicorn/FastAPI 8000). Host is `localhost` unless the command or README says otherwise. Full detection algorithm: `references/static-html-discovery.md` §1.2c.
 
 If it already exists, do NOT overwrite.
 
@@ -259,7 +185,7 @@ steps:
     expected: "<detected_post_login_url>"
 ```
 
-Fill in the targets by reading the actual login component or by running `agent-browser open {base_url}` and doing a snapshot to identify the real labels.
+Fill in the targets by reading the actual login component or — if `base_url` is reachable — by running `agent-browser open {base_url}` and doing a snapshot to identify the real labels.
 
 ## Phase 4: Generate Test Manifests
 
@@ -271,7 +197,7 @@ Mirror the navigation tree:
 ```
 visual-tests/
   _config.yaml
-  _regressions.yaml        # create empty if not exists
+  _regressions.yaml        # create with the canonical stub if not exists
   _shared/
     login.yaml
   <nav-group>/
@@ -280,23 +206,35 @@ visual-tests/
       <page>.yaml
 ```
 
+If `_regressions.yaml` does not exist, create it with exactly this stub:
+
+```yaml
+# Auto-maintained by /sg-visual-run — do not edit manually
+regressions: []
+```
+
 ### 4.2 Manifest Generation Rules
+
+**Refresh eligibility (the auto-generated marker):** a manifest is *refresh-eligible* only if it still carries the `auto-generated` tag in `tags:` AND top-level `generated_by: sg-visual-discover`. A manifest missing either marker is hand-edited or hand-written and is NEVER overwritten — report it as `skipped (hand-maintained)`.
 
 For each route:
 
 1. **If `scope_mode == "diff"` AND route is NOT in `impacted_routes`** → SKIP (not impacted by changes)
 2. **If a manifest already exists AND `--refresh-existing` is NOT set** → SKIP (never overwrite without explicit flag)
-3. **If a manifest already exists AND `--refresh-existing` IS set** → REGENERATE (re-scan route components, overwrite manifest). Warn: `Refreshing {N} existing manifests.`
-4. **If no manifest exists** → CREATE new manifest
+3. **If a manifest exists AND `--refresh-existing` IS set AND it is refresh-eligible** → REGENERATE: write a backup alongside (`<page>.yaml.bak`), re-scan the route components, overwrite the manifest, and print a one-line diff summary (e.g. `dashboard/home.yaml: 2 steps added, 1 selector updated`). Warn: `Refreshing {N} eligible manifests.`
+4. **If a manifest exists AND `--refresh-existing` IS set AND it is NOT refresh-eligible** → SKIP, report as `skipped (hand-maintained)`
+5. **If no manifest exists** → CREATE new manifest
 
 **Skeleton manifest** (minimum viable test):
 ```yaml
 name: "<Page Name>"
 description: "Auto-generated — customize with real test steps"
 priority: medium
-requires_auth: true
+requires_auth: true              # derived per route — see rule below, never hardcode
 timeout: 30s
 tags: [auto-generated]
+generated_by: sg-visual-discover
+generated_date: "<YYYY-MM-DD>"
 
 steps:
   - action: open
@@ -309,6 +247,14 @@ steps:
     screenshot: "<page-name>-load.png"
 ```
 
+**Deriving `requires_auth`:**
+- `requires_auth: false` for public routes — login, signup, logout, landing/root when unauthenticated, password-reset — and any route outside the app's auth middleware/guards.
+- `requires_auth: true` otherwise.
+- Concrete detection: check the middleware config (`middleware.ts` `matcher`), layout-level auth wrappers/guards, route groups like `(auth)`/`(public)`, and any explicit public-route list in the codebase.
+- The login page manifest itself is always `requires_auth: false`.
+
+> **Contract lock:** the authoritative action/field list is `sg-visual-run/references/action-reference.md`. `llm-*` actions use `screenshot:` — only the standalone `screenshot` action uses `filename:`. `steps[0]` must always be `open` with a route-bearing URL (it is the runner's route-matching key).
+
 **Enhanced manifest** (when interactive components are detected):
 
 If the page has forms, uploads, chat, etc., generate steps that exercise them:
@@ -320,13 +266,15 @@ If the page has forms, uploads, chat, etc., generate steps that exercise them:
 Pre-fill `data:` section with discovered test files when relevant.
 
 Report:
-- `scope_mode == "diff"`: `Created {N} new manifests. Skipped {S} routes (manifests exist). {U} uncovered routes (no component match).`
-- `scope_mode == "full"`: `Created {N} new manifests. Skipped {S} routes (manifests exist). {D} routes deprecated.`
+- `scope_mode == "diff"`: `Created {N} new manifests. Refreshed {R}. Skipped {S} (exist / hand-maintained). {U} unmapped files (changed files with no component/route match).`
+- `scope_mode == "full"`: `Created {N} new manifests. Refreshed {R}. Skipped {S} (exist / hand-maintained). {D} routes deprecated.`
+
+**Terminology:** "unmapped files" = changed files this skill could not map to any route or component. The pipeline reserves "uncovered routes" for routes that have no manifest — those are reported by `sg-visual-run`, not here.
 
 ### 4.3 Deprecated Handling
 
 For each existing manifest whose route no longer exists in the codebase:
-- Add `deprecated: true` to the manifest frontmatter
+- Add `deprecated: true` as a **top-level key** in the manifest
 - Do NOT delete the file
 
 ## Phase 5: Output Summary
@@ -347,16 +295,19 @@ After generation, output:
 - dashboard/home.yaml (new)
 - ...
 
-### Skipped (already exist)
-- dashboard/home.yaml
-- ...
+### Refreshed (--refresh-existing, .bak written)
+- dashboard/home.yaml — 2 steps added, 1 selector updated
+
+### Skipped
+- dashboard/home.yaml (exists)
+- billing/invoices.yaml (hand-maintained)
 
 ### Deprecated
 - dashboard/old-feature.yaml (route removed)
 
 ### Test Data Found
-- data-sample/clement acte.pdf
-- data/notarial-corpus/acte_vente/ (15 PDFs)
+- data-sample/sample-contract.pdf
+- data/sample-corpus/ (15 PDFs)
 
 Run `/sg-visual-run` to execute tests.
 Run `/sg-visual-run --regressions` to run only known failures.
@@ -364,24 +315,14 @@ Run `/sg-visual-run --regressions` to run only known failures.
 
 ## agent-browser Reference
 
-| Command | Usage | Example |
-|---------|-------|---------|
-| `open <url>` | Navigate to URL | `agent-browser open http://localhost:3000` |
-| `snapshot` | Accessibility tree with refs (for AI) | `agent-browser snapshot` |
-| `click <ref>` | Click element by ref | `agent-browser click @e12` |
-| `fill <ref> <text>` | Clear and fill input | `agent-browser fill @e10 "alex"` |
-| `upload <sel> <files>` | Upload file to input | `agent-browser upload "#file-input" ./test.md` |
-| `eval <js>` | Run JavaScript in page | `agent-browser eval 'document.querySelector("input").id'` |
-| `screenshot <path>` | Take screenshot | `agent-browser screenshot /tmp/capture.png` |
-| `get url` | Get current URL | `agent-browser get url` |
-| `close` | Close browser | `agent-browser close` |
+Discovery needs only three commands: `agent-browser open <url>`, `agent-browser snapshot`, `agent-browser close`. The full command set and manifest action list live with the executor: `sg-visual-run/references/action-reference.md`.
 
 ## Key Rules
 
-1. **NEVER overwrite existing manifests** UNLESS `--refresh-existing` is passed. When refreshing, preserve user-added comments and custom steps. By default, only create new ones.
-2. **NEVER delete manifests** — mark deprecated
+1. **NEVER overwrite a manifest that lacks the auto-generated marker** (`auto-generated` tag + `generated_by: sg-visual-discover`) — hand-maintained manifests are never touched, even with `--refresh-existing`. Refresh-eligible manifests are overwritten only when `--refresh-existing` is passed, and only after a `.bak` is written alongside. By default, only create new manifests.
+2. **NEVER delete manifests** — mark deprecated (top-level `deprecated: true`)
 3. **Always verify agent-browser is installed** before running
-4. **Use real element labels** — do a snapshot of each page to find actual button/input text
+4. **Best-effort live snapshots** — if `base_url` is reachable, snapshot each page for real button/input text; otherwise read the component source to derive selectors
 5. **Pre-fill test data** when fixtures are found
 6. **Ask the user** if framework or route detection fails
 
@@ -390,9 +331,9 @@ Run `/sg-visual-run --regressions` to run only known failures.
 Before considering the discovery complete, verify:
 
 - [ ] agent-browser installed and functional
-- [ ] Framework detected (or generic fallback documented)
+- [ ] Framework detected (or fallback per `references/static-html-discovery.md` documented)
 - [ ] At least one route collected
 - [ ] `_config.yaml` created or existing one left untouched
-- [ ] `_regressions.yaml` created (empty) if absent
-- [ ] No existing manifest overwritten
-- [ ] Summary displayed (generated / skipped / deprecated)
+- [ ] `_regressions.yaml` created with the canonical stub (`regressions: []` under the "Auto-maintained by /sg-visual-run — do not edit manually" header) if absent
+- [ ] No hand-maintained manifest overwritten; every refreshed manifest has a `.bak` alongside
+- [ ] Summary displayed (generated / refreshed / skipped / deprecated)
