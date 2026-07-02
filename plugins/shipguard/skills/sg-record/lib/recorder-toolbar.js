@@ -2,8 +2,9 @@
  * recorder-toolbar.js
  *
  * Injected into every page during ShipGuard macro recording via Playwright's
- * page.addInitScript(). Captures user interactions and bridges them to the
- * Node.js process through window.__sgBridge().
+ * page.addScriptTag() (re-injected on each navigation by sg-record.mjs).
+ * Captures user interactions and bridges them to the Node.js process
+ * through window.__sgBridge().
  *
  * The CSS placeholder below is replaced at runtime by sg-record.mjs with
  * the actual contents of recorder-toolbar.css.
@@ -178,7 +179,7 @@
 
   /* ── Step operations ───────────────────────────────────────── */
   function addStep(step) {
-    if (paused) return;
+    if (paused || stopped) return;
     steps.push(step);
     renderSteps();
     bridge({ type: 'step', step: step });
@@ -294,13 +295,27 @@
 
   /* ── Stop recording ────────────────────────────────────────── */
   function stopRecording() {
+    if (stopped) return;
+    // Commit any in-flight debounced fill before finalizing
+    flushPendingFills();
+    stopped = true;
     if (timerInterval) {
       clearInterval(timerInterval);
       timerInterval = null;
     }
     urlObserver.disconnect();
     window.removeEventListener('popstate', checkNavigation);
-    stopped = true;
+    // Detach interaction listeners so nothing records after Stop
+    document.removeEventListener('click', onDocumentClick, true);
+    document.removeEventListener('input', onDocumentInput, true);
+    document.removeEventListener('keydown', onDocumentKeydown, true);
+    document.removeEventListener('blur', onDocumentBlur, true);
+    document.removeEventListener('change', onSelectChange, true);
+    document.removeEventListener('change', onFileChange, true);
+    window.removeEventListener('beforeunload', onBeforeUnload);
+    // Cancel any remaining debounce timers
+    pendingFills.forEach(function (entry) { clearTimeout(entry.timer); });
+    pendingFills.clear();
     bridge({ type: 'stop', steps: steps });
   }
 
@@ -353,8 +368,38 @@
     return tag + ':nth-of-type(' + idx + ')';
   }
 
+  /* ── Debounced fills (flushable) ───────────────────────────── */
+  // Pending fills are kept in a Map so they can be flushed (committed
+  // immediately) before a click, on blur, and before the page unloads —
+  // otherwise a fill debounce timer would be lost on MPA form POSTs or
+  // land AFTER the click that follows it.
+  var pendingFills = new Map();
+
+  function commitFill(el) {
+    var entry = pendingFills.get(el);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    pendingFills.delete(el);
+    var label = findLabel(el) || '';
+    var isPassword = (el.type === 'password');
+    addStep({
+      type: 'fill',
+      text: label,
+      selector: cssSelector(el),
+      value: isPassword ? '{credentials.password}' : el.value,
+      isPassword: isPassword
+    });
+  }
+
+  function flushPendingFills() {
+    Array.from(pendingFills.keys()).forEach(commitFill);
+  }
+
   /* ── Event capture: click ──────────────────────────────────── */
-  document.addEventListener('click', function (e) {
+  function onDocumentClick(e) {
+    if (stopped) return;
+    // Make sure a pending fill lands before the click that follows it
+    flushPendingFills();
     if (paused || checkMode) return;
     if (isToolbarElement(e.target)) return;
 
@@ -373,41 +418,58 @@
       selector: cssSelector(el),
       tagName: el.tagName.toLowerCase()
     });
-  }, true);
+  }
+  document.addEventListener('click', onDocumentClick, true);
 
   /* ── Event capture: input (debounced per element) ──────────── */
-  var inputTimers = new WeakMap();
-
-  document.addEventListener('input', function (e) {
-    if (paused || checkMode) return;
+  function onDocumentInput(e) {
+    if (paused || checkMode || stopped) return;
     if (isToolbarElement(e.target)) return;
 
     var el = e.target;
     var tag = el.tagName.toLowerCase();
     if (tag !== 'input' && tag !== 'textarea') return;
 
-    // Clear previous debounce for this element
-    var prev = inputTimers.get(el);
-    if (prev) clearTimeout(prev);
+    // Reset the debounce for this element
+    var prev = pendingFills.get(el);
+    if (prev) clearTimeout(prev.timer);
 
-    inputTimers.set(el, setTimeout(function () {
-      inputTimers.delete(el);
-      if (stopped) return;
-      var label = findLabel(el) || '';
-      var isPassword = (el.type === 'password');
-      addStep({
-        type: 'fill',
-        text: label,
-        selector: cssSelector(el),
-        value: isPassword ? '{credentials.password}' : el.value,
-        isPassword: isPassword
-      });
-    }, 800));
-  }, true);
+    pendingFills.set(el, {
+      timer: setTimeout(function () { commitFill(el); }, 800)
+    });
+  }
+  document.addEventListener('input', onDocumentInput, true);
+
+  /* ── Event capture: Enter key in form fields ───────────────── */
+  function onDocumentKeydown(e) {
+    if (paused || checkMode || stopped) return;
+    if (e.key !== 'Enter') return;
+    if (!e.target || isToolbarElement(e.target)) return;
+    var tag = e.target.tagName ? e.target.tagName.toLowerCase() : '';
+    // Enter in a textarea inserts a newline — only record single-line fields
+    if (tag !== 'input' && tag !== 'select') return;
+    // Commit this field's pending fill BEFORE the key press
+    commitFill(e.target);
+    addStep({ type: 'press', key: 'Enter' });
+  }
+  document.addEventListener('keydown', onDocumentKeydown, true);
+
+  /* ── Event capture: blur (commit pending fill) ─────────────── */
+  function onDocumentBlur(e) {
+    if (stopped) return;
+    if (e.target) commitFill(e.target);
+  }
+  document.addEventListener('blur', onDocumentBlur, true);
+
+  /* ── Flush pending fills before the page unloads (MPA POST) ── */
+  function onBeforeUnload() {
+    flushPendingFills();
+  }
+  window.addEventListener('beforeunload', onBeforeUnload);
 
   /* ── Event capture: change (select elements) ───────────────── */
-  document.addEventListener('change', function (e) {
-    if (paused || checkMode) return;
+  function onSelectChange(e) {
+    if (paused || checkMode || stopped) return;
     if (isToolbarElement(e.target)) return;
 
     var el = e.target;
@@ -425,11 +487,12 @@
         value: optionText
       });
     }
-  }, true);
+  }
+  document.addEventListener('change', onSelectChange, true);
 
   /* ── Event capture: change (file inputs) ───────────────────── */
-  document.addEventListener('change', function (e) {
-    if (paused || checkMode) return;
+  function onFileChange(e) {
+    if (paused || checkMode || stopped) return;
     if (isToolbarElement(e.target)) return;
 
     var el = e.target;
@@ -440,7 +503,8 @@
       selector: cssSelector(el),
       files: Array.from(el.files).map(function (f) { return f.name; })
     });
-  }, true);
+  }
+  document.addEventListener('change', onFileChange, true);
 
   /* ── Navigation detection ──────────────────────────────────── */
   function checkNavigation() {
