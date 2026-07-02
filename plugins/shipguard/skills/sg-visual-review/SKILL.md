@@ -1,21 +1,22 @@
 ---
 name: sg-visual-review
-description: Generate the interactive ShipGuard review dashboard from audit, process, and visual results.
+description: Use after visual runs, code audits, or process checks when results need human review — builds and serves the interactive ShipGuard dashboard.
 context: conversation
-argument-hint: "[optional: regenerate | open]"
+argument-hint: "[--port=N]"
 ---
 
 # /sg-visual-review — Interactive Screenshot Review
 
-Generate and open a self-contained HTML page to visually review all Visual test screenshots, annotate problems, and export re-run manifests.
+Generate and serve the ShipGuard dashboard to review visual test screenshots, code audit findings, and process-check results, annotate problems, and export re-run / fix manifests.
 
 ## Invocations
 
 | Command | Behavior |
 |---------|----------|
-| `/sg-visual-review` | Build + start server + tell user to open http://127.0.0.1:8888 |
+| `/sg-visual-review` | Build + start server + tell user to open the printed URL (default http://127.0.0.1:8888) |
+| `/sg-visual-review --port=9000` | Same, on a custom port |
 
-**Always:** Build the review page, start the HTTP server, and give the user the URL. No flags, no options. To stop: `/sg-visual-review-stop`.
+**Always:** build the review page, start the HTTP server, and give the user the URL the server actually prints. Supported flags: `--port=N` (default 8888) and `--host=H` (default 127.0.0.1). To stop the server: `/sg-visual-review-stop`.
 
 ## Prerequisites
 
@@ -41,122 +42,52 @@ This script:
 3. Falls back to legacy `visual-tests/_results/report.md` if the JSON contract is missing or invalid
 4. Reads `visual-tests/_regressions.yaml` for failure reasons
 5. Matches screenshots from `visual-tests/_results/screenshots/`
-6. Rewrites canonical `visual-tests/_results/visual-results.json` from the resolved statuses
-7. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
-8. If `monitor-data.json` exists in `_results/`, a "Monitor" tab appears showing the Gantt timeline of the last audit
-9. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
+6. Rewrites canonical `visual-tests/_results/visual-results.json` from the resolved statuses, preserving the producer's run `timestamp` and per-test `duration_ms` (build time is recorded separately as `generated_at`)
+7. Reads `visual-tests/_results/process-results.json` (written by `/sg-process-check`) into the Process tab, if present
+8. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
+9. While `/sg-code-audit` is running (or `audit-monitor.json` exists in `_results/`), live agent progress renders **inside the Code Audit tab** — a progress bar in Overview and per-agent pods in the Agents sub-tab. There is no separate Monitor tab.
+10. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
 
-`--serve` binds to `127.0.0.1` by default and refuses path traversal after decoding and resolving paths. LAN exposure requires an explicit host:
+`--serve` binds to `127.0.0.1` by default and refuses path traversal after decoding and resolving paths. Cross-origin POSTs to the server are rejected. LAN exposure requires an explicit host:
 
 ```bash
 node visual-tests/build-review.mjs --serve --host=0.0.0.0
 ```
 
-### Durable Post-Development Change Reports
+### Change Reports & Client Validation
 
-When UI work was performed or screenshots should be saved with a PR, invoke `sg-change-report`. It creates the durable source report under:
+The change-report schema and workflow are owned by `sg-change-report` — see that skill for the `report.json` format and when to create one. This builder consumes:
 
 ```text
 visual-tests/_results/change-reports/<report-id>/report.json
 visual-tests/_results/change-reports/<report-id>/screenshots/
 ```
 
-Then this review builder generates audience-specific HTML under:
+and generates audience-specific decision pages (client, business, product, design, engineering, or custom) plus validation artifacts under:
 
 ```text
-visual-tests/_results/persona-reports/<report-id>/
-```
-
-Commit the change-report source and the generated persona report with the UI change. Do not commit `visual-tests/_results/review.html` or `visual-tests/_results/.server.pid`; those are local generated files.
-
-### Client Validation Reports
-
-Use this when the report must be validated by a client or by different recipients: client, product, design, engineering, executive, or any custom audience. The generated pages are decision surfaces: before/after evidence, plain rationale, `Accept / Adjust / Reject`, free-form comments, and JSON export.
-
-Create a spec at:
-
-```text
-visual-tests/_results/change-reports/<report-id>/report.json
-```
-
-Put screenshots next to it, usually under:
-
-```text
-visual-tests/_results/change-reports/<report-id>/screenshots/
-```
-
-Then run:
-
-```bash
-node visual-tests/build-review.mjs --serve
-```
-
-ShipGuard generates:
-
-```text
-visual-tests/_results/persona-reports/index.html
 visual-tests/_results/persona-reports/<report-id>/index.html
 visual-tests/_results/persona-reports/<report-id>/<audience>.html
 visual-tests/_results/persona-reports/<report-id>/client-invite-email.md
 visual-tests/_results/persona-reports/<report-id>/client-response-email.md
-visual-tests/_results/persona-reports/<report-id>/proposal-trace.md
-visual-tests/_results/persona-reports/<report-id>/proposal-trace.json
+visual-tests/_results/persona-reports/<report-id>/proposal-trace.md|.json
 ```
 
-Each audience page adapts the same evidence:
-- `client` focuses on plain-language choices and validation.
-- `business` focuses on outcome and residual risk.
-- `product` focuses on priority, acceptance, route/test references.
-- `design` focuses on UX rationale and before/after evidence.
-- `engineering` focuses on files, tests, implementation boundaries.
+Each audience page includes before/after evidence, `Accept / Adjust / Reject` decisions, local comments, and JSON export; the email + trace files support manual validation without an email provider. Full example spec: `skills/sg-visual-review/examples/change-report.json`.
 
-Each generated page includes local comments, `Accept / Adjust / Reject` decisions, and JSON export. The email and trace artifacts support manual validation without an email provider: send `client-invite-email.md`, let the client reply from `client-response-email.md`, and archive `proposal-trace.*` with the returned decision. This is the reusable ShipGuard layer; project-specific apps should consume it instead of hand-building one-off reports.
-
-Minimal `report.json` shape:
-
-```json
-{
-  "id": "checkout-redesign",
-  "title": "Checkout redesign",
-  "summary": "Decision report for checkout UX changes.",
-  "route": "/checkout",
-  "client": {
-    "name": "Client team",
-    "contact": "client@example.com"
-  },
-  "validation": {
-    "reference": "UX-2026-05-checkout-redesign",
-    "review_url": "https://review.example.com/persona-reports/checkout-redesign/client.html",
-    "reply_to": "delivery@example.com",
-    "deadline": "2026-05-09"
-  },
-  "audiences": ["client", "product", "design", "engineering"],
-  "changes": [
-    {
-      "id": "payment-summary",
-      "title": "Payment summary is now persistent",
-      "problem": "Users lost context while scrolling.",
-      "decision": "Keep the summary visible during payment.",
-      "impact": "Reduces uncertainty before confirmation.",
-      "choices": ["Keep sticky", "Use collapsible", "Revert"],
-      "tests": ["checkout/payment"],
-      "files": ["src/components/checkout/payment-form.tsx"],
-      "before": { "src": "screenshots/before.png", "caption": "Previous state" },
-      "after": { "src": "screenshots/after.png", "caption": "New state" }
-    }
-  ]
-}
-```
-
-Full example: `skills/sg-visual-review/examples/change-report.json`.
+Commit the change-report source and the generated persona report with the UI change. Do not commit `visual-tests/_results/review.html` or `visual-tests/_results/.server.pid`; those are local generated files.
 
 ### Step 2: Open in Browser
 
+Open the URL printed by `--serve` (default `http://127.0.0.1:8888`):
+
 ```bash
-open visual-tests/_results/review.html
+open http://127.0.0.1:8888
 # Or via agent-browser:
-agent-browser open file://$(pwd)/visual-tests/_results/review.html
+agent-browser open http://127.0.0.1:8888
 ```
+
+The Code Audit tab, the live audit monitor, and the "Validate & Generate Report" button require the HTTP server. Opening `review.html` via `file://` only shows the data embedded at build time (Visual Tests, Process, Recorded Tests) and cannot save fix manifests.
 
 ### Step 3: Human Review
 
@@ -173,11 +104,20 @@ The review page provides:
 **Code Audit tab**
 - Shows bug cards from `audit-results.json` if present in `_results/`
 - Shows a completed zero-bug audit as `0 bugs found`, not as missing data
-- Filter by severity, category, fix status, and free-text search. CSV export available
+- Sub-tabs: Overview, Bugs, Routes, Agents
+- Bug filters: severity buttons (All / Critical / High / Medium / Low, with counts), a route chip (click a row in the Routes sub-tab to filter bugs by route; click the chip to clear it), and free-text search over title, file, id, and category
+- Live monitor: while an audit runs, the Overview shows a progress bar (agents done, bugs found so far) and the Agents sub-tab shows per-agent pods (status, bugs found, duration), fed by `audit-monitor.json` and the `/api/monitor/*` endpoints
 
-**Monitor tab**
-- Appears only when `monitor-data.json` exists in `_results/` or an audit is in progress
-- Shows a Gantt timeline of the last audit run — per-agent duration, token usage, estimated cost, and bugs found per zone
+**Process tab**
+- Renders `visual-tests/_results/process-results.json` written by `/sg-process-check` (embedded at build time — rebuild after a new process check)
+- Summary chips (checks, behavior changes, new errors, surprises, reasoned vs measured evidence mix)
+- Checks table: check name, before → after, verdict badge, reasoned/measured evidence tag, severity
+- Impacted UI routes and impacted backend tables when present
+- Friendly empty state when no process check has been run
+
+**Recorded Tests tab**
+- Cards for manifests captured with `/sg-record` from `visual-tests/manifests/` (step count, check count, recording date)
+- Select tests to get a ready-to-copy `sg-visual-run --manifests ...` command
 
 **Lightbox**
 - Click any card to open full screenshot + test details
@@ -185,8 +125,8 @@ The review page provides:
 - For FAIL tests: shows failure reason
 
 **Annotation Pen**
-- In lightbox, click the pen icon to activate drawing mode
-- Draw red rectangles on problem areas in the screenshot
+- In lightbox, click "+ Add Note" (or double-click the screenshot) to annotate
+- Click places a pin; drag draws a rectangle zone; each annotation gets a note + severity
 - Annotations are stored per test and exported with re-run manifests
 - Drawing an annotation auto-selects the test
 
@@ -195,7 +135,7 @@ The review page provides:
 - Floating action bar shows selection count
 - "Re-run selected" → downloads JSON manifest with test IDs + annotations
 - "Copy IDs" → copies test paths to clipboard
-- JSON format:
+- Annotations are exported in the same normalized format as the fix manifest:
 
 ```json
 {
@@ -205,7 +145,7 @@ The review page provides:
     {
       "test": "auth/login",
       "annotations": [
-        { "x1": 0.2, "y1": 0.3, "x2": 0.8, "y2": 0.6 }
+        { "x1": 0.2, "y1": 0.3, "x2": 0.8, "y2": 0.6, "note": "Button overlaps footer", "severity": "high" }
       ]
     }
   ]
@@ -216,7 +156,7 @@ The review page provides:
 1. Select one or more failed tests (checkbox overlay on cards)
 2. Optionally annotate each test with the pen tool to mark the problem area
 3. Click "Validate & Generate Report" in the floating action bar
-4. The page POSTs `fix-manifest.json` to the server via `POST /save-manifest`
+4. The page POSTs `fix-manifest.json` to the server via `POST /save-manifest` (top-level `action: "validate-and-fix"` + `timestamp`; per-test `redo_entirely` / `revert_to_before` / `improve_ui` booleans; annotations as `{x1,y1,x2,y2,note,severity}`)
 5. The saved manifest is then consumed by `/sg-visual-fix` to implement fixes
 
 ### Step 4: Re-run Failed/Annotated Tests
@@ -287,5 +227,5 @@ If a sandbox blocks local bind, the scripts fail with the fixture path, rerun co
 
 - Dark theme (slate-900 bg, copper accents)
 - Responsive grid (4 columns desktop, 1 column mobile)
-- No external dependencies (works with file:// protocol)
+- No external dependencies — a single self-contained HTML file. Server-backed features (Code Audit tab, live monitor, Validate & Generate Report) require `--serve`; `file://` shows the build-time tabs only
 - Keyboard shortcuts: Escape to close lightbox/clear selection
