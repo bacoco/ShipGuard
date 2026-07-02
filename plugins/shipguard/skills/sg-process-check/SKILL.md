@@ -1,6 +1,6 @@
 ---
 name: sg-process-check
-description: Simulate before/after process behavior from a diff. Default reason mode needs no running stack; hybrid/execute can measure cheap seams.
+description: "Use after editing backend or pipeline code, before shipping, or when asked whether a diff changes observable behavior — verifies before/after process behavior without requiring the stack to run."
 context: conversation
 argument-hint: "[what changed, natural language] [--mode=reason|hybrid|execute] [--diff=ref] [--from-audit] [--samples=N] [--depth=shallow|deep]"
 ---
@@ -13,12 +13,12 @@ The backend counterpart of `/sg-visual-run`. Where the visual lane drives the **
 
 It is **scoped to the diff** of the module you're working on (not the whole repo). Its oracle is **before/after**: the previous version is the reference. The question is not "is this correct in the absolute" — it's **"did the observable behavior change, and was that intended?"** The human decides. This is the behavior-level twin of `sg-visual-fix`'s before/after screenshots.
 
-> ### ⚠️ Reasoned ≠ measured — the honesty rule
-> A simulated trace is a **prediction**, not a measurement. Never present predicted behavior as observed. **Every observation carries an `evidence` tag — `reasoned` (with confidence + assumptions) or `measured` (really executed).** If a measured result contradicts the reasoned one, the measurement wins and the surprise is flagged. The whole value is the human judging a clearly-labelled delta — not a confident-sounding guess dressed up as fact.
+> ### ⚠️ Reasoned ≠ measured — the honesty rule (authoritative)
+> A simulated trace is a **prediction**, not a measurement. Never present predicted behavior as observed. **Every observation carries an `evidence` tag — `reasoned` (with confidence + assumptions) or `measured` (really executed).** If a measured result contradicts the reasoned one, the measurement wins and the surprise is flagged. Anything you could **not** trace with confidence goes to `uncovered` — never a confident guess. The whole value is the human judging a clearly-labelled delta — not a confident-sounding guess dressed up as fact.
 
-**Hard rule — observe, never fix.** Reports what the process does; never edits source. Remediation stays with `sg-code-audit` / `sg-visual-fix`.
+**Hard rule — observe, never fix.** Reports what the process does; never edits source. Remediation stays with `sg-code-audit` / `sg-visual-fix`. Even a one-line obvious fix — report it, do not edit. Even if the user will clearly want it fixed. Even if the fix is faster than describing it. **Report, never edit.**
 
-> **Recommended model: Opus for `--mode=reason` (the reasoning IS the product), Sonnet for `hybrid`/`execute`** where most of the work is mechanical orchestration. The default leans on code-tracing reasoning, so spend the better model there.
+> **Model guidance:** use the strongest reasoning model available for `--mode=reason` (the reasoning IS the product); a fast general-purpose model suffices for `hybrid`/`execute`, where most of the work is mechanical orchestration.
 
 ## Modes — a fidelity spectrum
 
@@ -34,24 +34,35 @@ It is **scoped to the diff** of the module you're working on (not the whole repo
 
 | Command | Behavior |
 |---------|----------|
-| `/sg-process-check` | **Interactive** — detect the working diff, list the units it touches, confirm scope, run `reason` |
-| `/sg-process-check <text>` | Natural language — e.g. `I changed the RAPTOR chunking` |
+| `/sg-process-check` | **Interactive** — detect the diff, list the units it touches, confirm scope, run `reason` |
+| `/sg-process-check <text>` | Natural language — e.g. `I changed the search pipeline's chunking` |
 | `/sg-process-check --mode=hybrid` | Reason + execute the cheap parts to anchor |
 | `/sg-process-check --mode=execute` | Force literal before/after execution |
 | `/sg-process-check --diff=main` | Scope to everything changed since `main` |
-| `/sg-process-check --from-audit` | Simulate the `impacted_backend[]` endpoints from `audit-results.json` |
+| `/sg-process-check --from-audit` | Simulate the `impacted_backend[]` endpoints from the audit results (contract below) |
 | `/sg-process-check --samples=N` | Representative inputs to trace per unit (default **3**) |
-| `/sg-process-check --depth=deep` | Trace deeper call chains / more edge inputs (more tokens) |
+| `/sg-process-check --depth=shallow` | *(default)* Trace only the seams on the direct diff — the changed units themselves |
+| `/sg-process-check --depth=deep` | Follow callers one level beyond the direct diff and trace more edge inputs (more tokens) |
 
 ---
 
 ## Phase 0 — Scope
 
-1. **Resolve the diff.** Working tree + staged (`git status --porcelain`, `git diff`, `git diff --staged`); or `git diff <ref>...HEAD` for `--diff`; or `git show HEAD` if the tree is clean. Record `base_ref` (before) and `head_ref` (after).
+1. **Resolve the diff.** `git diff {base}...HEAD` (three-dot), where `{base}` is the `--diff=<ref>` argument or the merge-base of the upstream branch; `git show HEAD` for the last commit when no base applies. **The diff scope covers committed changes only** — if `git status --porcelain` shows uncommitted or staged work, say so explicitly: it must be committed or stashed to be visible to this check. Record `base_ref` (before) and `head_ref` (after).
 2. **Read context.** `visual-tests/_config.yaml` if present (stack hints, `base_url`); detect language/stack from the changed files.
-3. **Confirm scope.** Print changed files + detected units; ask to confirm/narrow unless explicit scope was given. This lane checks **one module's change**, not the repo.
+3. **Confirm scope.** Print changed files + detected units; ask to confirm/narrow unless explicit scope was given (`--diff`, `--from-audit`, or natural language). This lane checks **one module's change**, not the repo.
 
 If nothing changed and no scope is given, stop.
+
+### `--from-audit` input contract
+
+When invoked with `--from-audit`, look for the audit results in this order:
+
+1. `visual-tests/_results/audit-results.json` (canonical)
+2. `audit-results.json` at the repo root
+3. `.code-audit-results/audit-results.json` (legacy)
+
+Expected shape: `impacted_backend: [{endpoint, reason, severity}]` — objects, never strings. If the file is missing or the array is empty, **print a warning and degrade to self-resolved diff scope** (as if `--diff` had been given) — never fail.
 
 ---
 
@@ -63,16 +74,16 @@ For each changed file, find the **executable units** the diff touches:
 |-----------|--------|-------------|
 | `endpoint` | route handler (or callee) in the diff; cross-ref `/openapi.json` | request → handler → downstream calls |
 | `function` | changed top-level function/method with a clear signature | input → return / effects |
-| `pipeline-stage` | changed step in a known pipeline (RAPTOR index, ColBERT search, embed batch, Celery task) | stage input → output |
+| `pipeline-stage` | changed step in a project pipeline (indexing, search, batch jobs, async tasks) | stage input → output |
 
-Map each to an `impacted_backend` string (e.g. `POST /raptor/query/{id}`, `raptor_query.chunk_document`). **Skip** rename/comment-only changes — and **log them as skipped**, never silently drop.
+Map each to an `impacted_backend` entry — an **object** `{endpoint, reason, severity}` (e.g. `{"endpoint": "POST /api/chat", "reason": "chunking change alters retrieval", "severity": "medium"}`), never a bare string. `severity` ∈ `critical|high|medium|low`, derived from the **highest-severity behavior change** affecting that endpoint (default `medium`; finalized after Phase 5 classification). **Skip** rename/comment-only changes — and **log them as skipped**, never silently drop.
 
 ---
 
 ## Phase 2 — Build the model & representative inputs
 
 For each unit:
-1. **Read the relevant code paths** — the changed function plus what it calls/returns into, enough to trace the effect of the change (follow imports as needed; `--depth=deep` follows further).
+1. **Read the relevant code paths** — the changed function plus what it calls/returns into, enough to trace the effect of the change (follow imports as needed; `--depth=deep` follows callers one level further).
 2. **Pick `--samples` representative inputs** (default 3): one nominal, one boundary, one empty/edge. Prefer real repo fixtures (`data-sample/`, `test/fixtures/`), then OpenAPI examples / type hints. Use the **same** seeded inputs for before and after.
 
 This is the modest "sampling" sense — a few cases so you don't only see the happy path. Not exhaustive.
@@ -87,7 +98,7 @@ For each (unit, input), **trace the input through the OLD code and the NEW code 
 - **effects**: writes, external/LLM calls made, state touched
 - **cost/latency signal**: relative — "more LLM calls", "an extra O(n) pass", "one less DB round-trip" (qualitative unless measured)
 
-Each record gets `evidence: reasoned`, a **`confidence`** (high/medium/low), and the **`assumptions`** it rests on (e.g. "assumes `doc.pages` is non-empty", "assumes Albert returns within token budget"). Be explicit about what you could NOT trace with confidence — that goes to `uncovered`, not a confident guess.
+Each record gets `evidence: reasoned`, a **`confidence`** (high/medium/low), and the **`assumptions`** it rests on (e.g. "assumes `doc.pages` is non-empty", "assumes the LLM API returns within token budget"). Anything you could not trace with confidence goes to `uncovered` — per the honesty rule at the top of this file.
 
 ---
 
@@ -97,6 +108,8 @@ For units that are **cheap to run**, execute the same seeded inputs for real and
 - **function** seam → ephemeral harness imports the module and calls the unit; capture outcome/output/timing/cost; delete the harness.
 - **endpoint** seam → if a service is already up (or `build_command` is a single container), fire the request at `base_url`; for `execute`, build a baseline **worktree pinned at the base commit** (`git worktree add --detach … && git reset --hard <BASE>` — pin explicitly, never inherit a stale checkout) on an alternate port for the "before".
 - **pipeline-stage** seam → call the stage entrypoint with a fixture.
+
+Seams run in the **target project's own runtime** (e.g. python for a FastAPI target) — no extra tooling is required.
 
 Control non-determinism (LLMs, vector DB) with record-replay cassettes so a measured delta reflects the code change, not sampling noise; otherwise mark `noisy` and compare structural fields only.
 
@@ -112,18 +125,20 @@ Per action, compare before vs after → `delta`: `identical` / `output-changed` 
 
 ## Phase 6 — Report & bridges
 
-1. **`process-results.json`** (schema below) to the results dir (`visual-tests/_results/` else `.process-check-results/`) — mirrors `audit-results.json` so `/sg-visual-review` can show it (Process tab).
+1. **`process-results.json`** (schema below) — **always** written to `visual-tests/_results/process-results.json` (`mkdir -p visual-tests/_results` if missing). `.process-check-results/` is a **legacy location** some consumers still read as a fallback — never write there. The file mirrors `audit-results.json` so `/sg-visual-review` can show it (Process tab).
 2. **`process-report.md`** — short before/after table per unit, **reasoned and measured findings visually separated**, most-changed/`surprise` first, each with a one-line repro (mode, seed, input ref).
 3. **Print a summary**: units checked, behavior changes, new errors, surprises, and how much was reasoned vs measured.
 
 ### Bridges
-- **`--from-audit`** consumes `impacted_backend[]` from `audit-results.json`.
-- Emits **`impacted_ui_routes[]`** for `sg-visual-run --from-process` (visual confirm).
-- `process-results.json` → `sg-visual-review`. Static **find** → behavioral **simulate** → visual **confirm** → human **decides**.
+- **`--from-audit`** consumes `impacted_backend[]` from the audit results (input contract in Phase 0).
+- Emits **`impacted_ui_routes[]`** as objects `{route, reason, severity}` for `sg-visual-run --from-process` (visual confirm). `severity` is derived from the highest-severity behavior change affecting that route (default `medium`).
+- `process-results.json` → `sg-visual-review` (Process tab). Static **find** → behavioral **simulate** → visual **confirm** → human **decides**.
 
 ---
 
 ## Output schema — `process-results.json`
+
+All names in this example (`search_pipeline`, `/api/chat`, `sample.pdf`, …) are **illustrative** — use the target project's real units.
 
 ```json
 {
@@ -131,7 +146,7 @@ Per action, compare before vs after → `delta`: `identical` / `output-changed` 
   "timestamp": "2026-06-28T10:00:00Z",
   "mode": "reason",
   "base_ref": "main",
-  "head_ref": "working-tree",
+  "head_ref": "HEAD",
   "summary": {
     "units_checked": 4,
     "behavior_changes": 2,
@@ -144,14 +159,14 @@ Per action, compare before vs after → `delta`: `identical` / `output-changed` 
     {
       "id": "u01",
       "kind": "function",
-      "ref": "raptor_query.chunk_document",
-      "file": "raptor_query.py",
+      "ref": "search_pipeline.chunk_document",
+      "file": "search_pipeline.py",
       "verdict": "behavior-changed",
-      "impacted_backend": "POST /raptor/query/{id}",
+      "impacted_backend": { "endpoint": "POST /api/chat", "reason": "chunking change alters retrieval output", "severity": "medium" },
       "actions": [
         {
           "seed": 1,
-          "input_summary": "acte.pdf (12 pages)",
+          "input_summary": "sample.pdf (12 pages)",
           "evidence": "reasoned",
           "confidence": "medium",
           "assumptions": ["doc has >1 page", "no custom separators configured"],
@@ -164,21 +179,25 @@ Per action, compare before vs after → `delta`: `identical` / `output-changed` 
       ]
     }
   ],
-  "impacted_backend": ["POST /raptor/query/{id}"],
-  "impacted_ui_routes": [{ "route": "/notaire-chat", "reason": "chunking affects RAG answers" }],
+  "impacted_backend": [
+    { "endpoint": "POST /api/chat", "reason": "chunking change alters retrieval output", "severity": "medium" }
+  ],
+  "impacted_ui_routes": [
+    { "route": "/chat", "reason": "chunking affects RAG answers", "severity": "medium" }
+  ],
   "skipped": [{ "file": "utils.py", "reason": "rename-only" }],
   "uncovered": ["embed_batch.flush() — could not trace the retry path with confidence; not simulated"]
 }
 ```
 
-`evidence`, `skipped`, and `uncovered` are always populated honestly. Reasoning is a prediction; say what you did not (or could not) trace.
+`evidence`, `skipped`, and `uncovered` are always populated per the honesty rule (top of this file).
 
 ---
 
 ## Safety rules
 
-1. **Never fix.** Observe/simulate and report only. Zero source edits.
-2. **Reasoned ≠ measured.** Tag every observation. Never let a prediction read as a measurement.
+1. **Never fix.** Observe/simulate and report only. Zero source edits — see the hard rule at the top of this file.
+2. **Reasoned ≠ measured.** The honesty rule at the top of this file governs every observation.
 3. **`reason` mode touches no infra.** `hybrid`/`execute` run code only against local/throwaway instances with seeded, disposable inputs; read-only/idempotent only if a shared instance is the only option (and say so). Pin baselines (`reset --hard`), always remove worktrees.
 4. **Budget.** Default `--samples=3`; cap tokens; prefer cassettes over live LLM calls when executing.
 5. **No secrets** in captured inputs/outputs or `process-report.md`.
@@ -191,17 +210,18 @@ Per action, compare before vs after → `delta`: `identical` / `output-changed` 
 - **Baseline won't build (execute)** → degrade that unit to `reason`; report "no measured before".
 - **Reasoning low-confidence on a unit** → say so in `confidence`/`uncovered`; suggest `--mode=hybrid` to anchor it if runnable.
 - **Huge diff** → ask to narrow; this lane is per-module, not a repo-wide sweep.
+- **`--from-audit` file missing or `impacted_backend` empty** → warn and degrade to self-resolved diff scope; never fail.
 
 ---
 
 ## Final checklist
 
-- [ ] Diff resolved; `base_ref` / `head_ref` recorded
-- [ ] Changed files mapped to units (skips logged)
+- [ ] Diff resolved (`git diff {base}...HEAD`, committed changes only); `base_ref` / `head_ref` recorded; uncommitted work called out
+- [ ] Changed files mapped to units (skips logged); `impacted_backend` entries are `{endpoint, reason, severity}` objects
 - [ ] Model built; `--samples` seeded inputs chosen from real fixtures where possible
 - [ ] Before/after **simulated by reasoning** (default), with `evidence`/`confidence`/`assumptions`
 - [ ] (hybrid/execute) cheap units **measured**; contradictions flagged `surprise`; worktrees cleaned
 - [ ] Deltas classified; per-unit verdicts (no intent verdict)
-- [ ] `process-results.json` + `process-report.md` written; reasoned vs measured separated; `skipped`/`uncovered` honest
-- [ ] Bridges emitted (`impacted_backend`, `impacted_ui_routes`)
+- [ ] `visual-tests/_results/process-results.json` + `process-report.md` written; reasoned vs measured separated; `skipped`/`uncovered` honest
+- [ ] Bridges emitted (`impacted_backend`, `impacted_ui_routes` — objects with `route`/`endpoint`, `reason`, `severity`)
 - [ ] No secrets in artifacts; summary printed
