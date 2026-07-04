@@ -20,7 +20,7 @@
  *   3  invalid configuration (missing/bad config, unknown profile/check)
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync } from 'fs';
 import { join, dirname, relative, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { spawn, execFileSync } from 'child_process';
@@ -433,8 +433,10 @@ export function matchSnapshotRef(snapshotText, target) {
 }
 
 export function browser(cmdArgs, opts = {}) {
+  // SHIPGUARD_AGENT_BROWSER overrides the binary (alternate install path, tests)
+  const bin = process.env.SHIPGUARD_AGENT_BROWSER || 'agent-browser';
   try {
-    const stdout = execFileSync('agent-browser', cmdArgs, { encoding: 'utf8', timeout: opts.timeout ?? 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout = execFileSync(bin, cmdArgs, { encoding: 'utf8', timeout: opts.timeout ?? 60000, stdio: ['ignore', 'pipe', 'pipe'] });
     return { ok: true, stdout, stderr: '', code: 0 };
   } catch (e) {
     if (e.code === 'ENOENT') return { ok: false, stdout: '', stderr: 'agent-browser not installed', code: -1 };
@@ -578,8 +580,337 @@ async function cmdCrawl(args) {
   for (const b of result.broken) console.log(`  BROKEN [${b.tag}] ${b.url} (HTTP ${b.status}) on ${b.found_on}`);
   return result.broken.length ? EXIT.FINDINGS : EXIT.CLEAN;
 }
-function cmdRun() { console.error('run: not implemented yet'); return EXIT.CONFIG; }
-function cmdReview() { console.error('review: not implemented yet'); return EXIT.CONFIG; }
+// ── Manifest loading + mechanical execution ──────────────────────────────────
+export const MECHANICAL_ACTIONS = ['open', 'click', 'fill', 'press', 'wait', 'assert_url', 'assert_text', 'screenshot', 'select', 'upload'];
+
+export function loadManifests(projectRoot, scope) {
+  const base = join(projectRoot, 'visual-tests');
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('_') || entry.name.startsWith('.')) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.ya?ml$/.test(entry.name)) continue;
+      let manifest;
+      try { manifest = yamlParse(readFileSync(full, 'utf8')); } catch { continue; }
+      if (!manifest || manifest.deprecated === true || !Array.isArray(manifest.steps)) continue;
+      const rel = relative(base, full).split(sep).join('/');
+      const id = rel.replace(/\.ya?ml$/, '');
+      const openStep = manifest.steps.find((s) => s && s.action === 'open');
+      const url = openStep && typeof openStep.url === 'string' ? openStep.url : '';
+      if (scope && scope !== 'all' && !rel.includes(scope) && !url.includes(scope)) continue;
+      out.push({ id, path: full, manifest, url });
+    }
+  };
+  if (existsSync(base)) walk(base);
+  return out;
+}
+
+function interpolate(value, ctx) {
+  return String(value)
+    .replaceAll('{base_url}', ctx.baseUrl)
+    .replace(/\{credentials\.(\w+)\}/g, (_, k) => (ctx.config.credentials && ctx.config.credentials[k]) || '')
+    .replace(/\{data\.(\w+)\}/g, (_, k) => (ctx.data && ctx.data[k] != null ? String(ctx.data[k]) : ''));
+}
+
+async function runStep(step, ctx) {
+  const action = step.action;
+  switch (action) {
+    case 'open': {
+      const r = browser(['open', interpolate(step.url, ctx)]);
+      if (!r.ok) return { ok: false, reason: `open failed: ${r.stderr || r.stdout}`.trim() };
+      return { ok: true };
+    }
+    case 'click':
+    case 'fill':
+    case 'select':
+    case 'upload': {
+      const snap = browser(['snapshot', '-i']);
+      if (!snap.ok) return { ok: false, reason: `snapshot failed: ${snap.stderr}` };
+      const ref = matchSnapshotRef(snap.stdout, interpolate(step.target, ctx));
+      if (!ref) return { ok: false, reason: `target not found in accessibility tree: "${step.target}"` };
+      const extra = action === 'fill' ? [interpolate(step.value ?? step.text ?? '', ctx)]
+        : action === 'select' ? [interpolate(step.option ?? step.value ?? '', ctx)]
+        : action === 'upload' ? [interpolate(step.file ?? '', ctx)]
+        : [];
+      const r = browser([action, ref, ...extra]);
+      return r.ok ? { ok: true } : { ok: false, reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
+    }
+    case 'press': {
+      const r = browser(['press', step.key || interpolate(step.target ?? '', ctx)]);
+      return r.ok ? { ok: true } : { ok: false, reason: `press failed: ${r.stderr}` };
+    }
+    case 'wait': {
+      const ms = /^\d+s$/.test(String(step.duration)) ? parseInt(step.duration) * 1000 : Number(step.duration) || 1000;
+      await new Promise((r) => setTimeout(r, Math.min(ms, 30000)));
+      return { ok: true };
+    }
+    case 'assert_url': {
+      const r = browser(['get', 'url']);
+      const expected = interpolate(step.url ?? step.value ?? '', ctx);
+      return r.ok && r.stdout.trim().includes(expected.replace(/\/$/, ''))
+        ? { ok: true } : { ok: false, reason: `url is "${r.stdout.trim()}", expected to include "${expected}"` };
+    }
+    case 'assert_text': {
+      const snap = browser(['snapshot']);
+      const expected = interpolate(step.text ?? step.value ?? '', ctx);
+      return snap.ok && snap.stdout.toLowerCase().includes(expected.toLowerCase())
+        ? { ok: true } : { ok: false, reason: `text not found on page: "${expected}"` };
+    }
+    case 'screenshot': {
+      const file = join(ctx.screenshotsDir, step.screenshot || step.file || `${ctx.slug}-step.png`);
+      const r = browser(['screenshot', file]);
+      const v = validateScreenshot(file);
+      if (!r.ok || !v.ok) return { ok: false, reason: `screenshot invalid (${v.reason || r.stderr})` };
+      ctx.lastScreenshot = file;
+      return { ok: true };
+    }
+    default:
+      return { ok: true };
+  }
+}
+
+export async function executeManifest(entry, ctx) {
+  const t0 = Date.now();
+  const slug = entry.id.split('/').pop();
+  const local = { ...ctx, slug, data: entry.manifest.data || {}, lastScreenshot: null };
+  const result = {
+    id: entry.id,
+    manifest: `visual-tests/${entry.id}.yaml`,
+    name: entry.manifest.name || entry.id,
+    url: entry.url ? interpolate(entry.url, local).replace(local.baseUrl, '') || '/' : null,
+    status: 'PASS',
+    duration_ms: 0,
+    screenshot: null,
+    failure_reason: null,
+    browser_errors: [],
+    llm_steps_pending: 0,
+  };
+  browser(['console', '--clear']);
+  for (const step of entry.manifest.steps) {
+    if (!step || !step.action) continue;
+    if (step.action === 'llm-check' || step.action === 'llm-wait') { result.llm_steps_pending++; continue; }
+    if (!MECHANICAL_ACTIONS.includes(step.action)) continue;
+    const r = await runStep(step, local);
+    if (!r.ok) {
+      result.status = step.action.startsWith('assert') ? 'FAIL' : 'ERROR';
+      result.failure_reason = `${step.action}: ${r.reason}`;
+      break;
+    }
+  }
+  if (ctx.checks.includes('browser-errors')) {
+    const errs = browser(['errors']);
+    const cons = browser(['console']);
+    result.browser_errors = [
+      ...normalizeConsole(errs.ok ? errs.stdout : ''),
+      ...normalizeConsole(cons.ok ? cons.stdout : ''),
+    ];
+    if (result.status === 'PASS' && result.browser_errors.some((e) => e.level === 'error')) {
+      result.status = 'FAIL';
+      result.failure_reason = `browser errors: ${result.browser_errors.filter((e) => e.level === 'error').length}`;
+    }
+  }
+  if (ctx.checks.includes('screenshots')) {
+    const file = local.lastScreenshot || join(ctx.screenshotsDir, `${slug}.png`);
+    if (!local.lastScreenshot) browser(['screenshot', file, '--full']);
+    const v = validateScreenshot(file);
+    if (v.ok) result.screenshot = `screenshots/${file.split(sep).pop()}`;
+    else if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = `screenshot ${v.reason}`; }
+  }
+  result.duration_ms = Date.now() - t0;
+  return result;
+}
+
+// ── run / review subcommands ─────────────────────────────────────────────────
+function resolveBuildReview(projectRoot) {
+  const project = join(projectRoot, 'visual-tests', 'build-review.mjs');
+  if (existsSync(project)) return project;
+  // build-review.mjs resolves everything relative to its own directory, so it
+  // must live in the project's visual-tests/ — copy it there from the plugin.
+  const sibling = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'sg-visual-review', 'build-review.mjs');
+  if (existsSync(sibling) && existsSync(join(projectRoot, 'visual-tests'))) {
+    copyFileSync(sibling, project);
+    const template = join(dirname(sibling), '_review-template.html');
+    if (existsSync(template)) copyFileSync(template, join(projectRoot, 'visual-tests', '_review-template.html'));
+    console.log('copied build-review.mjs (+ template) from the plugin into visual-tests/');
+    return project;
+  }
+  return null;
+}
+
+async function urlAlive(url) {
+  if (!url) return false;
+  try { const r = await fetch(url, { signal: AbortSignal.timeout(3000) }); return r.status < 500; } catch { return false; }
+}
+
+function writeReportMd(resultsDir, summary, tests, crawlResult) {
+  const lines = [
+    `# Visual Report — ${new Date().toISOString().replace('T', ' ').slice(0, 16)}`,
+    '',
+    `Tests: ${summary.total} run, ${summary.pass} pass, ${summary.fail} fail`,
+    '',
+    '| test | status |',
+    '|---|---|',
+    ...tests.map((t) => `| ${t.id} | ${t.status} |`),
+  ];
+  const pending = tests.filter((t) => t.llm_steps_pending > 0);
+  if (pending.length) {
+    lines.push('', '## Pending LLM checks (mechanical run cannot evaluate these — run /sg-visual-run)');
+    lines.push(...pending.map((t) => `- ${t.id}: ${t.llm_steps_pending} step(s)`));
+  }
+  if (crawlResult && crawlResult.broken && crawlResult.broken.length) {
+    lines.push('', '## Broken local assets (measured)');
+    lines.push(...crawlResult.broken.map((b) => `- [${b.tag}] ${b.url} → HTTP ${b.status} (on ${b.found_on})`));
+  }
+  writeFileSync(join(resultsDir, 'report.md'), lines.join('\n') + '\n');
+}
+
+async function cmdRun(args) {
+  const root = process.cwd();
+  const { config, errors } = loadConfig(root);
+  if (!config || errors.length) { errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
+  const profile = resolveProfile(config, args.flags.profile ?? null);
+  if (profile.errors.length) { profile.errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
+  const scope = String(args.flags.scope || profile.scope || 'all');
+  const checks = profile.checks;
+  const resultsDir = join(root, 'visual-tests', '_results');
+  const screenshotsDir = join(resultsDir, 'screenshots');
+  mkdirSync(screenshotsDir, { recursive: true });
+
+  const lanes = {
+    audit: { status: 'not-applicable', reason: 'CLI recette covers the deterministic lanes only — run /sg-code-audit for the static lane' },
+    process: { status: 'not-applicable', reason: 'CLI recette covers the deterministic lanes only — run /sg-process-check for the behavior lane' },
+    crawl: { status: 'skipped', reason: 'local-assets check not in profile' },
+    visual: { status: 'skipped', reason: 'not started' },
+  };
+  const scopeDesc = { type: args.flags.profile ? 'profile' : 'scope', value: args.flags.profile || scope };
+  const writeRun = (extra = {}) => writeFileSync(join(resultsDir, 'run.json'),
+    JSON.stringify({ ...buildRunJson({ scope: scopeDesc, lanes }), ...extra }, null, 2));
+
+  let startedApp = false;
+  let findings = 0;
+  try {
+    // 0. tool preconditions — a missing tool is infra, diagnosed before any network gate
+    const manifests = loadManifests(root, scope);
+    if (manifests.length > 0) {
+      const probe = browser(['--version']);
+      if (!probe.ok && probe.code === -1) {
+        lanes.visual = { status: 'error', reason: 'agent-browser not installed (npm i -g agent-browser)' };
+        writeRun({ exit_code: EXIT.INFRA });
+        console.error('run: agent-browser not installed');
+        return EXIT.INFRA;
+      }
+    }
+
+    // 1. app lifecycle
+    let baseUrl = resolveBaseUrl(config, root);
+    const needServe = args.flags.serve || (config.app && config.app.start && !(await urlAlive(baseUrl)));
+    if (needServe && config.app && config.app.start) {
+      const r = await startApp(config, root);
+      if (!r.ok) {
+        console.error(`run: ${r.error}`);
+        lanes.visual = { status: 'error', reason: `app server failed to start: ${r.error}` };
+        writeRun({ exit_code: EXIT.INFRA });
+        return EXIT.INFRA;
+      }
+      baseUrl = r.baseUrl;
+      startedApp = !r.reused;
+      console.log(`app server: ${baseUrl}`);
+    }
+    if (!baseUrl || !(await urlAlive(baseUrl))) {
+      lanes.visual = { status: 'error', reason: `base_url unreachable: ${baseUrl} (infrastructure, not a product finding)` };
+      writeRun({ exit_code: EXIT.INFRA });
+      console.error(`run: base_url unreachable: ${baseUrl}`);
+      return EXIT.INFRA;
+    }
+
+    // 2. crawl lane (measured link/asset checks)
+    let crawlResult = null;
+    if (checks.includes('local-assets') && !args.flags['no-crawl']) {
+      crawlResult = await crawl(baseUrl);
+      if (crawlResult.infra_error) { lanes.crawl = { status: 'error', reason: crawlResult.infra_error }; }
+      else {
+        writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify({
+          schema_version: '1.0', timestamp: new Date().toISOString(), base_url: baseUrl,
+          pages: crawlResult.pages, assets_checked: crawlResult.assets_checked, broken: crawlResult.broken,
+        }, null, 2));
+        lanes.crawl = { status: 'ran', results: 'crawl-results.json' };
+        findings += crawlResult.broken.length;
+        console.log(`crawl: ${crawlResult.pages} pages, ${crawlResult.broken.length} broken assets`);
+      }
+    }
+
+    // 3. visual lane (mechanical)
+    if (manifests.length === 0) {
+      lanes.visual = { status: 'skipped', reason: `no manifests match scope "${scope}" — run /sg-visual-discover` };
+    } else {
+      const ctx = { baseUrl, config, checks, screenshotsDir };
+      const tests = [];
+      let llmPending = 0;
+      for (const [i, entry] of manifests.entries()) {
+        const t = await executeManifest(entry, ctx);
+        tests.push(t);
+        llmPending += t.llm_steps_pending;
+        findings += (t.status === 'FAIL' || t.status === 'ERROR') ? 1 : 0;
+        console.log(`[shipguard run] ${i + 1}/${manifests.length} ${t.id} — ${t.status}${t.llm_steps_pending ? ` (${t.llm_steps_pending} llm steps pending)` : ''}`);
+      }
+      const summary = {
+        total: tests.length,
+        pass: tests.filter((t) => t.status === 'PASS').length,
+        fail: tests.filter((t) => t.status === 'FAIL').length,
+        error: tests.filter((t) => t.status === 'ERROR').length,
+        stale: 0,
+        skipped: 0,
+        duration_ms: tests.reduce((s, t) => s + t.duration_ms, 0),
+      };
+      writeFileSync(join(resultsDir, 'visual-results.json'), JSON.stringify({
+        schema_version: '1.0',
+        run_id: `visual-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}`,
+        timestamp: new Date().toISOString(),
+        base_url: baseUrl,
+        scope: { ...scopeDesc, selected_total: tests.length, full_suite_total: loadManifests(root, 'all').length },
+        summary,
+        tests,
+      }, null, 2));
+      lanes.visual = { status: 'ran', results: 'visual-results.json' };
+      if (llmPending > 0) lanes.llm_checks = { status: 'needs-agent', reason: `${llmPending} llm-check/llm-wait steps require an agent lane (/sg-visual-run)`, count: llmPending };
+      writeReportMd(resultsDir, summary, tests, crawlResult);
+    }
+
+    writeRun();
+
+    // 4. dashboard
+    const builder = resolveBuildReview(root);
+    if (builder) {
+      try { execFileSync('node', [builder], { cwd: root, stdio: 'inherit' }); }
+      catch { console.error('run: dashboard build failed (continuing — artifacts are written)'); }
+      if (args.flags.serve) {
+        const child = spawn('node', [builder, '--serve'], { cwd: root, detached: true, stdio: 'ignore' });
+        child.unref();
+        console.log('review server starting on http://127.0.0.1:8888 (stop with: shipguard stop --all)');
+      }
+    } else {
+      console.log('note: build-review.mjs not found — dashboard skipped (copy it from the plugin: cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/)');
+    }
+
+    console.log(`run: ${findings} finding(s). exit ${findings ? EXIT.FINDINGS : EXIT.CLEAN}`);
+    return findings ? EXIT.FINDINGS : EXIT.CLEAN;
+  } finally {
+    browser(['close']);
+    if (startedApp && !args.flags.serve) stopApp(root);
+  }
+}
+
+function cmdReview(args) {
+  const builder = resolveBuildReview(process.cwd());
+  if (!builder) { console.error('review: build-review.mjs not found in visual-tests/ or plugin'); return EXIT.INFRA; }
+  const extra = [];
+  if (args.flags.serve) extra.push('--serve');
+  if (args.flags.port) extra.push(`--port=${args.flags.port}`);
+  try { execFileSync('node', [builder, ...extra], { cwd: process.cwd(), stdio: 'inherit' }); return EXIT.CLEAN; }
+  catch (e) { return e.status ?? EXIT.INFRA; }
+}
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   Promise.resolve(main(process.argv.slice(2))).then((code) => process.exit(code ?? 0));

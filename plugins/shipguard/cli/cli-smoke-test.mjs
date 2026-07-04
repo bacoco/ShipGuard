@@ -3,6 +3,7 @@
 import {
   yamlParse, EXIT, validateConfig, resolveProfile, KNOWN_CHECKS,
   tolerantJson, normalizeConsole, validateScreenshot, matchSnapshotRef, buildRunJson,
+  loadManifests, MECHANICAL_ACTIONS,
 } from './shipguard.mjs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -166,6 +167,38 @@ assert(run.lanes.audit.status === 'not-applicable' && run.lanes.audit.reason, 'r
 let threw = false;
 try { buildRunJson({ scope: {}, lanes: { visual: { status: 'skipped' } } }); } catch { threw = true; }
 assert(threw, 'run.json: non-ran lane without reason throws');
+
+// ── loadManifests: scope filtering ──
+const projR = mkdtempSync(join(tmpdir(), 'sg-run-'));
+mkdirSync(join(projR, 'visual-tests', 'site-accessible'), { recursive: true });
+mkdirSync(join(projR, 'visual-tests', 'site-inaccessible'), { recursive: true });
+mkdirSync(join(projR, 'visual-tests', '_shared'), { recursive: true });
+wf(join(projR, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:1"\n');
+wf(join(projR, 'visual-tests', 'site-accessible', 'index.yaml'),
+  'name: "Acc index"\nsteps:\n  - action: open\n    url: "{base_url}/site-accessible/index.html"\n');
+wf(join(projR, 'visual-tests', 'site-inaccessible', 'index.yaml'),
+  'name: "Inacc index"\nsteps:\n  - action: open\n    url: "{base_url}/site-inaccessible/index.html"\n');
+wf(join(projR, 'visual-tests', 'site-accessible', 'old.yaml'), 'name: "Old"\ndeprecated: true\nsteps:\n  - action: open\n    url: "{base_url}/x.html"\n');
+wf(join(projR, 'visual-tests', '_shared', 'login.yaml'), 'name: "login"\nsteps:\n  - action: open\n    url: "{base_url}/login"\n');
+
+assert(loadManifests(projR, 'all').length === 2, 'manifests: all excludes _shared and deprecated');
+const scoped = loadManifests(projR, 'site-accessible');
+assert(scoped.length === 1 && scoped[0].id === 'site-accessible/index', 'manifests: scope filter');
+assert(MECHANICAL_ACTIONS.includes('open') && !MECHANICAL_ACTIONS.includes('llm-check'), 'mechanical actions list');
+
+// ── run without agent-browser -> exit 2 (infra), run.json declares it ──
+// SHIPGUARD_AGENT_BROWSER points at a nonexistent binary (agent-browser shares
+// nvm's bin dir with node, so PATH restriction cannot hide one without the other).
+let codeR = 0;
+try {
+  execFileSync('node', [CLI, 'run', '--scope=site-accessible', '--no-crawl'],
+    { cwd: projR, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, SHIPGUARD_AGENT_BROWSER: '/nonexistent/agent-browser' } });
+} catch (e) { codeR = e.status; }
+assert(codeR === EXIT.INFRA, 'run: agent-browser missing -> exit 2');
+const runJson = JSON.parse(rf(join(projR, 'visual-tests', '_results', 'run.json'), 'utf8'));
+assert(runJson.lanes.visual.status === 'error' && runJson.lanes.visual.reason.includes('agent-browser'),
+  'run: run.json declares visual lane error with reason');
+assert(runJson.lanes.audit.status === 'not-applicable', 'run: audit lane declared not-applicable by CLI recette');
 
 console.log(fails === 0 ? 'cli-smoke-test: ALL PASS' : `cli-smoke-test: ${fails} FAILURES`);
 process.exit(fails > 0 ? 1 : 0);
