@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // crawl-smoke-test.mjs — extractAssets pure tests + end-to-end crawl on a fixture site
-import { extractAssets, crawl, EXIT } from './shipguard.mjs';
+import { extractAssets, crawl, isFollowablePage, EXIT } from './shipguard.mjs';
 import { spawn } from 'child_process';
 
 // async subprocess runner — execFileSync would block the event loop and
@@ -41,6 +41,17 @@ assert(urls.includes('http://127.0.0.1:9999/site/page2.html'), 'extract: local <
 assert(!urls.some((u) => u.includes('example.com')), 'extract: cross-origin skipped');
 assert(!urls.some((u) => u.startsWith('mailto:')), 'extract: mailto skipped');
 assert(assets.find((a) => a.url.endsWith('clip.mp4')).tag === 'source', 'extract: tag recorded');
+
+// multiple URL attributes on ONE tag must all be captured
+const multi = extractAssets('<video src="clip.mp4" poster="poster.jpg"></video>', 'http://127.0.0.1:9999/');
+assert(multi.some((a) => a.url.endsWith('clip.mp4')) && multi.some((a) => a.url.endsWith('poster.jpg')),
+  'extract: src AND poster on the same tag');
+
+// clean-URL page-follow rules
+assert(isFollowablePage('http://x/page.html') && isFollowablePage('http://x/docs/') && isFollowablePage('http://x/about'),
+  'follow: html, directory, clean URL');
+assert(!isFollowablePage('http://x/logo.png') && !isFollowablePage('http://x/clip.mp4'),
+  'follow: asset extensions excluded');
 
 // ── fixture site: index links page2; page2 has one broken img ──
 const site = mkdtempSync(join(tmpdir(), 'sg-site-'));

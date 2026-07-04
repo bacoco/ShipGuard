@@ -454,6 +454,8 @@ node visual-tests/shipguard.mjs stop --all
 
 LLM assertions (`llm-check`/`llm-wait`) are never faked by the CLI — they are declared as a `needs-agent` lane in `run.json`; run `/sg-visual-run` to complete them.
 
+> **Trust boundary:** `shipguard serve`/`run` execute the config's `app.start` command through a shell with your local privileges — the same trust level as running the project's npm scripts. Only use them on a `_config.yaml` you trust.
+
 ## Configuration
 
 Create `visual-tests/_config.yaml`:

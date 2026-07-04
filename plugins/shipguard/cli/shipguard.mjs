@@ -311,8 +311,9 @@ export function resolveBaseUrl(config, projectRoot) {
 }
 
 // ── Static crawler (measured evidence: real HTTP checks, no LLM) ────────────
-const ASSET_ATTR_RE = /<(img|script|link|video|audio|source|iframe|track|a)\b[^>]*?\s(?:src|href|poster)\s*=\s*["']([^"']+)["']/gi;
-const SRCSET_RE = /<(img|source)\b[^>]*?\ssrcset\s*=\s*["']([^"']+)["']/gi;
+const ASSET_TAG_RE = /<(img|script|link|video|audio|source|iframe|track|a)\b([^>]*)>/gi;
+const ATTR_URL_RE = /\s(?:src|href|poster)\s*=\s*["']([^"']+)["']/gi;
+const ATTR_SRCSET_RE = /\ssrcset\s*=\s*["']([^"']+)["']/gi;
 
 export function extractAssets(html, pageUrl) {
   const page = new URL(pageUrl);
@@ -330,11 +331,29 @@ export function extractAssets(html, pageUrl) {
     seen.add(key);
     out.push({ url: abs.href, tag });
   };
-  for (const m of String(html).matchAll(ASSET_ATTR_RE)) push(m[2], m[1].toLowerCase());
-  for (const m of String(html).matchAll(SRCSET_RE)) {
-    for (const candidate of m[2].split(',')) push(candidate.trim().split(/\s+/)[0] || '', m[1].toLowerCase());
+  // Two-phase scan: one tag can carry several URL attributes
+  // (e.g. <video src="clip.mp4" poster="poster.jpg">) — capture them all.
+  for (const tagMatch of String(html).matchAll(ASSET_TAG_RE)) {
+    const tag = tagMatch[1].toLowerCase();
+    const attrs = tagMatch[2];
+    for (const m of attrs.matchAll(ATTR_URL_RE)) push(m[1], tag);
+    for (const m of attrs.matchAll(ATTR_SRCSET_RE)) {
+      for (const candidate of m[1].split(',')) push(candidate.trim().split(/\s+/)[0] || '', tag);
+    }
   }
   return out;
+}
+
+// A local <a>/<iframe> URL worth following in the BFS: explicit .html/.htm,
+// a directory URL, or a clean URL (no extension in the last path segment).
+// Non-HTML responses are filtered by content-type after fetch anyway.
+export function isFollowablePage(url) {
+  let path;
+  try { path = new URL(url).pathname; } catch { return false; }
+  if (/\.html?$/i.test(path)) return true;
+  if (path.endsWith('/')) return true;
+  const last = path.split('/').pop();
+  return last !== '' && !last.includes('.');
 }
 
 async function checkUrl(url) {
@@ -367,8 +386,8 @@ export async function crawl(baseUrl, opts = {}) {
     if (!type.includes('html')) continue;
     const html = await res.text();
     for (const { url, tag } of extractAssets(html, pageUrl)) {
-      const isPageLink = tag === 'a' || (tag === 'iframe' && url.endsWith('.html'));
-      if (isPageLink && /\.html?($|\?)/.test(url) && !visitedPages.has(url)) queue.push(url);
+      const isPageLink = tag === 'a' || tag === 'iframe';
+      if (isPageLink && isFollowablePage(url) && !visitedPages.has(url)) queue.push(url);
       if (!checkedAssets.has(url)) {
         const status = await checkUrl(url);
         checkedAssets.set(url, status);
@@ -827,6 +846,9 @@ async function cmdRun(args) {
 
     // 2. crawl lane (measured link/asset checks)
     let crawlResult = null;
+    if (checks.includes('local-assets') && args.flags['no-crawl']) {
+      lanes.crawl = { status: 'skipped', reason: 'local-assets check disabled by --no-crawl' };
+    }
     if (checks.includes('local-assets') && !args.flags['no-crawl']) {
       crawlResult = await crawl(baseUrl);
       if (crawlResult.infra_error) { lanes.crawl = { status: 'error', reason: crawlResult.infra_error }; }
@@ -887,18 +909,35 @@ async function cmdRun(args) {
       catch { console.error('run: dashboard build failed (continuing — artifacts are written)'); }
       if (args.flags.serve) {
         // A fixed port collides silently on busy hosts (spawn is detached) —
-        // allocate a free one and print the real URL.
+        // allocate a free one, then confirm the server actually came up
+        // (the free port could be stolen between allocation and listen).
         const reviewPort = await findFreePort();
         const child = spawn('node', [builder, '--serve', `--port=${reviewPort}`], { cwd: root, detached: true, stdio: 'ignore' });
         child.unref();
-        console.log(`review server starting on http://127.0.0.1:${reviewPort}/review.html (stop with: shipguard stop --all)`);
+        const reviewUrl = `http://127.0.0.1:${reviewPort}/review.html`;
+        if (await (async () => {
+          const deadline = Date.now() + 4000;
+          while (Date.now() < deadline) {
+            if (await urlAlive(reviewUrl)) return true;
+            await new Promise((r) => setTimeout(r, 250));
+          }
+          return false;
+        })()) {
+          console.log(`review server: ${reviewUrl} (stop with: shipguard stop --all)`);
+        } else {
+          console.error('review server did not come up — run "shipguard review --serve" manually');
+        }
       }
     } else {
       console.log('note: build-review.mjs not found — dashboard skipped (copy it from the plugin: cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/)');
     }
 
-    console.log(`run: ${findings} finding(s). exit ${findings ? EXIT.FINDINGS : EXIT.CLEAN}`);
-    return findings ? EXIT.FINDINGS : EXIT.CLEAN;
+    // An errored lane means the recette is incomplete — that is an infra
+    // outcome (2), never "clean". Findings and lane details stay in run.json.
+    const laneError = Object.values(lanes).some((l) => l && l.status === 'error');
+    const exitCode = laneError ? EXIT.INFRA : (findings ? EXIT.FINDINGS : EXIT.CLEAN);
+    console.log(`run: ${findings} finding(s)${laneError ? ', 1+ lane errored (infra)' : ''}. exit ${exitCode}`);
+    return exitCode;
   } finally {
     browser(['close']);
     if (startedApp && !args.flags.serve) stopApp(root);
@@ -912,7 +951,11 @@ function cmdReview(args) {
   if (args.flags.serve) extra.push('--serve');
   if (args.flags.port) extra.push(`--port=${args.flags.port}`);
   try { execFileSync('node', [builder, ...extra], { cwd: process.cwd(), stdio: 'inherit' }); return EXIT.CLEAN; }
-  catch (e) { return e.status ?? EXIT.INFRA; }
+  catch {
+    // build-review.mjs exits 1 for its own config/PID/port errors — that is a
+    // tooling failure, never "findings present". Map to infra, not 1.
+    return EXIT.INFRA;
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

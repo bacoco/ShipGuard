@@ -36,6 +36,7 @@ Sandbox note: browser sockets, local network, and cache writes may require expli
 4. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error.
    - **If unreachable and `_config.yaml` has an `app.start` block:** start the app via the ShipGuard CLI instead of aborting — `node visual-tests/shipguard.mjs serve` (copy it first if missing: `cp "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" visual-tests/`). Use the `base_url` it prints for the rest of the run. Remember that the CLI started it: run `node visual-tests/shipguard.mjs stop` in the final cleanup — only when the CLI started the app, never kill a server the user started themselves.
    - Exit-code semantics: `serve` exiting `2` is an **infrastructure error** (report it as such, distinct from any product finding); `3` is a config error.
+   - Trust boundary: `serve` executes `app.start` through a shell with your local privileges — same trust level as running the project's npm scripts. Only run it on a `_config.yaml` you trust.
    - If unreachable and there is no `app.start`, run `agent-browser close` before aborting (see cleanup invariant below).
 5. Create `{screenshots_dir}` and `visual-tests/_results/` if missing (`mkdir -p`)
 6. Read `visual-tests/_regressions.yaml` (create empty if missing)
