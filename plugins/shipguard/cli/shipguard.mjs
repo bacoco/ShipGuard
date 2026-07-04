@@ -886,9 +886,12 @@ async function cmdRun(args) {
       try { execFileSync('node', [builder], { cwd: root, stdio: 'inherit' }); }
       catch { console.error('run: dashboard build failed (continuing — artifacts are written)'); }
       if (args.flags.serve) {
-        const child = spawn('node', [builder, '--serve'], { cwd: root, detached: true, stdio: 'ignore' });
+        // A fixed port collides silently on busy hosts (spawn is detached) —
+        // allocate a free one and print the real URL.
+        const reviewPort = await findFreePort();
+        const child = spawn('node', [builder, '--serve', `--port=${reviewPort}`], { cwd: root, detached: true, stdio: 'ignore' });
         child.unref();
-        console.log('review server starting on http://127.0.0.1:8888 (stop with: shipguard stop --all)');
+        console.log(`review server starting on http://127.0.0.1:${reviewPort}/review.html (stop with: shipguard stop --all)`);
       }
     } else {
       console.log('note: build-review.mjs not found — dashboard skipped (copy it from the plugin: cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/)');
