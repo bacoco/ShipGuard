@@ -33,7 +33,10 @@ Sandbox note: browser sockets, local network, and cache writes may require expli
 1. Verify `agent-browser --version` is available
 2. Load the CLI's own reference (`agent-browser skills get core --full`) as ground truth for command syntax when unsure.
 3. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/sg-visual-discover`)
-4. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error. On failure, run `agent-browser close` before aborting (see cleanup invariant below).
+4. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error.
+   - **If unreachable and `_config.yaml` has an `app.start` block:** start the app via the ShipGuard CLI instead of aborting — `node visual-tests/shipguard.mjs serve` (copy it first if missing: `cp "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" visual-tests/`). Use the `base_url` it prints for the rest of the run. Remember that the CLI started it: run `node visual-tests/shipguard.mjs stop` in the final cleanup — only when the CLI started the app, never kill a server the user started themselves.
+   - Exit-code semantics: `serve` exiting `2` is an **infrastructure error** (report it as such, distinct from any product finding); `3` is a config error.
+   - If unreachable and there is no `app.start`, run `agent-browser close` before aborting (see cleanup invariant below).
 5. Create `{screenshots_dir}` and `visual-tests/_results/` if missing (`mkdir -p`)
 6. Read `visual-tests/_regressions.yaml` (create empty if missing)
 
@@ -102,9 +105,23 @@ For each step in the manifest's `steps:` array, run the corresponding action. **
 
 **Screenshot validation is MANDATORY — never skip.** Every screenshot must be read via the Read tool and visually inspected for errors before proceeding. A screenshot showing an error = test FAIL, regardless of other assertions. See action-reference.md for the full rule.
 
+**Byte check before visual check:** immediately after every screenshot capture, verify the file is non-empty (`[ -s {file} ]`). A missing or 0-byte screenshot = test `ERROR` with reason "screenshot missing/empty" — do not Read or visually judge an empty file.
+
 ### Step 3: Record result
 
 `PASS` / `FAIL` / `STALE` / `ERROR` / `SKIPPED` — mapping in action-reference.md.
+
+### Step 4: Capture browser errors (per test)
+
+After the test's steps, capture and normalize console state:
+
+```
+agent-browser errors            # uncaught exceptions, unhandled rejections
+agent-browser console           # console entries; keep error/warn lines only
+agent-browser console --clear   # reset for the next test
+```
+
+Record them on the test as `browser_errors: [{"level": "error"|"warn", "text": "..."}]` in `visual-results.json` (additive field). Any `error`-level entry on a test that otherwise passed → status `FAIL` with `failure_reason: "browser errors: N"`. These entries are **measured** evidence and feed the unified `findings.json` built by `/sg-visual-review`.
 
 ## Browser crash recovery
 
