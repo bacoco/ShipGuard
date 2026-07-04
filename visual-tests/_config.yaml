@@ -5,3 +5,6 @@ credentials:
 screenshots_dir: "visual-tests/_results/screenshots"
 report_path: "visual-tests/_results/report.md"
 build_command: null
+
+# Config v2 (2.5.0+): optional app: lifecycle block and profiles: recette
+# profiles — see examples/_config.yaml for the annotated version.

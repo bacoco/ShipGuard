@@ -13,3 +13,23 @@ build_command: null
 # Examples:
 # build_command: "docker compose up -d --build frontend"
 # build_command: "npm run build && npm start"
+
+# ── Config v2 (ShipGuard 2.5.0+) ──────────────────────────────────────────────
+# version: 2
+
+# App-under-test lifecycle (used by: shipguard serve / run --serve).
+# {port} is replaced by a free port; base_url is then derived automatically.
+# An unreachable app becomes an infrastructure error (exit 2), never a finding.
+# app:
+#   type: static-site
+#   root: docs
+#   start: "python3 -m http.server {port} --bind 127.0.0.1"
+#   healthcheck: "/index.html"
+#   startup_timeout_ms: 30000
+
+# Named recette profiles (used by: shipguard run --profile=NAME).
+# scope matches manifest paths and step URLs; checks pick the deterministic lanes.
+# profiles:
+#   site-accessible:
+#     scope: "site-accessible"
+#     checks: [page-load, local-assets, browser-errors, screenshots]

@@ -93,6 +93,14 @@ The Code Audit tab, the live audit monitor, and the "Validate & Generate Report"
 
 The review page provides:
 
+**Findings tab (unified, evidence-first — default when findings exist)**
+- Renders `visual-tests/_results/findings.json`, a derived list the builder generates on every build: audit bugs, process deltas, visual failures + `browser_errors`, crawler breakage (`crawl-results.json` from `shipguard crawl`/`run`), and human annotations (`fix-manifest.json`)
+- Each finding: `SG-###` id, severity (sorted first), an **evidence badge** — `measured` (a real observation), `reasoned` (a static/simulated prediction), `manual` (a human annotation) — source lane, and route/file location
+- The canonical per-lane schemas are untouched; findings.json is an additive projection
+- **Dynamic default tab:** the dashboard opens on the first tab with data (findings → audit → visual → process → recorded)
+- **Lane chips:** `run.json` (written by `sg-ship` / `shipguard run`) renders per-lane status chips (`ran` / `skipped` / `not-applicable` / `error` / `needs-agent`); a declared skipped lane shows its reason in place of a generic empty state
+- CLI equivalent: `node visual-tests/shipguard.mjs review [--serve]`
+
 **Visual Tests tab**
 - All tests displayed as cards with screenshot thumbnails
 - Color-coded badges: PASS (green), FAIL/ERROR (red), STALE (yellow), SKIPPED (muted)
