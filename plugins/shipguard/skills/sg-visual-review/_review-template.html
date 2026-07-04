@@ -54,6 +54,17 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 /* ── Code Audit container ── */
 #audit-view{display:none}
 #audit-view.visible{display:block}
+.lane-chips{display:flex;gap:8px;flex-wrap:wrap;padding:8px 24px 0}
+.lane-chips:empty{display:none}
+.lane-chip{font-size:12px;border-radius:999px;padding:3px 10px;border:1px solid var(--border,#2b374c);color:var(--muted,#a6b2c2)}
+.lane-chip.ran{border-color:#2ea043;color:#2ea043}
+.lane-chip.error{border-color:#da3633;color:#da3633}
+.lane-chip.needs-agent{border-color:#d29a22;color:#d29a22}
+#findings-view{padding:16px 24px}
+.evidence-badge{font-size:11px;font-weight:700;border-radius:4px;padding:2px 6px;text-transform:uppercase}
+.evidence-measured{background:rgba(46,160,67,.15);color:#2ea043}
+.evidence-reasoned{background:rgba(210,154,34,.15);color:#d29a22}
+.evidence-manual{background:rgba(88,166,255,.15);color:#58a6ff}
 .sub-tab-panel{display:none;padding:24px 28px}
 .sub-tab-panel.visible{display:block}
 
@@ -383,14 +394,29 @@ body.light #bug-search{background:var(--surface)}
 
 <!-- ════ MAIN TABS ════ -->
 <div class="main-tab-bar">
-  <button class="main-tab-btn active" id="main-tab-audit" onclick="switchMainTab('audit')">Code Audit <span class="main-tab-badge" id="audit-tab-badge"></span></button>
+  <button class="main-tab-btn" id="main-tab-findings" onclick="switchMainTab('findings')">Findings <span class="main-tab-badge" id="findings-tab-badge"></span></button>
+  <button class="main-tab-btn" id="main-tab-audit" onclick="switchMainTab('audit')">Code Audit <span class="main-tab-badge" id="audit-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-visual" onclick="switchMainTab('visual')">Visual Tests</button>
   <button class="main-tab-btn" id="main-tab-process" onclick="switchMainTab('process')">Process <span class="main-tab-badge" id="process-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-recorded" onclick="switchMainTab('recorded')">Recorded Tests <span class="main-tab-badge" id="recorded-tab-badge"></span></button>
 </div>
+<div id="lane-chips" class="lane-chips"></div>
+
+<!-- ════════════════ FINDINGS TAB (unified, evidence-first) ════════════════ -->
+<div id="findings-view" style="display:none">
+  <table class="mc-table" id="findings-table" style="display:none">
+    <thead><tr><th>ID</th><th>Severity</th><th>Evidence</th><th>Source</th><th>Title</th><th>Where</th></tr></thead>
+    <tbody id="findings-tbody"></tbody>
+  </table>
+  <div id="findings-empty" class="mc-empty" style="display:none">
+    <div class="mc-empty-icon">&#9989;</div>
+    <p id="findings-empty-title">No findings.</p>
+    <p id="findings-empty-detail" style="margin-top:8px"></p>
+  </div>
+</div>
 
 <!-- ════════════════ CODE AUDIT TAB ════════════════ -->
-<div id="audit-view" class="visible">
+<div id="audit-view">
 
   <!-- Sub-tab bar -->
   <div class="sub-tab-bar">
@@ -676,6 +702,8 @@ body.light #bug-search{background:var(--surface)}
 var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 var __RECORDED_DATA__ = "__PLACEHOLDER_RECORDED_DATA__";
 var __PROCESS_DATA__ = "__PLACEHOLDER_PROCESS_DATA__";
+var __FINDINGS_DATA__ = "__PLACEHOLDER_FINDINGS_DATA__";
+var __RUN_DATA__ = "__PLACEHOLDER_RUN_DATA__";
 
 // ════════════════ THEME ════════════════
 (function() {
@@ -1697,7 +1725,7 @@ function setTheme(t) {
 
 // ════════════════ MAIN TAB SWITCH ════════════════
 function switchMainTab(tab) {
-  ['audit', 'visual', 'process', 'recorded'].forEach(function(t) {
+  ['findings', 'audit', 'visual', 'process', 'recorded'].forEach(function(t) {
     var btn = document.getElementById('main-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
     var view = document.getElementById(t + '-view');
@@ -1707,6 +1735,79 @@ function switchMainTab(tab) {
   else stopAuditPoll(); // stop polling when switching away from audit tab
   if (tab === 'process') renderProcessTab();
   if (tab === 'recorded') renderRecordedGrid();
+  if (tab === 'findings') renderFindingsTab();
+}
+
+// ════════════════ FINDINGS TAB + LANE CHIPS (run.json / findings.json) ═══════
+// All dynamic strings set via textContent — never innerHTML.
+var DEFAULT_TAB_ORDER = ['findings', 'audit', 'visual', 'process', 'recorded'];
+
+function tabHasData(tab) {
+  var la = (__VISUAL_DATA__ && __VISUAL_DATA__.laneAvailability) || {};
+  if (tab === 'findings') return !!(__FINDINGS_DATA__ && __FINDINGS_DATA__.findings && __FINDINGS_DATA__.findings.length > 0);
+  if (tab === 'audit') return !!la.audit;
+  if (tab === 'visual') return !!la.visual;
+  if (tab === 'process') return !!la.process;
+  if (tab === 'recorded') return (la.recorded || 0) > 0;
+  return false;
+}
+
+function laneReason(lane) {
+  if (!__RUN_DATA__ || !__RUN_DATA__.lanes || !__RUN_DATA__.lanes[lane]) return null;
+  var l = __RUN_DATA__.lanes[lane];
+  return l.status === 'ran' ? null : (l.status + (l.reason ? ' — ' + l.reason : ''));
+}
+
+function renderLaneChips() {
+  var box = document.getElementById('lane-chips');
+  if (!box || !__RUN_DATA__ || !__RUN_DATA__.lanes) return;
+  Object.keys(__RUN_DATA__.lanes).forEach(function (name) {
+    var l = __RUN_DATA__.lanes[name];
+    if (!l || !l.status) return;
+    var chip = document.createElement('span');
+    chip.className = 'lane-chip ' + (l.status === 'ran' ? 'ran' : l.status === 'error' ? 'error' : l.status === 'needs-agent' ? 'needs-agent' : '');
+    chip.textContent = name + ': ' + l.status + (l.status !== 'ran' && l.reason ? ' (' + l.reason + ')' : '');
+    box.appendChild(chip);
+  });
+}
+
+function renderFindingsTab() {
+  var badge = document.getElementById('findings-tab-badge');
+  var table = document.getElementById('findings-table');
+  var tbody = document.getElementById('findings-tbody');
+  var empty = document.getElementById('findings-empty');
+  var f = (__FINDINGS_DATA__ && Array.isArray(__FINDINGS_DATA__.findings)) ? __FINDINGS_DATA__.findings : [];
+  if (badge) badge.textContent = f.length ? String(f.length) : '';
+  if (!f.length) {
+    if (table) table.style.display = 'none';
+    if (empty) {
+      empty.style.display = 'block';
+      var anyRan = !!(__RUN_DATA__ && __RUN_DATA__.lanes && Object.keys(__RUN_DATA__.lanes).some(function (k) { return __RUN_DATA__.lanes[k].status === 'ran'; }));
+      document.getElementById('findings-empty-title').textContent = anyRan ? 'No findings — all executed lanes are clean.' : 'No findings data.';
+      document.getElementById('findings-empty-detail').textContent = anyRan ? '' : 'Run "shipguard run" or /sg-ship to populate this view.';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (table) table.style.display = '';
+  if (!tbody) return;
+  tbody.textContent = '';
+  f.forEach(function (fd) {
+    var tr = document.createElement('tr');
+    [fd.id, fd.severity, null, fd.source, fd.title, fd.route || (fd.file ? fd.file + (fd.line ? ':' + fd.line : '') : '—')]
+      .forEach(function (cell, i) {
+        var td = document.createElement('td');
+        if (i === 2) {
+          var b = document.createElement('span');
+          b.className = 'evidence-badge evidence-' + fd.evidence;
+          b.textContent = fd.evidence;
+          td.appendChild(b);
+        } else td.textContent = cell == null ? '' : String(cell);
+        tr.appendChild(td);
+      });
+    if (fd.detail) tr.title = fd.detail;
+    tbody.appendChild(tr);
+  });
 }
 
 // backward-compat alias used by old code
@@ -1817,6 +1918,13 @@ function showAuditEmpty(title, detail) {
   document.getElementById('mc-summary-line').style.display = 'none';
   document.getElementById('mc-dist-section').style.display = 'none';
   document.getElementById('mc-empty').style.display = 'block';
+  // A lane declared skipped/not-applicable in run.json is not missing data —
+  // show the declared reason instead of the generic hint.
+  var declaredAudit = laneReason('audit');
+  if (declaredAudit && !title) {
+    title = 'Audit lane: ' + declaredAudit;
+    detail = 'Declared by the last run (run.json) — not missing data.';
+  }
   document.getElementById('mc-empty-title').textContent = title || 'No audit data found.';
   document.getElementById('mc-empty-detail').textContent = detail || 'Run /sg-code-audit to start a new audit.';
   document.getElementById('audit-status-badge').style.display = 'none';
@@ -2498,12 +2606,20 @@ function makeBugRow(bug) {
   return tr;
 }
 
-// ── Auto-load on page open (audit tab is default) ──
-// Single call — loadAuditData handles badge updates internally
+// ── Auto-load on page open: first tab that actually has data ──
 (function() {
-  loadAuditData();
+  renderLaneChips();
+  renderFindingsTab(); // badge always reflects the count, whichever tab opens
   // Render the Process tab once at load so its badge reflects embedded data
   if (typeof renderProcessTab === 'function') renderProcessTab();
+  var initial = null;
+  for (var i = 0; i < DEFAULT_TAB_ORDER.length; i++) {
+    if (tabHasData(DEFAULT_TAB_ORDER[i])) { initial = DEFAULT_TAB_ORDER[i]; break; }
+  }
+  // switchMainTab drives visibility and (for audit) starts data loading/polling
+  switchMainTab(initial || 'visual');
+  // Keep the audit badge/monitor behavior of the old default: always load once
+  if (initial !== 'audit') loadAuditData();
 })();
 
 // ════════════════ PROCESS TAB (sg-process-check) ════════════════
@@ -2642,6 +2758,10 @@ function renderProcessTab() {
 
   if (!data || typeof data !== 'object') {
     empty.style.display = 'block';
+    var declaredProc = laneReason('process');
+    if (declaredProc) {
+      document.getElementById('proc-empty-title').textContent = 'Process lane: ' + declaredProc;
+    }
     summaryLine.style.display = 'none';
     statRow.style.display = 'none';
     checksSection.style.display = 'none';

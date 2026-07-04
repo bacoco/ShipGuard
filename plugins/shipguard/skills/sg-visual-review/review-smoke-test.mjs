@@ -266,6 +266,10 @@ async function main() {
     assert(!builtHtml.includes('__PLACEHOLDER_FINDINGS_DATA__'), 'template: findings placeholder not replaced');
     assert(!builtHtml.includes('__PLACEHOLDER_RUN_DATA__'), 'template: run placeholder not replaced');
     assert(builtHtml.includes('"laneAvailability"'), 'data: laneAvailability not injected');
+    assert(builtHtml.includes('id="main-tab-findings"'), 'template: Findings tab button missing');
+    assert(builtHtml.includes('renderFindingsTab'), 'template: findings renderer missing');
+    assert(builtHtml.includes('DEFAULT_TAB_ORDER'), 'template: dynamic default tab logic missing');
+    assert(builtHtml.includes('id="lane-chips"'), 'template: lane chips container missing');
 
     // ── Config v2 parse safety: app+profiles blocks must not break the builder ──
     writeFileSync(join(root, '_config.yaml'), [

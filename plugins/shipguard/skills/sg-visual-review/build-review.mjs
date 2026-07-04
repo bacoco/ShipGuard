@@ -439,7 +439,7 @@ function mergeStatus(tests, report, regressions) {
   }
 }
 
-function buildVisualResultsContract(data, statusSource) {
+function buildVisualResultsContract(data, statusSource, rawTestsById = {}) {
   const scope = statusSource.scope && typeof statusSource.scope === 'object' ? { ...statusSource.scope } : null;
   const selectedIds = new Set(
     (scope?.selected_manifests || [])
@@ -487,17 +487,24 @@ function buildVisualResultsContract(data, statusSource) {
       skipped: summary.skipped,
       duration_ms: statusSource.durationMs ?? null,
     },
-    tests: contractTests.map(test => ({
-      id: test.id,
-      manifest: `${test.id}.yaml`,
-      name: test.name,
-      url: test.url || '',
-      status: test.status,
-      // Preserve the producer's per-test duration when available (B11)
-      duration_ms: Number.isFinite(test.durationMs) ? test.durationMs : null,
-      screenshot: test.screenshot,
-      failure_reason: test.failureReason || null,
-    })),
+    tests: contractTests.map(test => {
+      // Carry producer-only additive fields through the rewrite (they cannot
+      // be reconstructed from manifests): browser_errors, llm_steps_pending.
+      const raw = rawTestsById[normalizeTestId(test.id)] || {};
+      return {
+        id: test.id,
+        manifest: `${test.id}.yaml`,
+        name: test.name,
+        url: test.url || '',
+        status: test.status,
+        // Preserve the producer's per-test duration when available (B11)
+        duration_ms: Number.isFinite(test.durationMs) ? test.durationMs : null,
+        screenshot: test.screenshot,
+        failure_reason: test.failureReason || null,
+        ...(Array.isArray(raw.browser_errors) && raw.browser_errors.length ? { browser_errors: raw.browser_errors } : {}),
+        ...(Number.isFinite(raw.llm_steps_pending) && raw.llm_steps_pending > 0 ? { llm_steps_pending: raw.llm_steps_pending } : {}),
+      };
+    }),
   };
 }
 
@@ -1193,7 +1200,11 @@ const data = {
     ? statSync(join(RESULTS_DIR, 'fix-manifest.json')).mtimeMs : 0,
 };
 
-writeFileSync(VISUAL_RESULTS_PATH, JSON.stringify(buildVisualResultsContract(data, report), null, 2), 'utf8');
+const rawTestsById = {};
+for (const t of (visualRawForFindings && Array.isArray(visualRawForFindings.tests) ? visualRawForFindings.tests : [])) {
+  if (t && t.id) rawTestsById[normalizeTestId(t.id)] = t;
+}
+writeFileSync(VISUAL_RESULTS_PATH, JSON.stringify(buildVisualResultsContract(data, report, rawTestsById), null, 2), 'utf8');
 
 console.log(`  Status: ${passCount} pass, ${failCount} fail, ${errorCount} error, ${staleCount} stale, ${skippedCount} skipped`);
 console.log(`  Screenshots matched: ${tests.filter(t => t.screenshot).length}/${tests.length}`);
