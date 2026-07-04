@@ -384,6 +384,82 @@ export async function crawl(baseUrl, opts = {}) {
   return { pages: visitedPages.size, assets_checked: checkedAssets.size, broken };
 }
 
+// ── Browser output robustness layer ──────────────────────────────────────────
+export function tolerantJson(text) {
+  const tryParse = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
+  let v = tryParse(String(text).trim());
+  if (typeof v === 'string' && /^[[{]/.test(v.trim())) {
+    const inner = tryParse(v);
+    if (inner !== undefined) return inner;
+  }
+  if (v !== undefined) return v;
+  const unescaped = String(text).trim().replace(/^["']|["']$/g, '').replace(/\\"/g, '"');
+  v = tryParse(unescaped);
+  return v === undefined ? null : v;
+}
+
+export function normalizeConsole(text) {
+  const out = [];
+  for (const raw of String(text).split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^\[?(error|warning|warn|pageerror|unhandledrejection)\]?\s*:?\s*(.*)$/i);
+    if (!m) continue;
+    const kind = m[1].toLowerCase();
+    const level = kind === 'warn' || kind === 'warning' ? 'warn' : 'error';
+    if (m[2]) out.push({ level, text: m[2] });
+  }
+  return out;
+}
+
+export function validateScreenshot(path) {
+  if (!existsSync(path)) return { ok: false, size: 0, reason: 'missing' };
+  const size = statSync(path).size;
+  if (size === 0) return { ok: false, size, reason: 'empty file' };
+  return { ok: true, size };
+}
+
+export function matchSnapshotRef(snapshotText, target) {
+  const needle = String(target).toLowerCase();
+  let substringHit = null;
+  for (const line of String(snapshotText).split('\n')) {
+    const ref = line.match(/@e\d+/);
+    if (!ref) continue;
+    const quoted = line.match(/"([^"]+)"/);
+    if (quoted && quoted[1].toLowerCase() === needle) return ref[0];
+    if (!substringHit && line.toLowerCase().includes(needle)) substringHit = ref[0];
+  }
+  return substringHit;
+}
+
+export function browser(cmdArgs, opts = {}) {
+  try {
+    const stdout = execFileSync('agent-browser', cmdArgs, { encoding: 'utf8', timeout: opts.timeout ?? 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true, stdout, stderr: '', code: 0 };
+  } catch (e) {
+    if (e.code === 'ENOENT') return { ok: false, stdout: '', stderr: 'agent-browser not installed', code: -1 };
+    return { ok: false, stdout: e.stdout ? String(e.stdout) : '', stderr: e.stderr ? String(e.stderr) : String(e.message), code: e.status ?? 1 };
+  }
+}
+
+// ── run.json (lane manifest — declared work, never silent skips) ─────────────
+const LANE_STATUSES = ['ran', 'skipped', 'not-applicable', 'error', 'needs-agent'];
+
+export function buildRunJson({ scope, lanes }) {
+  const ts = new Date();
+  for (const [name, lane] of Object.entries(lanes || {})) {
+    if (!lane || !LANE_STATUSES.includes(lane.status)) throw new Error(`lane "${name}": status must be one of ${LANE_STATUSES.join('|')}`);
+    if (lane.status !== 'ran' && !lane.reason) throw new Error(`lane "${name}": status "${lane.status}" requires a reason`);
+  }
+  return {
+    schema_version: '1.0',
+    run_id: `run-${ts.toISOString().replace(/[-:T]/g, '').slice(0, 14)}`,
+    timestamp: ts.toISOString(),
+    scope: scope || { type: 'all', value: null },
+    lanes: lanes || {},
+  };
+}
+
 // ── CLI plumbing ─────────────────────────────────────────────────────────────
 export function parseArgs(argv) {
   const args = { _: [], flags: {} };

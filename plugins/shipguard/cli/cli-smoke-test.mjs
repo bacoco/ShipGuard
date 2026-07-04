@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // cli-smoke-test.mjs — pure-function + subprocess tests for shipguard.mjs
-import { yamlParse, EXIT, validateConfig, resolveProfile, KNOWN_CHECKS } from './shipguard.mjs';
+import {
+  yamlParse, EXIT, validateConfig, resolveProfile, KNOWN_CHECKS,
+  tolerantJson, normalizeConsole, validateScreenshot, matchSnapshotRef, buildRunJson,
+} from './shipguard.mjs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -117,6 +120,52 @@ let code3 = 0;
 try { execFileSync('node', [CLI, 'crawl'], { cwd: mkdtempSync(join(tmpdir(), 'sg-noconf-')), encoding: 'utf8', stdio: 'pipe' }); }
 catch (e) { code3 = e.status; }
 assert(code3 === EXIT.CONFIG, 'crawl without config -> exit 3');
+
+// ── tolerantJson ──
+assert(deepEq(tolerantJson('{"a":1}'), { a: 1 }), 'tolerantJson: plain object');
+assert(deepEq(tolerantJson('"{\\"a\\":1}"'), { a: 1 }), 'tolerantJson: escaped JSON string unwrapped');
+assert(tolerantJson('not json at all') === null, 'tolerantJson: garbage -> null');
+assert(deepEq(tolerantJson('  [1,2] '), [1, 2]), 'tolerantJson: array with whitespace');
+
+// ── normalizeConsole ──
+const cons = normalizeConsole(`[error] Failed to load resource: 404 (Not Found)
+[warning] Deprecated API
+info: fine
+pageerror: Uncaught TypeError: x is not a function`);
+assert(cons.length === 3, 'console: 3 entries (info dropped)');
+assert(cons[0].level === 'error' && cons[0].text.includes('404'), 'console: error entry');
+assert(cons[1].level === 'warn', 'console: warning normalized to warn');
+assert(cons[2].level === 'error' && cons[2].text.includes('TypeError'), 'console: pageerror -> error');
+
+// ── validateScreenshot ──
+const shotDir = mkdtempSync(join(tmpdir(), 'sg-shot-'));
+wf(join(shotDir, 'good.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+wf(join(shotDir, 'empty.png'), '');
+assert(validateScreenshot(join(shotDir, 'good.png')).ok, 'screenshot: non-empty ok');
+assert(validateScreenshot(join(shotDir, 'empty.png')).ok === false, 'screenshot: empty rejected');
+assert(validateScreenshot(join(shotDir, 'ghost.png')).reason === 'missing', 'screenshot: missing rejected');
+
+// ── matchSnapshotRef ──
+const snap = `- button "Nouvelle conversation" @e3
+- link "Accueil" @e7
+- textbox "Nom d'utilisateur" @e9`;
+assert(matchSnapshotRef(snap, 'Nouvelle conversation') === '@e3', 'snapshot: match by text');
+assert(matchSnapshotRef(snap, 'accueil') === '@e7', 'snapshot: case-insensitive');
+assert(matchSnapshotRef(snap, 'Inexistant') === null, 'snapshot: no match -> null');
+
+// ── buildRunJson ──
+const run = buildRunJson({
+  scope: { type: 'profile', value: 'site-accessible' },
+  lanes: {
+    audit: { status: 'not-applicable', reason: 'static recette profile' },
+    visual: { status: 'ran', results: 'visual-results.json' },
+  },
+});
+assert(run.schema_version === '1.0' && run.scope.value === 'site-accessible', 'run.json: shape');
+assert(run.lanes.audit.status === 'not-applicable' && run.lanes.audit.reason, 'run.json: declared n/a with reason');
+let threw = false;
+try { buildRunJson({ scope: {}, lanes: { visual: { status: 'skipped' } } }); } catch { threw = true; }
+assert(threw, 'run.json: non-ran lane without reason throws');
 
 console.log(fails === 0 ? 'cli-smoke-test: ALL PASS' : `cli-smoke-test: ${fails} FAILURES`);
 process.exit(fails > 0 ? 1 : 0);
