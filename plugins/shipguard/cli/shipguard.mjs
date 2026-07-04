@@ -49,7 +49,10 @@ export function yamlParse(text) {
     v = String(v).trim();
     if (v === '') return null;
     const q = v[0];
-    if ((q === '"' || q === "'") && v.endsWith(q) && v.length >= 2) return v.slice(1, -1);
+    if ((q === '"' || q === "'") && v.endsWith(q) && v.length >= 2) {
+      const inner = v.slice(1, -1);
+      return q === '"' ? inner.replace(/\\(["\\])/g, '$1') : inner;
+    }
     const hash = v.search(/\s#/);
     if (hash !== -1) v = v.slice(0, hash).trim();
     if (v === '' || v === 'null' || v === '~') return null;
@@ -232,6 +235,81 @@ function ensureGitignore(projectRoot) {
   return true;
 }
 
+// ── App-under-test lifecycle ─────────────────────────────────────────────────
+const APP_PID_FILE = (root) => join(root, 'visual-tests', '_results', '.app.pid');
+
+export function findFreePort() {
+  return new Promise((res, rej) => {
+    const srv = net.createServer();
+    srv.once('error', rej);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => res(port));
+    });
+  });
+}
+
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === 'EPERM'; }
+}
+
+function readAppPid(root) {
+  const f = APP_PID_FILE(root);
+  if (!existsSync(f)) return null;
+  const [pid, port, baseUrl] = readFileSync(f, 'utf8').trim().split('\n');
+  return { pid: Number(pid), port: Number(port), baseUrl: baseUrl || null, file: f };
+}
+
+export async function startApp(config, projectRoot) {
+  const app = config.app || {};
+  if (!app.start || typeof app.start !== 'string') return { ok: false, error: 'no app.start in config (nothing to serve)' };
+
+  const prev = readAppPid(projectRoot);
+  if (prev && pidAlive(prev.pid)) return { ok: true, ...prev, reused: true };
+
+  const needsPort = app.start.includes('{port}');
+  const port = needsPort ? await findFreePort() : (config.base_url ? Number(new URL(config.base_url).port || 80) : 80);
+  const cmd = app.start.replaceAll('{port}', String(port));
+  const baseUrl = needsPort || !config.base_url ? `http://127.0.0.1:${port}` : config.base_url;
+
+  const cwd = app.root && existsSync(join(projectRoot, app.root)) ? join(projectRoot, app.root) : projectRoot;
+  const child = spawn(cmd, { cwd, shell: true, detached: true, stdio: 'ignore' });
+  child.unref();
+
+  const health = new URL(app.healthcheck || '/', baseUrl).href;
+  const timeout = Number.isFinite(app.startup_timeout_ms) ? app.startup_timeout_ms : 30000;
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(health, { signal: AbortSignal.timeout(2000) });
+      if (r.status < 500) {
+        mkdirSync(join(projectRoot, 'visual-tests', '_results'), { recursive: true });
+        writeFileSync(APP_PID_FILE(projectRoot), `${child.pid}\n${port}\n${baseUrl}\n`);
+        return { ok: true, baseUrl, pid: child.pid, port };
+      }
+    } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  try { process.kill(-child.pid); } catch { /* already dead */ }
+  return { ok: false, error: `healthcheck ${health} not answering after ${timeout} ms (infrastructure error, not a product finding)` };
+}
+
+export function stopApp(projectRoot) {
+  const info = readAppPid(projectRoot);
+  if (!info) return { stopped: false, message: 'no app server pidfile — nothing to stop' };
+  if (pidAlive(info.pid)) {
+    try { process.kill(-info.pid); } catch { try { process.kill(info.pid); } catch { /* gone */ } }
+  }
+  try { unlinkSync(info.file); } catch { /* ignore */ }
+  return { stopped: true, message: `app server stopped (PID ${info.pid})` };
+}
+
+export function resolveBaseUrl(config, projectRoot) {
+  const info = readAppPid(projectRoot);
+  if (info && pidAlive(info.pid) && info.baseUrl) return info.baseUrl;
+  return (config && config.base_url) || null;
+}
+
 // ── CLI plumbing ─────────────────────────────────────────────────────────────
 export function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -294,9 +372,39 @@ function cmdInit() {
   return EXIT.CLEAN;
 }
 
-// Placeholder subcommands — replaced by real implementations task by task.
-function cmdServe() { console.error('serve: not implemented yet'); return EXIT.CONFIG; }
-function cmdStop() { console.error('stop: not implemented yet'); return EXIT.CONFIG; }
+async function cmdServe(args) {
+  const { config, errors } = loadConfig(process.cwd());
+  if (!config || errors.length) { errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
+  if (!config.app || !config.app.start) { console.error('config: app.start missing — declare the app block to let shipguard own the server'); return EXIT.CONFIG; }
+  const r = await startApp(config, process.cwd());
+  if (!r.ok) { console.error(`serve: ${r.error}`); return EXIT.INFRA; }
+  console.log(`${r.reused ? 'already running' : 'started'} — base_url: ${r.baseUrl} (pid ${r.pid})`);
+  return EXIT.CLEAN;
+}
+
+function cmdStop(args) {
+  const r = stopApp(process.cwd());
+  console.log(r.message);
+  if (args.flags.all) {
+    const br = join(process.cwd(), 'visual-tests', 'build-review.mjs');
+    if (existsSync(br)) {
+      try { execFileSync('node', [br, '--stop'], { stdio: 'inherit' }); } catch { /* reported by the script */ }
+    }
+  }
+  return EXIT.CLEAN;
+}
+
+function cmdStatus() {
+  const root = process.cwd();
+  const app = readAppPid(root);
+  console.log(app && pidAlive(app.pid) ? `app server: running (pid ${app.pid}, ${app.baseUrl})` : 'app server: not running');
+  const srvPid = join(root, 'visual-tests', '_results', '.server.pid');
+  if (existsSync(srvPid)) {
+    const [pid, port] = readFileSync(srvPid, 'utf8').trim().split('\n');
+    console.log(pidAlive(Number(pid)) ? `review server: running (pid ${pid}, port ${port || '8888'})` : 'review server: stale pidfile');
+  } else console.log('review server: not running');
+  return EXIT.CLEAN;
+}
 function cmdCrawl() {
   const { config, errors } = loadConfig(process.cwd());
   if (!config || errors.length) { errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
@@ -305,7 +413,6 @@ function cmdCrawl() {
 }
 function cmdRun() { console.error('run: not implemented yet'); return EXIT.CONFIG; }
 function cmdReview() { console.error('review: not implemented yet'); return EXIT.CONFIG; }
-function cmdStatus() { console.error('status: not implemented yet'); return EXIT.CONFIG; }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   Promise.resolve(main(process.argv.slice(2))).then((code) => process.exit(code ?? 0));
