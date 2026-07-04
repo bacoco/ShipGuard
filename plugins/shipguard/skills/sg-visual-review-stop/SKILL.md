@@ -18,6 +18,8 @@ node visual-tests/build-review.mjs --stop
 
 If no PID file exists, report "No server running."
 
+CLI equivalent: `node visual-tests/shipguard.mjs stop --all` — stops the app-under-test server (started by `shipguard serve`/`run`) AND the review server in one command.
+
 If `--stop` exits with a non-zero code, fall back to killing by port. The PID file contains two lines: `<pid>` then `<port>`.
 
 ```bash

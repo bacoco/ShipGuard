@@ -75,12 +75,19 @@ Before asking the user for `base_url`, auto-detect the dev server command:
 3. Check for Python dev scripts: `scripts/*.py`, `run.py`, `server.py` with `uvicorn` or `flask` patterns
 4. Check for `docker-compose.yml` or `docker-compose.yaml` → propose `docker compose up -d`
 
-If found, propose the result as `build_command` in `_config.yaml`:
+If found, write BOTH the legacy `build_command` and the v2 `app:` block in `_config.yaml`:
 ```yaml
 build_command: "<detected command>"  # auto-detected from {source}
+app:
+  type: static-site            # or spa/server per detection
+  root: <dir containing the HTML files, when static>
+  start: "<detected command, with the port flag replaced by {port} when the tool accepts one>"
+  healthcheck: "/<first discovered page>"
 ```
 
-If nothing detected, leave as `build_command: null`.
+For plain static sites with no detected server, default to `start: "python3 -m http.server {port} --bind 127.0.0.1"` with `root:` set to the HTML directory — this is what makes `shipguard serve` / `shipguard run` self-sufficient on a static delivery.
+
+If nothing detected and the site is not static, leave `build_command: null` and omit `app:`.
 
 **Deriving `base_url` from the detected command** (extract host and port):
 

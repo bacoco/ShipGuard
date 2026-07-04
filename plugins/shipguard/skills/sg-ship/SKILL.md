@@ -46,6 +46,26 @@ Flags combine: `/sg-ship deep --diff=main --fix`.
    - If `git status --porcelain` shows uncommitted or staged work, warn explicitly: *"uncommitted changes are not visible to the pipeline — commit or stash them first"*, then ask **once** whether to continue on the committed state.
    - The resolved ref is passed as an explicit `--diff={ref}` to every lane. Passing `--diff` also suppresses each sub-skill's own interactive scope question — the lanes never re-ask.
 2. **Detect applicable lanes.** Backend code present? UI/routes present? `agent-browser --version` available? `visual-tests/_config.yaml` present? A lane with nothing to do is skipped and logged.
+   If the visual lane is applicable but `{base_url}` is down and `_config.yaml` declares `app.start`, start the app once for the whole pipeline: `node visual-tests/shipguard.mjs serve` (copy the CLI from `$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs` if missing). Stop it after Phase 5 with `node visual-tests/shipguard.mjs stop` — only if the CLI started it.
+
+2bis. **Write the lane manifest.** Create `visual-tests/_results/run.json` now and update it after every phase, so skipped work is *declared*, never silent:
+
+```json
+{
+  "schema_version": "1.0",
+  "run_id": "run-<timestamp>",
+  "timestamp": "<iso>",
+  "scope": {"type": "diff", "value": "<ref>"},
+  "lanes": {
+    "audit":   {"status": "ran", "results": "audit-results.json"},
+    "process": {"status": "ran", "results": "process-results.json"},
+    "visual":  {"status": "skipped", "reason": "no agent-browser"},
+    "crawl":   {"status": "not-applicable", "reason": "crawl is a CLI recette lane (shipguard run) — not part of the diff pipeline"}
+  }
+}
+```
+
+Lane statuses: `ran` | `skipped` | `not-applicable` | `error` | `needs-agent` — every non-`ran` status MUST carry a `reason`. The dashboard renders these as lane chips and shows the declared reason in place of generic empty states.
 3. **Freshness check (audit reuse).** The audit is the most expensive lane. If `visual-tests/_results/audit-results.json` already exists and is **newer than the last commit touching the scoped files**, offer to reuse it instead of re-running Phase 1. Never reuse silently — say what is being reused and why it is still fresh.
 4. **Print the plan** (which lanes will run, on what scope) and confirm if the scope is large. Then proceed.
 
@@ -95,7 +115,7 @@ Unless `--no-visual`, no UI was detected, or agent-browser is unavailable — ru
 /sg-visual-run --from-audit --from-process
 ```
 
-sg-visual-run **unions both route lists** (dedupes by route, highest severity wins, ordered severity-first) and confirms the impacted routes in the browser. If the lane is skipped, **say why** (no UI / no agent-browser / `--no-visual`) — never imply visual coverage that didn't run.
+sg-visual-run **unions both route lists** (dedupes by route, highest severity wins, ordered severity-first) and confirms the impacted routes in the browser. If the lane is skipped, **say why** (no UI / no agent-browser / `--no-visual`) — never imply visual coverage that didn't run. Record the skip in `run.json` too (status `skipped` + the stated reason) — the spoken reason alone is not enough.
 
 **Staleness guard:** before consuming `audit-results.json` or `process-results.json` here (and in Phase 4), check they are not older than the current scope's last commit. Never consume results older than the scope's last commit without saying so.
 
@@ -121,6 +141,7 @@ Print one summary across all three lanes:
 - **Static:** bugs by severity (from `visual-tests/_results/audit-results.json`)
 - **Behavior:** units changed / new errors / surprises, reasoned-vs-measured mix (from `visual-tests/_results/process-results.json`)
 - **Visual:** pass/fail on impacted routes (or "skipped — reason")
+- **Findings:** total from `visual-tests/_results/findings.json` with the evidence mix (measured/reasoned/manual) — the dashboard's Findings tab is the entry point
 - **Audit-fix delta** (only under `--fix`): what the audit lane itself changed, labeled separately from the user's own diff
 - The dashboard URL, and the single most important thing for the human to look at first.
 
@@ -146,4 +167,5 @@ Print one summary across all three lanes:
 - [ ] `/sg-process-check --from-audit --diff={ref}` run (mode passthrough) → `visual-tests/_results/process-results.json`
 - [ ] `/sg-visual-run --from-audit --from-process` run (union of both route lists, dedupe by route, highest severity wins), or skipped **with a stated reason**
 - [ ] `/sg-visual-review` built — one dashboard, three tabs: Visual Tests, Code Audit, Process (plus Recorded)
+- [ ] `visual-tests/_results/run.json` written and updated after each phase — every skipped/not-applicable lane declared with a reason
 - [ ] Consolidated cross-lane summary printed (audit-fix delta labeled separately under `--fix`); no fixes/decisions made by sg-ship itself
