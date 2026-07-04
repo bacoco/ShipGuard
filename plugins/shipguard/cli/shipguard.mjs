@@ -132,6 +132,106 @@ export function yamlParse(text) {
   return parseMap(0);
 }
 
+// ── Config v2 ────────────────────────────────────────────────────────────────
+export const KNOWN_CHECKS = ['page-load', 'local-assets', 'browser-errors', 'screenshots'];
+
+export function validateConfig(cfg) {
+  const errors = [];
+  if (cfg == null || typeof cfg !== 'object' || Array.isArray(cfg)) return ['config is not a YAML mapping'];
+  if (cfg.app != null) {
+    if (typeof cfg.app !== 'object' || Array.isArray(cfg.app)) errors.push('app: must be a mapping');
+    else {
+      if (cfg.app.start != null && typeof cfg.app.start !== 'string') errors.push('app.start must be a string command');
+      if (cfg.app.healthcheck != null && typeof cfg.app.healthcheck !== 'string') errors.push('app.healthcheck must be a path or URL string');
+      if (cfg.app.startup_timeout_ms != null && !Number.isFinite(cfg.app.startup_timeout_ms)) errors.push('app.startup_timeout_ms must be a number');
+    }
+  }
+  if (cfg.profiles != null) {
+    if (typeof cfg.profiles !== 'object' || Array.isArray(cfg.profiles)) errors.push('profiles: must be a mapping of name -> {scope, checks}');
+    else {
+      for (const [name, p] of Object.entries(cfg.profiles)) {
+        if (p == null || typeof p !== 'object' || Array.isArray(p)) { errors.push(`profile "${name}": must be a mapping`); continue; }
+        if (p.scope != null && typeof p.scope !== 'string') errors.push(`profile "${name}": scope must be a string`);
+        if (p.checks != null) {
+          if (!Array.isArray(p.checks)) errors.push(`profile "${name}": checks must be a list`);
+          else for (const c of p.checks) if (!KNOWN_CHECKS.includes(c)) errors.push(`profile "${name}": unknown check "${c}" (valid: ${KNOWN_CHECKS.join(', ')})`);
+        }
+      }
+    }
+  }
+  if (!cfg.base_url && !(cfg.app && typeof cfg.app === 'object' && cfg.app.start)) {
+    errors.push('config needs base_url or app.start (so serve can derive the URL)');
+  }
+  return errors;
+}
+
+export function loadConfig(projectRoot) {
+  const path = join(projectRoot, 'visual-tests', '_config.yaml');
+  if (!existsSync(path)) return { config: null, errors: [`missing ${relative(projectRoot, path)} — run "shipguard init" or /sg-visual-discover`], path };
+  let config;
+  try { config = yamlParse(readFileSync(path, 'utf8')); }
+  catch (e) { return { config: null, errors: [`unparseable _config.yaml: ${e.message}`], path }; }
+  return { config, errors: validateConfig(config), path };
+}
+
+export function resolveProfile(cfg, name) {
+  if (name == null) return { name: 'default', scope: 'all', checks: [...KNOWN_CHECKS], errors: [] };
+  const p = cfg && cfg.profiles && typeof cfg.profiles === 'object' ? cfg.profiles[name] : undefined;
+  if (!p) return { name, scope: null, checks: [], errors: [`unknown profile "${name}" — declare it under profiles: in _config.yaml`] };
+  return {
+    name,
+    scope: typeof p.scope === 'string' && p.scope ? p.scope : 'all',
+    checks: Array.isArray(p.checks) && p.checks.length ? p.checks : [...KNOWN_CHECKS],
+    errors: [],
+  };
+}
+
+// ── init ─────────────────────────────────────────────────────────────────────
+export const GITIGNORE_BLOCK = [
+  '# ShipGuard session artifacts (added by shipguard init)',
+  'visual-tests/_results/',
+  '.DS_Store',
+  '# visual-tests/_regressions.yaml  # uncomment to keep regression memory out of git',
+];
+
+const CONFIG_TEMPLATE = `# visual-tests/_config.yaml — ShipGuard project configuration (v2)
+version: 2
+base_url: "http://localhost:3000"
+credentials:
+  username: "testuser"
+  password: "testpass"
+screenshots_dir: "visual-tests/_results/screenshots"
+report_path: "visual-tests/_results/report.md"
+build_command: null
+
+# App-under-test lifecycle (used by: shipguard serve / run --serve).
+# {port} is replaced by a free port; base_url is then derived automatically.
+# app:
+#   type: static-site
+#   root: docs
+#   start: "python3 -m http.server {port} --bind 127.0.0.1"
+#   healthcheck: "/index.html"
+#   startup_timeout_ms: 30000
+
+# Named recette profiles (used by: shipguard run --profile=NAME).
+# scope matches manifest paths and step URLs; checks pick the deterministic lanes.
+# profiles:
+#   site-accessible:
+#     scope: "site-accessible"
+#     checks: [page-load, local-assets, browser-errors, screenshots]
+`;
+
+function ensureGitignore(projectRoot) {
+  const path = join(projectRoot, '.gitignore');
+  const current = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  const lines = new Set(current.split('\n').map((l) => l.trim()));
+  const missing = GITIGNORE_BLOCK.filter((l) => !lines.has(l.trim()));
+  if (missing.length === 0) return false;
+  const prefix = current === '' || current.endsWith('\n') ? '' : '\n';
+  appendFileSync(path, `${prefix}${missing.join('\n')}\n`);
+  return true;
+}
+
 // ── CLI plumbing ─────────────────────────────────────────────────────────────
 export function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -179,11 +279,30 @@ export function main(argv) {
   return fn(args);
 }
 
+function cmdInit() {
+  const root = process.cwd();
+  mkdirSync(join(root, 'visual-tests', '_results'), { recursive: true });
+  const cfgPath = join(root, 'visual-tests', '_config.yaml');
+  if (!existsSync(cfgPath)) {
+    writeFileSync(cfgPath, CONFIG_TEMPLATE, 'utf8');
+    console.log('created visual-tests/_config.yaml');
+  } else {
+    console.log('visual-tests/_config.yaml exists — left untouched');
+  }
+  console.log(ensureGitignore(root) ? 'updated .gitignore guard-rails' : '.gitignore guard-rails already present');
+  console.log('init done.');
+  return EXIT.CLEAN;
+}
+
 // Placeholder subcommands — replaced by real implementations task by task.
-function cmdInit() { console.error('init: not implemented yet'); return EXIT.CONFIG; }
 function cmdServe() { console.error('serve: not implemented yet'); return EXIT.CONFIG; }
 function cmdStop() { console.error('stop: not implemented yet'); return EXIT.CONFIG; }
-function cmdCrawl() { console.error('crawl: not implemented yet'); return EXIT.CONFIG; }
+function cmdCrawl() {
+  const { config, errors } = loadConfig(process.cwd());
+  if (!config || errors.length) { errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
+  console.error('crawl: not implemented yet');
+  return EXIT.CONFIG;
+}
 function cmdRun() { console.error('run: not implemented yet'); return EXIT.CONFIG; }
 function cmdReview() { console.error('review: not implemented yet'); return EXIT.CONFIG; }
 function cmdStatus() { console.error('status: not implemented yet'); return EXIT.CONFIG; }
