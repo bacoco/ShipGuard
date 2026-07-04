@@ -136,6 +136,11 @@ const OUTPUT_PATH = join(RESULTS_DIR, 'review.html');
 const CHANGE_REPORTS_DIR = join(RESULTS_DIR, 'change-reports');
 const PERSONA_REPORTS_DIR = join(RESULTS_DIR, 'persona-reports');
 const PID_FILE = join(RESULTS_DIR, '.server.pid');
+const FINDINGS_PATH = join(RESULTS_DIR, 'findings.json');
+const CRAWL_RESULTS_PATH = join(RESULTS_DIR, 'crawl-results.json');
+const RUN_JSON_PATH = join(RESULTS_DIR, 'run.json');
+const FIX_MANIFEST_PATH = join(RESULTS_DIR, 'fix-manifest.json');
+const AUDIT_RESULTS_PATH = join(RESULTS_DIR, 'audit-results.json');
 
 // Check whether a PID refers to a live process (EPERM = alive but not ours)
 function pidExists(pid) {
@@ -1024,6 +1029,123 @@ function generatePersonaReports() {
   return generated.reduce((sum, item) => sum + item.audiences + 1, 1);
 }
 
+// ── Unified findings (evidence-first) ──
+// One derived list merging all five signal sources. The three canonical
+// schemas stay untouched — this is an additive projection. Evidence taxonomy:
+// measured (a real observation), reasoned (a static/simulated prediction),
+// manual (a human annotation).
+function readJsonSafe(path) {
+  if (!existsSync(path)) return null;
+  try {
+    const v = JSON.parse(readFileSync(path, 'utf8'));
+    return v && typeof v === 'object' ? v : null;
+  } catch { return null; }
+}
+
+const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function buildFindings({ audit, processResults, visual, crawlResults, fixManifest }) {
+  const findings = [];
+  for (const bug of (audit && Array.isArray(audit.bugs) ? audit.bugs : [])) {
+    if (!bug || typeof bug !== 'object') continue;
+    findings.push({
+      title: bug.title || 'Audit finding',
+      severity: SEV_RANK[bug.severity] !== undefined ? bug.severity : 'medium',
+      evidence: 'reasoned', // static analysis (even verified) predicts; it does not observe
+      source: 'audit',
+      route: null,
+      file: bug.file || null,
+      line: Number.isFinite(bug.line) ? bug.line : null,
+      detail: bug.description || '',
+      origin: { lane: 'audit', id: bug.id || null },
+    });
+  }
+  for (const unit of (processResults && Array.isArray(processResults.units) ? processResults.units : [])) {
+    if (!unit || typeof unit !== 'object' || unit.verdict === 'unchanged') continue;
+    const actions = Array.isArray(unit.actions) ? unit.actions : [];
+    const measured = actions.some((a) => a && a.evidence === 'measured');
+    const surprise = actions.some((a) => a && a.surprise);
+    findings.push({
+      title: `${unit.kind || 'unit'} ${unit.ref || unit.id || ''}: ${unit.verdict || 'changed'}`.trim(),
+      severity: unit.verdict === 'new-error' || surprise ? 'high' : 'medium',
+      evidence: measured ? 'measured' : 'reasoned',
+      source: 'process',
+      route: null,
+      file: unit.file || null,
+      line: null,
+      detail: actions.map((a) => a && a.delta).filter(Boolean).join('; ') || (unit.verdict || ''),
+      origin: { lane: 'process', id: unit.id || null },
+    });
+  }
+  for (const t of (visual && Array.isArray(visual.tests) ? visual.tests : [])) {
+    if (!t || typeof t !== 'object') continue;
+    if (t.status === 'FAIL' || t.status === 'ERROR') {
+      findings.push({
+        title: `${t.name || t.id || 'visual test'}: ${t.status}`,
+        severity: t.status === 'FAIL' ? 'high' : 'medium',
+        evidence: 'measured',
+        source: 'browser',
+        route: t.url || null,
+        file: null,
+        line: null,
+        detail: t.failure_reason || '',
+        origin: { lane: 'visual', id: t.id || null },
+      });
+    }
+    for (const err of (Array.isArray(t.browser_errors) ? t.browser_errors : [])) {
+      if (!err || err.level !== 'error') continue;
+      findings.push({
+        title: 'Browser console error',
+        severity: 'medium',
+        evidence: 'measured',
+        source: 'browser',
+        route: t.url || null,
+        file: null,
+        line: null,
+        detail: err.text || '',
+        origin: { lane: 'visual', id: t.id || null },
+      });
+    }
+  }
+  for (const b of (crawlResults && Array.isArray(crawlResults.broken) ? crawlResults.broken : [])) {
+    if (!b || typeof b !== 'object') continue;
+    findings.push({
+      title: `Missing local resource (${b.tag || 'asset'})`,
+      severity: b.tag === 'a' ? 'medium' : 'high',
+      evidence: 'measured',
+      source: 'crawler',
+      route: b.found_on || null,
+      file: null,
+      line: null,
+      detail: `${b.url} → HTTP ${b.status}`,
+      origin: { lane: 'crawl', id: b.url || null },
+    });
+  }
+  for (const t of (fixManifest && Array.isArray(fixManifest.tests) ? fixManifest.tests : [])) {
+    if (!t || !Array.isArray(t.annotations) || t.annotations.length === 0) continue;
+    findings.push({
+      title: `Human annotation on ${t.test || 'test'}`,
+      severity: 'medium',
+      evidence: 'manual',
+      source: 'human',
+      route: t.url || null,
+      file: null,
+      line: null,
+      detail: `${t.annotations.length} annotated region(s) on ${t.screenshot || 'screenshot'}`,
+      origin: { lane: 'human', id: t.test || null },
+    });
+  }
+  findings.sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9));
+  findings.forEach((f, i) => { f.id = 'SG-' + String(i + 1).padStart(3, '0'); });
+  const tally = (key) => findings.reduce((m, f) => { m[f[key]] = (m[f[key]] || 0) + 1; return m; }, {});
+  return {
+    schema_version: '1.0',
+    generated: new Date().toISOString(),
+    findings,
+    summary: { total: findings.length, by_severity: tally('severity'), by_evidence: tally('evidence'), by_source: tally('source') },
+  };
+}
+
 // ── Main ──
 console.log('Building Visual review page...');
 
@@ -1033,6 +1155,9 @@ const visualResults = parseVisualResults();
 if (visualResults.error) {
   console.warn(`  WARN: ${visualResults.error}`);
 }
+// Raw pre-rewrite copy for the findings projection — the rewrite below (from
+// resolved manifest statuses) drops producer-only fields like browser_errors.
+const visualRawForFindings = readJsonSafe(VISUAL_RESULTS_PATH);
 const report = mergeStatusSources(visualResults, parseReport());
 const regressions = parseRegressions();
 const tests = collectTests();
@@ -1129,6 +1254,30 @@ if (existsSync(PROCESS_RESULTS_PATH)) {
   }
 }
 
+// ── Build the unified findings projection + lane availability ──
+const auditForFindings = readJsonSafe(AUDIT_RESULTS_PATH);
+const crawlResults = readJsonSafe(CRAWL_RESULTS_PATH);
+const runData = readJsonSafe(RUN_JSON_PATH);
+const fixManifestData = readJsonSafe(FIX_MANIFEST_PATH);
+const findingsData = buildFindings({
+  audit: auditForFindings,
+  processResults,
+  visual: visualRawForFindings,
+  crawlResults,
+  fixManifest: fixManifestData,
+});
+writeFileSync(FINDINGS_PATH, JSON.stringify(findingsData, null, 2), 'utf8');
+console.log(`  Findings: ${findingsData.summary.total} (evidence: ${JSON.stringify(findingsData.summary.by_evidence)})`);
+
+// Build-time facts for the dashboard's dynamic default tab
+data.laneAvailability = {
+  findings: findingsData.summary.total,
+  audit: !!auditForFindings,
+  process: !!processResults,
+  visual: tests.some((t) => t.status && t.status !== 'STALE'),
+  recorded: recordedTests.length,
+};
+
 // Escape once at the serialization boundary (B9): neutralize </script>
 // injection and JS line separators when inlining data into the template.
 function embedJson(value) {
@@ -1142,7 +1291,9 @@ const template = getHtmlTemplate();
 const html = template
   .replace('"__PLACEHOLDER_VISUAL_DATA__"', () => embedJson(data))
   .replace('"__PLACEHOLDER_RECORDED_DATA__"', () => embedJson(recordedTests))
-  .replace('"__PLACEHOLDER_PROCESS_DATA__"', () => embedJson(processResults));
+  .replace('"__PLACEHOLDER_PROCESS_DATA__"', () => embedJson(processResults))
+  .replace('"__PLACEHOLDER_FINDINGS_DATA__"', () => embedJson(findingsData))
+  .replace('"__PLACEHOLDER_RUN_DATA__"', () => embedJson(runData));
 writeFileSync(OUTPUT_PATH, html, 'utf8');
 
 console.log(`  Output: ${OUTPUT_PATH}`);

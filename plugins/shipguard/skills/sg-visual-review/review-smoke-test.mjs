@@ -171,14 +171,51 @@ function createFixture() {
       selected_total: 1,
       full_suite_total: 99,
     },
-    summary: { total: 1, pass: 1, fail: 0, error: 0, stale: 0, skipped: 0, duration_ms: 1200 },
-    tests: [{ id: 'pages/root-index', manifest: 'visual-tests/pages/root-index.yaml', name: 'Home', url: '/', status: 'PASS', duration_ms: 1200, screenshot: null, failure_reason: null }],
+    summary: { total: 2, pass: 1, fail: 1, error: 0, stale: 0, skipped: 0, duration_ms: 1200 },
+    tests: [
+      { id: 'pages/root-index', manifest: 'visual-tests/pages/root-index.yaml', name: 'Home', url: '/', status: 'PASS', duration_ms: 1200, screenshot: null, failure_reason: null },
+      { id: 'pages/broken', manifest: 'visual-tests/pages/broken.yaml', name: 'Broken', url: '/broken.html', status: 'FAIL', duration_ms: 900, screenshot: null, failure_reason: 'assert_text: not found', browser_errors: [{ level: 'error', text: 'Uncaught TypeError: x is not a function' }] },
+    ],
   });
   writeJson(join(root, '_results', 'audit-results.json'), {
-    summary: { total_bugs: 0, files_audited: 1, by_severity: { critical: 0, high: 0, medium: 0, low: 0 }, by_category: {} },
-    bugs: [],
+    summary: { total_bugs: 1, files_audited: 1, by_severity: { critical: 1, high: 0, medium: 0, low: 0 }, by_category: {} },
+    bugs: [{ id: 'r1-z01-001', severity: 'critical', category: 'security', file: 'app.py', line: 12, title: 'Missing ownership check', description: 'Any user can read any doc.' }],
     impacted_ui_routes: [{ route: '/', severity: 'low', reason: 'Smoke route', bug_count: 0 }],
     agents: [{ id: 'z1', label: 'Zone 1', status: 'completed', files_audited: 1, bugs_found: 0, duration_ms: 10, paths: ['pages/root-index.yaml'] }],
+  });
+  writeJson(join(root, '_results', 'process-results.json'), {
+    schema_version: '1.0',
+    mode: 'hybrid',
+    summary: { units: 1, behavior_changed: 1, new_errors: 0, surprises: 0, evidence_mix: { reasoned: 0, measured: 1 } },
+    units: [{
+      id: 'u01', kind: 'function', ref: 'chunk_text', file: 'pipeline.py', verdict: 'behavior-changed',
+      actions: [{ seed: 1, evidence: 'measured', delta: 'output length 12 -> 9', surprise: false }],
+    }],
+  });
+  writeJson(join(root, '_results', 'crawl-results.json'), {
+    schema_version: '1.0',
+    timestamp: '2026-07-04T10:00:00Z',
+    base_url: 'http://127.0.0.1:8001',
+    pages: 2,
+    assets_checked: 5,
+    broken: [{ url: 'http://127.0.0.1:8001/media/ghost.mp4', status: 404, found_on: 'http://127.0.0.1:8001/ec09-captions.html', tag: 'source' }],
+  });
+  writeJson(join(root, '_results', 'fix-manifest.json'), {
+    action: 'validate-and-fix',
+    tests: [{ test: 'pages/root-index', url: 'http://127.0.0.1:8001/', screenshot: 'screenshots/root-index.png', annotations: [{ x1: 0.1, y1: 0.1, x2: 0.5, y2: 0.5 }], steps: [] }],
+  });
+  writeJson(join(root, '_results', 'run.json'), {
+    schema_version: '1.0',
+    run_id: 'run-20260704100000',
+    timestamp: '2026-07-04T10:00:00Z',
+    scope: { type: 'profile', value: 'site-accessible' },
+    lanes: {
+      audit: { status: 'ran', results: 'audit-results.json' },
+      process: { status: 'ran', results: 'process-results.json' },
+      visual: { status: 'ran', results: 'visual-results.json' },
+      crawl: { status: 'ran', results: 'crawl-results.json' },
+      llm_checks: { status: 'needs-agent', reason: '2 llm-check steps require an agent lane', count: 2 },
+    },
   });
   writeJson(join(root, '_results', 'change-reports', 'demo', 'report.json'), {
     id: 'demo',
@@ -209,6 +246,49 @@ async function main() {
     assert(rebuiltVisualResults.scope?.full_suite_total === 99, 'visual-results full_suite_total was not preserved');
     assert(rebuiltVisualResults.scope?.uncovered_routes?.[0]?.reason === 'no_visual_manifest', 'visual-results uncovered routes were not preserved');
     assert(existsSync(join(root, '_results', 'persona-reports', 'demo', 'index.html')), 'persona report was not generated');
+
+    // ── Unified findings (evidence-first) ──
+    assert(existsSync(join(root, '_results', 'findings.json')), 'findings.json was not generated');
+    const findings = JSON.parse(readFileSync(join(root, '_results', 'findings.json'), 'utf8'));
+    assert(findings.schema_version === '1.0', 'findings: schema_version missing');
+    assert(findings.findings.length === 6, `findings: expected 6, got ${findings.findings.length}`);
+    assert(findings.findings[0].id === 'SG-001' && findings.findings[0].severity === 'critical', 'findings: not severity-sorted with SG ids');
+    const f = findings.findings;
+    assert(f.some(x => x.source === 'audit' && x.evidence === 'reasoned' && x.file === 'app.py'), 'findings: audit -> reasoned');
+    assert(f.some(x => x.source === 'process' && x.evidence === 'measured'), 'findings: process w/ measured action -> measured');
+    assert(f.some(x => x.source === 'browser' && x.evidence === 'measured' && x.title.includes('FAIL')), 'findings: visual FAIL -> measured');
+    assert(f.some(x => x.source === 'browser' && x.title === 'Browser console error'), 'findings: browser_errors surfaced');
+    assert(f.some(x => x.source === 'crawler' && x.evidence === 'measured' && x.severity === 'high'), 'findings: crawler -> measured/high');
+    assert(f.some(x => x.source === 'human' && x.evidence === 'manual'), 'findings: annotation -> manual');
+    assert(findings.summary.by_evidence.measured >= 4, 'findings: evidence tally wrong');
+
+    const builtHtml = readFileSync(join(root, '_results', 'review.html'), 'utf8');
+    assert(!builtHtml.includes('__PLACEHOLDER_FINDINGS_DATA__'), 'template: findings placeholder not replaced');
+    assert(!builtHtml.includes('__PLACEHOLDER_RUN_DATA__'), 'template: run placeholder not replaced');
+    assert(builtHtml.includes('"laneAvailability"'), 'data: laneAvailability not injected');
+
+    // ── Config v2 parse safety: app+profiles blocks must not break the builder ──
+    writeFileSync(join(root, '_config.yaml'), [
+      'version: 2',
+      'base_url: http://127.0.0.1:8001',
+      'credentials:',
+      '  username: "u"',
+      '  password: "p"',
+      'app:',
+      '  type: static-site',
+      '  root: docs',
+      '  start: "python3 -m http.server {port} --bind 127.0.0.1"',
+      '  healthcheck: "/index.html"',
+      'profiles:',
+      '  site-accessible:',
+      '    scope: "site-accessible"',
+      '    checks:',
+      '      - page-load',
+      '      - local-assets',
+      '',
+    ].join('\n'), 'utf8');
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    assert(existsSync(join(root, '_results', 'review.html')), 'config v2: builder failed on app+profiles blocks');
 
     port = options.port || DEFAULT_PORT_BASE + Math.floor(Math.random() * 10000);
     console.error(`review smoke test: fixture=${root} port=${port}`);
