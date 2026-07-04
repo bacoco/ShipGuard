@@ -310,6 +310,80 @@ export function resolveBaseUrl(config, projectRoot) {
   return (config && config.base_url) || null;
 }
 
+// ── Static crawler (measured evidence: real HTTP checks, no LLM) ────────────
+const ASSET_ATTR_RE = /<(img|script|link|video|audio|source|iframe|track|a)\b[^>]*?\s(?:src|href|poster)\s*=\s*["']([^"']+)["']/gi;
+const SRCSET_RE = /<(img|source)\b[^>]*?\ssrcset\s*=\s*["']([^"']+)["']/gi;
+
+export function extractAssets(html, pageUrl) {
+  const page = new URL(pageUrl);
+  const out = [];
+  const seen = new Set();
+  const push = (rawUrl, tag) => {
+    const v = String(rawUrl).trim();
+    if (!v || v.startsWith('#') || /^(mailto:|tel:|javascript:|data:)/i.test(v)) return;
+    let abs;
+    try { abs = new URL(v, page); } catch { return; }
+    if (abs.origin !== page.origin) return;
+    abs.hash = '';
+    const key = `${abs.href}|${tag}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ url: abs.href, tag });
+  };
+  for (const m of String(html).matchAll(ASSET_ATTR_RE)) push(m[2], m[1].toLowerCase());
+  for (const m of String(html).matchAll(SRCSET_RE)) {
+    for (const candidate of m[2].split(',')) push(candidate.trim().split(/\s+/)[0] || '', m[1].toLowerCase());
+  }
+  return out;
+}
+
+async function checkUrl(url) {
+  try {
+    let r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+    if (r.status === 405 || r.status === 501) r = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
+    return r.status;
+  } catch { return 0; }
+}
+
+export async function crawl(baseUrl, opts = {}) {
+  const maxPages = opts.maxPages ?? 200;
+  const start = new URL(baseUrl).href;
+  const queue = [start];
+  const visitedPages = new Set();
+  const checkedAssets = new Map(); // url -> status
+  const broken = [];
+
+  let first = true;
+  while (queue.length && visitedPages.size < maxPages) {
+    const pageUrl = queue.shift();
+    if (visitedPages.has(pageUrl)) continue;
+    visitedPages.add(pageUrl);
+    let res;
+    try { res = await fetch(pageUrl, { signal: AbortSignal.timeout(8000) }); }
+    catch { if (first) return { pages: 0, assets_checked: 0, broken: [], infra_error: `base_url unreachable: ${pageUrl}` }; continue; }
+    first = false;
+    if (!res.ok) { broken.push({ url: pageUrl, status: res.status, found_on: pageUrl, tag: 'page' }); continue; }
+    const type = res.headers.get('content-type') || '';
+    if (!type.includes('html')) continue;
+    const html = await res.text();
+    for (const { url, tag } of extractAssets(html, pageUrl)) {
+      const isPageLink = tag === 'a' || (tag === 'iframe' && url.endsWith('.html'));
+      if (isPageLink && /\.html?($|\?)/.test(url) && !visitedPages.has(url)) queue.push(url);
+      if (!checkedAssets.has(url)) {
+        const status = await checkUrl(url);
+        checkedAssets.set(url, status);
+        if (status === 0 || status >= 400) broken.push({ url, status, found_on: pageUrl, tag });
+      } else {
+        const status = checkedAssets.get(url);
+        if ((status === 0 || status >= 400) && !broken.some((b) => b.url === url && b.found_on === pageUrl)) {
+          broken.push({ url, status, found_on: pageUrl, tag });
+        }
+      }
+    }
+  }
+  return { pages: visitedPages.size, assets_checked: checkedAssets.size, broken };
+}
+
 // ── CLI plumbing ─────────────────────────────────────────────────────────────
 export function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -405,11 +479,28 @@ function cmdStatus() {
   } else console.log('review server: not running');
   return EXIT.CLEAN;
 }
-function cmdCrawl() {
-  const { config, errors } = loadConfig(process.cwd());
+async function cmdCrawl(args) {
+  const root = process.cwd();
+  const { config, errors } = loadConfig(root);
   if (!config || errors.length) { errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
-  console.error('crawl: not implemented yet');
-  return EXIT.CONFIG;
+  const baseUrl = String(args.flags['base-url'] || resolveBaseUrl(config, root) || '');
+  if (!baseUrl) { console.error('config: no base_url and no running app server'); return EXIT.CONFIG; }
+  console.log(`crawling ${baseUrl} ...`);
+  const result = await crawl(baseUrl);
+  if (result.infra_error) { console.error(`crawl: ${result.infra_error}`); return EXIT.INFRA; }
+  const resultsDir = join(root, 'visual-tests', '_results');
+  mkdirSync(resultsDir, { recursive: true });
+  writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify({
+    schema_version: '1.0',
+    timestamp: new Date().toISOString(),
+    base_url: baseUrl,
+    pages: result.pages,
+    assets_checked: result.assets_checked,
+    broken: result.broken,
+  }, null, 2));
+  console.log(`crawl: ${result.pages} pages, ${result.assets_checked} assets checked, ${result.broken.length} broken`);
+  for (const b of result.broken) console.log(`  BROKEN [${b.tag}] ${b.url} (HTTP ${b.status}) on ${b.found_on}`);
+  return result.broken.length ? EXIT.FINDINGS : EXIT.CLEAN;
 }
 function cmdRun() { console.error('run: not implemented yet'); return EXIT.CONFIG; }
 function cmdReview() { console.error('review: not implemented yet'); return EXIT.CONFIG; }
