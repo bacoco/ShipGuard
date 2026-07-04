@@ -1,6 +1,6 @@
 {
   "name": "shipguard",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "AI-assisted code audit, process behavior simulation, and visual E2E review for changed code.",
   "author": {
     "name": "bacoco",

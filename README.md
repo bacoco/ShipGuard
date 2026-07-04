@@ -22,8 +22,9 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 | Code Audit | 🟢 Stable | parallel agents, multi-round, verification |
 | Macro Recorder | 🟢 Stable | record → replay via YAML manifests |
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
-| Review Dashboard | 🟢 Stable | HTML generation, annotations, monitor |
-| CI/CD Integration | 🔴 Planned | not yet available |
+| Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
+| Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
+| CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.
 

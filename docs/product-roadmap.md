@@ -44,6 +44,20 @@
 - **Unified results directory** -- all result files under `visual-tests/_results/` (`visual-results.json` is the canonical run output, `report.md` the human summary); legacy `.code-audit-results/` / `.process-check-results/` are read-only fallbacks
 - **Three-dot diff convention** -- every lane scopes with `git diff {base}...HEAD` (committed changes only)
 
+## Shipped in 2.5.0
+
+*Source: second-round Codex static-recette feedback ("Retour ShipGuard", 2026-07) — the first round was `docs/scout-reports/2026-06-29-codex-static-recipe-improvements/`, largely shipped in 2.4.0.*
+
+- **`shipguard` CLI (deterministic recette engine)** -- `init / serve / stop / crawl / run / review / status`; single self-contained `.mjs` (copied into `visual-tests/` like `build-review.mjs`); stable exit codes `0` clean / `1` findings / `2` infra / `3` config
+- **Config v2** -- `app:` lifecycle block (`{port}` substitution, healthcheck, `root`) + named `profiles:` (scope + checks); fully backward compatible
+- **App-under-test lifecycle owned by the recette** -- free-port allocation, healthcheck wait, pidfile, clean teardown; infra errors distinct from product findings
+- **`run.json` lane manifest** -- skipped / not-applicable / needs-agent lanes declared with reasons, rendered as dashboard chips
+- **Unified `findings.json`** -- evidence-first (`measured`/`reasoned`/`manual`) across audit / process / browser / crawler / human; canonical per-lane schemas untouched
+- **Findings tab + dynamic default tab** -- dashboard opens on the first tab with data; declared skip reasons replace generic empty states
+- **Static-site mode completed** -- measured link/asset crawler (`shipguard crawl`), auto `app:` block detection in discovery
+- **Browser-output robustness** -- tolerant JSON parsing, normalized `browser_errors[]` (additive), screenshot byte validation, honest `llm_steps_pending` (mechanical runs never fake LLM checks)
+- **Hygiene** -- `shipguard init` seeds `.gitignore` guard-rails (`_results/`, `.DS_Store`); `_regressions.yaml` stays committed by default
+
 ---
 
 ## Known Limitations

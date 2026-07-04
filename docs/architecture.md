@@ -48,7 +48,35 @@ sg-code-audit --> impacted_backend[] --> sg-process-check --from-audit
 sg-process-check --> impacted_ui_routes[] --> sg-visual-run --from-process (visual confirm)
 ```
 
-All result files live in `visual-tests/_results/` (created if missing): `audit-results.json`, `process-results.json`, `visual-results.json`, `report.md`, `fix-manifest.json`, `change-reports/`, `persona-reports/`. `visual-results.json` is the canonical machine-readable run output; `report.md` is its human-readable summary. Legacy `.code-audit-results/` and `.process-check-results/` directories are still read as fallbacks (read-only compat) but are no longer written.
+All result files live in `visual-tests/_results/` (created if missing): `audit-results.json`, `process-results.json`, `visual-results.json`, `report.md`, `fix-manifest.json`, `change-reports/`, `persona-reports/` — plus, since 2.5.0, `run.json` (lane manifest), `findings.json` (derived unified findings), and `crawl-results.json` (measured link/asset checks). `visual-results.json` is the canonical machine-readable run output; `report.md` is its human-readable summary. Legacy `.code-audit-results/` and `.process-check-results/` directories are still read as fallbacks (read-only compat) but are no longer written.
+
+---
+
+## shipguard CLI (deterministic layer, 2.5.0+)
+
+`plugins/shipguard/cli/shipguard.mjs` — single-file, zero-dependency Node (≥18) CLI, copied into the
+target project like `build-review.mjs` (`cp "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" visual-tests/`).
+It owns everything that does NOT need a model:
+
+- **`init`** — scaffolds `visual-tests/_config.yaml` (config v2) and `.gitignore` guard-rails (`visual-tests/_results/`, `.DS_Store`; `_regressions.yaml` stays committed by default as cross-run regression memory).
+- **`serve` / `stop [--all]` / `status`** — app-under-test lifecycle: free-port allocation, `app.start` with `{port}` substitution, healthcheck polling, pidfile `_results/.app.pid`, clean teardown (`--all` also stops the review server).
+- **`crawl`** — static link/asset checker: BFS over same-origin pages, HTTP-checks every `src`/`href`/`srcset`/`poster`, writes `crawl-results.json`. Pure **measured** evidence.
+- **`run [--profile=NAME] [--scope=STR] [--serve] [--no-crawl]`** — the mechanical recette: serve if needed, execute manifests' mechanical steps via agent-browser (`open`/`click`/`fill`/`assert_*`/`screenshot` with byte validation), per-profile checks (`page-load`, `local-assets`, `browser-errors`, `screenshots`), all artifacts in one pass, then the dashboard. `llm-check`/`llm-wait` steps are **never faked** — they are counted per test (`llm_steps_pending`) and declared as a `needs-agent` lane in `run.json` for the agent lanes to complete.
+- **`review [--serve] [--port=N]`** — builds/serves the dashboard (delegates to `build-review.mjs`, auto-copying it from the plugin when missing).
+
+**Exit codes (stable contract):** `0` clean · `1` findings · `2` infrastructure error · `3` invalid configuration. An unreachable app or missing agent-browser is infra (2), never a product finding (1).
+
+**Config v2** (`_config.yaml`, backward compatible — all new keys optional): `app: {type, root, start, healthcheck, startup_timeout_ms}` and `profiles: {<name>: {scope, checks}}`.
+
+**Layer boundary:** LLM assertions, the audit, and the process lanes stay in the skills. Model-independence applies to this deterministic layer only — that is what makes the recette reproducible by any human, CI, or agent.
+
+### run.json (lane manifest)
+
+Written by `shipguard run` and `sg-ship`. Per-lane status `ran | skipped | not-applicable | error | needs-agent`; every non-`ran` status carries a `reason`. The dashboard renders lane chips from it and shows declared reasons instead of generic empty tabs.
+
+### findings.json (unified, evidence-first)
+
+Derived by `build-review.mjs` on every build — an additive projection over the five sources (audit bugs → `reasoned`; process units → per-action `measured`/`reasoned`; visual failures and `browser_errors[]` → `measured`; crawler breakage → `measured`; annotations → `manual`), severity-sorted with `SG-###` ids and a `by_evidence`/`by_source` summary. The canonical per-lane schemas are unchanged.
 
 The entry points (`sg-code-audit`, `sg-visual-discover`, and `sg-process-check`) can run independently. `sg-visual-run --from-audit` bridges static→visual by reading `audit-results.json` impacted routes. `sg-process-check` adds the static→dynamic bridge: it reads `audit-results.json`'s `impacted_backend[]` (`--from-audit`) to dynamically exercise flagged endpoints, and emits `impacted_ui_routes[]` so the visual lane can confirm the user-facing effect of a behavior change. `sg-visual-review` merges all data sources into a single dashboard. `sg-ship` is the optional one-command orchestrator that runs all three lanes in order over a single resolved scope and opens that dashboard — it only sequences the lanes via these bridges; it adds no analysis of its own.
 
@@ -425,7 +453,10 @@ Generates a self-contained HTML dashboard from test results, audit data, and scr
 
 ### Tab System
 
-- **Visual Tests** (default) -- Grid of test cards with screenshots, status badges, filters
+The dashboard opens on the **first tab with data** (findings → audit → visual → process → recorded). A `lane-chips` strip under the tab bar renders per-lane statuses from `run.json`.
+
+- **Findings** -- Unified evidence-first list from `findings.json` (severity-sorted `SG-###` ids, `measured`/`reasoned`/`manual` badges, source lane, route/file). Default tab whenever findings exist.
+- **Visual Tests** -- Grid of test cards with screenshots, status badges, filters
 - **Code Audit** -- Conditional on `data.audit` being non-null. Shows bug list from `audit-results.json` with severity and category breakdowns. The live Monitor renders inside this tab: a Gantt timeline of audit agent progress with per-agent duration, token usage, estimated cost, and bugs found. It appears when `monitor-data.json` exists or an audit is in progress, and polls every 3s.
 - **Process** -- Conditional on `process-results.json`. Shows the before/after behavior table from `sg-process-check` (verdicts, reasoned vs measured evidence, surprises)
 - **Recorded Tests** -- Test library of manifests captured with `sg-record`; select tests and get the ready-to-copy run command

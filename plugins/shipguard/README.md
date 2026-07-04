@@ -437,16 +437,39 @@ npm install -g agent-browser && agent-browser install --with-deps
 /sg-visual-run                           # run visual tests
 ```
 
+## CLI quickstart — static site recette (2.5.0+)
+
+The deterministic layer is also a standalone CLI — same recette for a human, CI, or any agent, no model required:
+
+```bash
+cp "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" visual-tests/   # once
+node visual-tests/shipguard.mjs init                          # config v2 + .gitignore guard-rails
+# declare in visual-tests/_config.yaml:
+#   app:      root: docs, start: "python3 -m http.server {port} --bind 127.0.0.1", healthcheck: "/index.html"
+#   profiles: site-accessible: { scope: "site-accessible", checks: [page-load, local-assets, browser-errors, screenshots] }
+node visual-tests/shipguard.mjs run --profile=site-accessible --serve
+# exit 0 = clean, 1 = findings (see the review dashboard's Findings tab), 2 = infra error, 3 = config error
+node visual-tests/shipguard.mjs stop --all
+```
+
+LLM assertions (`llm-check`/`llm-wait`) are never faked by the CLI — they are declared as a `needs-agent` lane in `run.json`; run `/sg-visual-run` to complete them.
+
 ## Configuration
 
 Create `visual-tests/_config.yaml`:
 
 ```yaml
+version: 2
 base_url: "http://localhost:3000"
 credentials:
   username: "testuser"
   password: "testpass"
 build_command: "docker compose up -d --build frontend"  # optional
+# app:        # optional — lets `shipguard serve/run` own the app lifecycle
+#   start: "python3 -m http.server {port} --bind 127.0.0.1"
+#   healthcheck: "/index.html"
+# profiles:   # optional — named recette scopes for `shipguard run --profile=…`
+#   smoke: { scope: all, checks: [page-load, local-assets, browser-errors, screenshots] }
 ```
 
 ## License
