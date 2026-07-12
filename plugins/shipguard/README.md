@@ -14,10 +14,11 @@ Five AI-powered modules. Use one, some, or all. No test files to write.
 
 One orchestrator ties them together: `/sg-ship` runs audit → process check → visual → review on your diff.
 
-### All 12 skills
+### All 13 skills
 
 | Skill | Purpose |
 |-------|---------|
+| `/sg-mission-lock` | Lock the literal mission and authority before work; model-aware Codex activation for GPT-5.6 Sol |
 | `/sg-ship` | One-command pipeline: code audit → process check → visual run → unified review, scoped to your diff |
 | `/sg-code-audit` | Dispatch parallel AI agents to audit changed or scoped code for bugs |
 | `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |
@@ -30,6 +31,21 @@ One orchestrator ties them together: `/sg-ship` runs audit → process check →
 | `/sg-record` | Record browser interactions as replayable test manifests |
 | `/sg-improve` | Capture session learnings and improvement issues, with snapshot/rollback safety |
 | `/sg-scout` | Research GitHub for techniques that improve ShipGuard's audits and visual runs |
+
+### Mission lock for GPT-5.6 Sol
+
+On Codex, ShipGuard's read-only hook checks the active model slug at session start, on every user
+prompt, for subagents, and after compaction. For `gpt-5.6` or `gpt-5.6-sol` — regardless of reasoning
+effort — it injects the requirement to run `/sg-mission-lock` first. Explicit `GPT-5.6 Sol`
+or `Sol Ultra` prompts also activate it; ordinary uses of the word “sol” do not.
+
+Codex does not trust newly installed plugin hooks automatically. After installing or updating
+ShipGuard, open `/hooks`, review and trust the ShipGuard mission-lock hook, then start a new thread.
+Until trusted, the skill remains explicitly callable and implicitly selectable, but automatic
+model-aware activation is not guaranteed.
+
+This guard targets mission drift, inferred authority, and overbroad verification claims. It reduces
+those failure modes; no prompt or hook can guarantee that a model never hallucinates.
 
 ### Install
 
@@ -45,6 +61,8 @@ codex plugin add shipguard@shipguard
 # Browser lanes
 npm install -g agent-browser && agent-browser install --with-deps
 ```
+
+Then open `/hooks` in Codex and trust the ShipGuard mission-lock hook once.
 
 Migrating from an older local Codex adapter or a Claude marketplace install? See [`docs/codex-migration.md`](docs/codex-migration.md).
 
@@ -412,6 +430,7 @@ Built for **Claude Code**. Partial support for other AI CLIs:
 | Review Dashboard | ✅ Full | ✅ Pure Node.js |
 | Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
 | Self-Improving Engine | ✅ Full | ✅ gh CLI is universal |
+| Mission Lock | ✅ Explicit skill | ✅ Codex hook after `/hooks` trust; explicit skill elsewhere |
 
 The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
 

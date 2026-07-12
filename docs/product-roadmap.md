@@ -1,6 +1,6 @@
 # ShipGuard Product Roadmap
 
-> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.4.0** — and git tags follow it from now on.
+> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.6.0** — and git tags follow it from now on.
 
 ## Shipped in v2.0.0
 
@@ -57,6 +57,13 @@
 - **Static-site mode completed** -- measured link/asset crawler (`shipguard crawl`), auto `app:` block detection in discovery
 - **Browser-output robustness** -- tolerant JSON parsing, normalized `browser_errors[]` (additive), screenshot byte validation, honest `llm_steps_pending` (mechanical runs never fake LLM checks)
 - **Hygiene** -- `shipguard init` seeds `.gitignore` guard-rails (`_results/`, `.DS_Store`); `_regressions.yaml` stays committed by default
+
+## Shipped in 2.6.0
+
+- **`sg-mission-lock`** -- reusable objective/mode/authority guard that prevents terse continuations, handoffs, findings, or subagents from silently expanding the user mission.
+- **Model-aware Codex activation** -- a read-only, stateless plugin hook activates the guard for `gpt-5.6` / `gpt-5.6-sol` at any reasoning effort, including after compaction and inside subagents.
+- **Honest trust boundary** -- automatic activation requires the user to review and trust the plugin hook; implicit skill selection remains a fallback, not a guarantee.
+- **Regression harness** -- standalone Node smoke tests cover standard/Ultra effort, explicit model naming, lifecycle events, malformed input, and ordinary “sol” false positives.
 
 ---
 

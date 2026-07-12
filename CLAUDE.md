@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-ShipGuard is a Claude Code plugin (with partial Codex CLI support) providing `sg-*` skills for diff-scoped verification of code changes: AI code audit, process behavior simulation, visual E2E testing with agent-browser, macro recording, an HTML review dashboard, and a self-improving engine. GitHub: `bacoco/ShipGuard`. License MIT. Main branch: `main`.
+ShipGuard is a Claude Code and Codex plugin providing `sg-*` skills for mission control and diff-scoped verification: code audit, process simulation, visual E2E testing, macro recording, review dashboards, and self-improvement. GitHub: `bacoco/ShipGuard`. License MIT. Main branch: `main`.
 
 Pipeline: static **find** (`sg-code-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `/sg-ship` orchestrates all of it. Report-only by default; `--fix` opts in.
 
@@ -14,11 +14,13 @@ Pipeline: static **find** (`sg-code-audit`) → dynamic **simulate** (`sg-proces
 .claude-plugin/marketplace.json      # Claude Code marketplace manifest
 .agents/plugins/marketplace.json     # Codex marketplace manifest
 plugins/shipguard/                   # The plugin itself
-├── .claude-plugin/plugin.json       # Plugin manifest (name, version — currently 2.4.0)
+├── .claude-plugin/plugin.json       # Plugin manifest (name, version — currently 2.6.0)
 ├── .codex-plugin/plugin.json        # Codex plugin manifest
+├── hooks/hooks.json                 # Codex model-aware mission-lock injection
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 12 skills, one dir each
+└── skills/                          # 13 skills, one dir each
+    ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
     ├── sg-ship/                     # Orchestrator: full pipeline on a diff
     ├── sg-code-audit/               # Parallel audit agents + verification
     ├── sg-process-check/            # Before/after behavior simulation (reason/hybrid/execute)
@@ -40,7 +42,7 @@ scripts/build-demo-gif.py            # README demo GIF builder
 ## Skill format
 
 Each skill directory contains:
-- `SKILL.md` — YAML frontmatter (`name`, `description`, `context`, `argument-hint`) followed by the skill prompt/instructions. This is the source of truth for each skill's behavior.
+- `SKILL.md` — YAML frontmatter (at minimum `name` and `description`; older Claude-focused skills may also use `context` and `argument-hint`) followed by the prompt/instructions. This is the source of truth for behavior.
 - `agents/openai.yaml` — Codex CLI adapter for that skill.
 - Optional `references/`, `fixtures/`, `examples/`, and Node scripts.
 
@@ -55,6 +57,7 @@ node plugins/shipguard/skills/sg-improve/improve-dry-run-smoke-test.mjs
 node plugins/shipguard/skills/sg-improve/improve-rollback-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-fix/visual-fix-dry-run-smoke-test.mjs
 node plugins/shipguard/skills/sg-scout/offline-dry-run-smoke-test.mjs
+node plugins/shipguard/skills/sg-mission-lock/scripts/mission-lock-smoke-test.mjs
 ```
 
 Run the relevant smoke test after touching a skill's scripts or templates.
@@ -68,3 +71,4 @@ Run the relevant smoke test after touching a skill's scripts or templates.
 - `--model=haiku` is deliberately refused for audits — do not relax this.
 - Per-project learned state lives in the target project's `.shipguard/` directory, not in this repo.
 - Keep the two marketplace manifests (`.claude-plugin/` and `.agents/plugins/`) in sync when plugin metadata changes.
+- `sg-mission-lock` is cross-skill governance. Its hook injects context only for `gpt-5.6` / `gpt-5.6-sol` or explicit Sol-model prompts; it must not mutate, persist state, or block unrelated prompts.

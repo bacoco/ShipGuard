@@ -1,0 +1,7 @@
+interface:
+  display_name: "ShipGuard Mission Lock"
+  short_description: "Prevents mission drift and inferred authority"
+  default_prompt: "Use $sg-mission-lock to lock the mission and authority before working."
+
+policy:
+  allow_implicit_invocation: true

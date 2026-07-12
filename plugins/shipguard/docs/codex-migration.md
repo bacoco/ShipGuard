@@ -51,6 +51,15 @@ codex plugin list
 
 The expected entry is `shipguard@shipguard` at the current plugin version.
 
+### Trust the mission-lock hook
+
+Codex requires explicit trust for plugin hooks. Open `/hooks`, review the ShipGuard hook, trust its
+current definition, and start a new thread. The hook is read-only and stateless: it injects mission
+guidance only for `gpt-5.6` / `gpt-5.6-sol` or prompts that explicitly name that model.
+
+If the hook is not trusted, `/sg-mission-lock` remains available, but automatic model-aware
+activation is not guaranteed.
+
 ## 4. Refresh Claude
 
 If Claude Code does not have ShipGuard yet, install it from the marketplace:
@@ -76,6 +85,7 @@ The smoke-test scripts ship inside the plugin; they only appear under `visual-te
 ```bash
 node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/review-smoke-test.mjs" --port=23101
 node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/monitor-smoke-test.mjs" --port=23102
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-mission-lock/scripts/mission-lock-smoke-test.mjs"
 ```
 
 Or run `/sg-visual-review` once in your project (the bootstrap copies the scripts), then:

@@ -6,10 +6,11 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 12 skills that form a pipeline from analysis to verification to repair, with self-improvement, macro recording, and durable change reports. `sg-ship` orchestrates the three discovery lanes end to end.
+ShipGuard is composed of 13 skills: a cross-skill mission guard plus a pipeline from analysis to verification to repair, with self-improvement, macro recording, and durable change reports. `sg-ship` orchestrates the three discovery lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
+| `sg-mission-lock` | Lock literal objective, mode, authority, scope, and Done before work; Codex hook activates it for GPT-5.6 Sol | User mission + active model metadata | Developer-context guard; no project files or runtime state |
 | `sg-ship` | One-command orchestrator -- runs code audit -> process check -> visual -> review on the diff. Thin sequencer over the lanes; no new analysis | Repo + git diff | Unified review across all three signals |
 | `sg-code-audit` | Parallel AI codebase audit -- dispatches agents to find and fix bugs | Repo source code | `audit-results.json` (structured bug list) |
 | `sg-process-check` | Diff-driven behavior simulation at the PROCESS level -- traces changed units before/after (reasoning by default, optional real execution), observe-not-fix | Git diff (+ optional running code) | `process-results.json` + `process-report.md` |
@@ -22,6 +23,14 @@ ShipGuard is composed of 12 skills that form a pipeline from analysis to verific
 | `sg-record` | Record browser interactions as replayable YAML test manifests | User browser session | `visual-tests/manifests/recorded-*.yaml` |
 | `sg-improve` | Analyze audit false positives/negatives, refine checklists and prompts | `audit-results.json` + user feedback | Updated `learnings.yaml` + checklist patches |
 | `sg-scout` | Research emerging bug patterns and techniques from external sources | Research query | `techniques-library.md` updates |
+
+### Mission-lock boundary
+
+`hooks/hooks.json` invokes a zero-dependency, read-only Node script on `SessionStart` (including the
+`compact` source), `UserPromptSubmit`, and `SubagentStart`. The script reads hook JSON from stdin and
+emits additional developer context only for the exact `gpt-5.6` / `gpt-5.6-sol` family or an explicit
+Sol-model prompt. It stores nothing, edits nothing, and blocks nothing. Codex plugin hooks remain
+inactive until the user reviews and trusts them.
 
 ## Data Flow
 
