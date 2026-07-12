@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
-  "description": "ShipGuard — AI-assisted code audit, process behavior simulation, and visual E2E review for changed code. Audit the code, simulate the process, verify visually. Zero test files to write.",
-  "version": "2.5.0",
+  "description": "ShipGuard — AI-assisted code audit, process simulation, visual E2E review, and agent mission guardrails.",
+  "version": "2.6.0",
   "author": {
     "name": "bacoco"
   },
@@ -12,6 +12,8 @@
     "code-audit",
     "visual-testing",
     "process-check",
-    "regression-testing"
+    "regression-testing",
+    "agent-guardrails",
+    "mission-lock"
   ]
 }

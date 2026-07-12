@@ -24,6 +24,7 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
 | Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
+| Mission Lock | 🟢 New in 2.6.0 | Mission/authority guard; model-aware Codex hook for GPT-5.6 Sol |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.
@@ -121,6 +122,10 @@ codex plugin add shipguard@shipguard
 # Browser lanes
 npm install -g agent-browser && agent-browser install --with-deps
 ```
+
+For automatic GPT-5.6 Sol activation, open `/hooks` in Codex, review and trust the ShipGuard
+mission-lock hook, then start a new thread. The hook is read-only and a no-op for unrelated models.
+It reduces mission drift and overclaiming; it is not a guarantee of zero hallucinations.
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)
 
@@ -481,6 +486,7 @@ Built for **Claude Code**. Partial support for other AI CLIs:
 | Review Dashboard | ✅ Full | ✅ Pure Node.js |
 | Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
 | Self-Improving Engine | ✅ Full | ✅ gh CLI is universal |
+| Mission Lock | ✅ Explicit skill | ✅ Codex hook after `/hooks` trust; explicit skill elsewhere |
 
 The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
 
