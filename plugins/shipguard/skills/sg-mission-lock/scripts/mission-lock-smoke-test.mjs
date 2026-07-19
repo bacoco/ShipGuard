@@ -92,6 +92,9 @@ assert.match(skillText, /Parallel branches are allowed/);
 assert.match(skillText, /A `DEVIATION` notice.*never creates permission/s);
 assert.match(skillText, /Authority capabilities are non-transitive/);
 assert.match(skillText, /wait for explicit user\s+confirmation/s);
+assert.match(skillText, /largest coherent safe useful slice/);
+assert.match(skillText, /Do not split a coherent tranche into\s+artificial micro-steps/s);
+assert.doesNotMatch(skillText, /smallest action|next smallest step/);
 
 const adapterText = readFileSync(adapter, "utf8");
 assert.match(adapterText, /allow_implicit_invocation: true/);

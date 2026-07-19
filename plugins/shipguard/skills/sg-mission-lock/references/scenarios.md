@@ -60,6 +60,13 @@ without raising authority. Ordinary code feedback or acceptance refinement does 
 Expected: parallel branches are allowed only when all are direct, disjoint or coordinated, and
 carry the same lock. A finding from one branch cannot create another mission.
 
+### User asks what comes next inside a governed goal
+
+The next named tranche is a coherent end-to-end workflow, while a residual proof from the previous
+tranche can be exercised inside it. Expected: select the whole coherent tranche. Do not manufacture
+a separate micro-gate or proof-only task unless a concrete risk, dependency, unknown, or authority
+boundary prevents the combined slice.
+
 ## Forward-Test Receipt
 
 For each case record:

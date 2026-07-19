@@ -26,7 +26,13 @@ Before the first non-trivial action, extract and expose one concise checkpoint:
 - Deliverable: answer, review, plan, code, evidence, publication, or runtime result.
 - Done: observable evidence that ends the mission.
 - Out-now: items excluded from this mission, without banning them project-wide.
-- Next: the smallest action that advances Done.
+- Next: the largest coherent safe useful slice that materially advances Done.
+
+`Next` is a planning unit, not a mandate to atomize work. Do not split a coherent tranche into
+artificial micro-steps or insert a proof-only gate when that proof can be folded into the next
+end-to-end slice. Choose the largest slice that is direct, authorized, safely reviewable, and
+verifiable. Use a smaller step only when a concrete risk, unknown, dependency, or authority boundary
+requires it.
 
 Authority capabilities are non-transitive: `READ`, `DOCS`, `CODE`, `PUBLISH`, and `OPS/LIVE` must
 be granted separately. A later capability never inherits unrelated mutation rights. If exact
@@ -113,7 +119,7 @@ After resume, restart, steering, compaction, or terse continuation:
 2. Inspect current state only as needed.
 3. Do not adopt handoff “next actions” as user authorization.
 4. Re-emit the lock before mutation.
-5. State the current result, remaining locked work, and next smallest step.
+5. State the current result, remaining locked work, and next coherent safe useful slice.
 
 Reconstruction may update observed state, evidence, and Next. It must not broaden Objective, Mode,
 Authority, Scope, Deliverable, Done, or Out-now without an explicit user statement.
