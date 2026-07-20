@@ -87,12 +87,30 @@ Objective, Mode, Authority, and mutation limits. Subagent findings are evidence,
 Continue independent authorized slices when one slice is blocked. Record the blocker and keep the
 same mission, authority, and Done criteria; a blocker never authorizes adjacent work.
 
+Code is the primary deliverable when the user requests implementation. A plan, receipt, review,
+judge verdict, task decomposition, or test rerun is supporting evidence, not a substitute for the
+requested behavior. Process artifacts do not count as product progress. Before implementation,
+spend only the bounded inspection needed to identify the real entry path, constraints, and first
+coherent code tranche. Keep its related implementation, tests, and necessary documentation
+together; do not split work by tiny function or create intervening review-only, test-only, or
+receipt-only milestones when one safely reviewable outcome can contain them.
+
+Use one verification campaign per coherent tranche: reproduce or run the narrow high-signal check
+once before coding when useful, rerun only the affected narrow check while resolving failures, then
+run the broadest required gate once at the end of the coherent tranche. Do not rerun a broad suite
+after documentation-only changes or against an unchanged code SHA unless runtime state, dependencies,
+or a prior failure changed. Verification remains mandatory; repetition without changed evidence is
+not progress.
+
 Use current verification evidence for completion. For trivial low-risk work already covered by a
 deterministic check, do not add an AI review. For substantial work, use one independent final review.
 Do not dispatch a reviewer after every worker or slice. Re-review only after correcting a P0 or P1
 finding. Add a phase review only at a security or auth boundary, persistence migration, public
 contract change, live or irreversible action, or rejected verification. A review does not replace
 the real test, workflow, install path, or runtime evidence required by Done.
+Do not create a review of a review or a judge of a judge. A reviewer may inspect code and evidence;
+another reviewer is justified only by a named independent risk boundary, never merely to validate
+the first review.
 
 ## Preserve Mode
 

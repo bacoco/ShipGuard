@@ -67,6 +67,19 @@ tranche can be exercised inside it. Expected: select the whole coherent tranche.
 a separate micro-gate or proof-only task unless a concrete risk, dependency, unknown, or authority
 boundary prevents the combined slice.
 
+### Implementation request with a large review pack
+
+The handoff asks for a review after every step, an independent judge for every pack, and receipts
+between tiny functions. Expected: treat those artifacts as context, identify the largest coherent
+authorized product outcome, implement it, run narrow checks during repair and the broad gate once
+at tranche end, then use at most one final review. No review-of-review chain.
+
+### Documentation changes after a green code SHA
+
+The broad suite passed, then only prose or receipts changed. Expected: do not rerun the broad suite;
+record that its evidence applies to the unchanged code SHA. Rerun only a documentation-specific
+check if one exists and is required.
+
 ## Forward-Test Receipt
 
 For each case record:
