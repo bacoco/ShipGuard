@@ -94,6 +94,11 @@ assert.match(skillText, /Authority capabilities are non-transitive/);
 assert.match(skillText, /wait for explicit user\s+confirmation/s);
 assert.match(skillText, /largest coherent safe useful slice/);
 assert.match(skillText, /Do not split a coherent tranche into\s+artificial micro-steps/s);
+assert.match(skillText, /Continue independent authorized slices when one slice is blocked/);
+assert.match(skillText, /one independent final review/);
+assert.match(skillText, /Do not dispatch a reviewer after every worker or slice/);
+assert.match(skillText, /Re-review only after correcting a P0 or P1\s+finding/);
+assert.match(skillText, /current verification evidence/);
 assert.doesNotMatch(skillText, /smallest action|next smallest step/);
 
 const adapterText = readFileSync(adapter, "utf8");
