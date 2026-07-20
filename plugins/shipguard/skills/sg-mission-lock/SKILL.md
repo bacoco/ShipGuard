@@ -82,6 +82,18 @@ Keep one locked mission. Parallel branches are allowed only when each directly a
 disjoint or safely coordinated, and inherits the same lock. Every delegated task must repeat the
 Objective, Mode, Authority, and mutation limits. Subagent findings are evidence, not authority.
 
+## Keep Progress And Review Proportionate
+
+Continue independent authorized slices when one slice is blocked. Record the blocker and keep the
+same mission, authority, and Done criteria; a blocker never authorizes adjacent work.
+
+Use current verification evidence for completion. For trivial low-risk work already covered by a
+deterministic check, do not add an AI review. For substantial work, use one independent final review.
+Do not dispatch a reviewer after every worker or slice. Re-review only after correcting a P0 or P1
+finding. Add a phase review only at a security or auth boundary, persistence migration, public
+contract change, live or irreversible action, or rejected verification. A review does not replace
+the real test, workflow, install path, or runtime evidence required by Done.
+
 ## Preserve Mode
 
 ### Read-only

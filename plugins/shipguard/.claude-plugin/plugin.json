@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
   "description": "ShipGuard — AI-assisted code audit, process simulation, visual E2E review, and agent mission guardrails.",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "author": {
     "name": "bacoco"
   },
