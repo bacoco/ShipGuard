@@ -99,6 +99,11 @@ assert.match(skillText, /one independent final review/);
 assert.match(skillText, /Do not dispatch a reviewer after every worker or slice/);
 assert.match(skillText, /Re-review only after correcting a P0 or P1\s+finding/);
 assert.match(skillText, /current verification evidence/);
+assert.match(skillText, /Code is the primary deliverable when the user requests implementation/);
+assert.match(skillText, /Process artifacts do not count as product progress/);
+assert.match(skillText, /Do not create a review of a review or a judge of a judge/);
+assert.match(skillText, /run the broadest required gate once at the end of the coherent tranche/i);
+assert.match(skillText, /unchanged code SHA/);
 assert.doesNotMatch(skillText, /smallest action|next smallest step/);
 
 const adapterText = readFileSync(adapter, "utf8");
