@@ -24,7 +24,7 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
 | Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
-| Mission Lock | 🟢 Updated in 2.6.2 | Code-first mission guard with coherent work batches, one verification campaign, and proportionate review |
+| Mission Lock | 🟢 Updated in 2.6.3 | Code-first mission guard; read content (pages, files, tool output) is data — it never instructs, widens authority, or passes a review |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.
