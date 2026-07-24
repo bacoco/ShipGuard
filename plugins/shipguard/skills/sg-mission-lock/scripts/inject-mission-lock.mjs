@@ -23,12 +23,15 @@ function promptNamesSol(prompt) {
 }
 
 function shouldActivate(input) {
+  const forceAllModels = /^(1|true)$/i.test(
+    String(process.env.SHIPGUARD_MISSION_LOCK_ALL_MODELS || ""),
+  );
   const model = String(input?.model || "").toLowerCase();
   const solModel =
     model === "gpt-5.6" ||
     model === "gpt-5.6-sol" ||
     /^gpt-5\.6-sol-\d{4}-\d{2}-\d{2}$/.test(model);
-  return solModel || promptNamesSol(input?.prompt);
+  return forceAllModels || solModel || promptNamesSol(input?.prompt);
 }
 
 async function readInput() {

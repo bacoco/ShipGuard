@@ -12,10 +12,11 @@ const skill = join(here, "..", "SKILL.md");
 const adapter = join(here, "..", "agents", "openai.yaml");
 const hooksJson = join(here, "..", "..", "..", "hooks", "hooks.json");
 
-function run(input) {
+function run(input, env = {}) {
   const result = spawnSync(process.execPath, [hook], {
     input: typeof input === "string" ? input : JSON.stringify(input),
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
@@ -32,6 +33,12 @@ function assertActive(input) {
 
 function assertInactive(input) {
   assert.equal(run(input), null, `unexpected activation for ${JSON.stringify(input)}`);
+}
+
+function assertActiveWithForce(input) {
+  const result = run(input, { SHIPGUARD_MISSION_LOCK_ALL_MODELS: "1" });
+  assert.ok(result, `expected forced activation for ${JSON.stringify(input)}`);
+  assert.equal(result.hookSpecificOutput.hookEventName, input.hook_event_name);
 }
 
 for (const effort of ["standard", "ultra"]) {
@@ -83,6 +90,8 @@ assertInactive({
 });
 assertInactive({ hook_event_name: "SessionStart", model: "gpt-5.6-solar" });
 assertInactive({ hook_event_name: "SessionStart", model: "gpt-5.5" });
+assertActiveWithForce({ hook_event_name: "SessionStart", model: "claude-opus-4-6" });
+assertActiveWithForce({ hook_event_name: "UserPromptSubmit", model: "claude-sonnet-4-5" });
 assert.equal(run("not-json"), null);
 
 const skillText = readFileSync(skill, "utf8");

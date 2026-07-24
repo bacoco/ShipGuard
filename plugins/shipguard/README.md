@@ -44,6 +44,11 @@ ShipGuard, open `/hooks`, review and trust the ShipGuard mission-lock hook, then
 Until trusted, the skill remains explicitly callable and implicitly selectable, but automatic
 model-aware activation is not guaranteed.
 
+To opt in explicitly for all models in a runtime such as Claude Code, prefix the
+hook command with `SHIPGUARD_MISSION_LOCK_ALL_MODELS=1`. The default remains
+Sol-only, so existing installations do not receive a new automatic guard
+silently.
+
 This guard targets mission drift, inferred authority, and overbroad verification claims. It reduces
 those failure modes; no prompt or hook can guarantee that a model never hallucinates.
 
