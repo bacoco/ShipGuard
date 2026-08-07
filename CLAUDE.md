@@ -19,8 +19,9 @@ plugins/shipguard/                   # The plugin itself
 ├── hooks/hooks.json                 # Codex model-aware mission-lock injection
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 13 skills, one dir each
+└── skills/                          # 14 skills, one dir each
     ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
+    ├── sg-gauntlet/                 # Writes the paste-ready beat-a-named-bar prompt
     ├── sg-ship/                     # Orchestrator: full pipeline on a diff
     ├── sg-code-audit/               # Parallel audit agents + verification
     ├── sg-process-check/            # Before/after behavior simulation (reason/hybrid/execute)

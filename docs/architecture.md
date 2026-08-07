@@ -6,7 +6,7 @@ Code audit narrows the field. Visual audit confirms reality. Human review decide
 
 ## Skills Overview
 
-ShipGuard is composed of 13 skills: a cross-skill mission guard plus a pipeline from analysis to verification to repair, with self-improvement, macro recording, and durable change reports. `sg-ship` orchestrates the three discovery lanes end to end.
+ShipGuard is composed of 14 skills: a cross-skill mission guard plus a pipeline from analysis to verification to repair, with self-improvement, macro recording, and durable change reports. `sg-ship` orchestrates the three discovery lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|

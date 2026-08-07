@@ -14,11 +14,12 @@ Five AI-powered modules. Use one, some, or all. No test files to write.
 
 One orchestrator ties them together: `/sg-ship` runs audit → process check → visual → review on your diff.
 
-### All 13 skills
+### All 14 skills
 
 | Skill | Purpose |
 |-------|---------|
 | `/sg-mission-lock` | Lock the literal mission and authority before work; model-aware Codex activation for GPT-5.6 Sol |
+| `/sg-gauntlet` | Turn a quality goal into one paste-ready prompt that grinds builders against blind critics until the work beats a named, fetchable bar |
 | `/sg-ship` | One-command pipeline: code audit → process check → visual run → unified review, scoped to your diff |
 | `/sg-code-audit` | Dispatch parallel AI agents to audit changed or scoped code for bugs |
 | `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |

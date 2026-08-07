@@ -1,0 +1,7 @@
+interface:
+  display_name: "ShipGuard Gauntlet"
+  short_description: "Writes the prompt that grinds work until it beats a named bar"
+  default_prompt: "Use $sg-gauntlet to turn this goal into a paste-ready prompt judged against a real reference."
+
+policy:
+  allow_implicit_invocation: false
