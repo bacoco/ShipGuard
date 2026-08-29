@@ -1,0 +1,7 @@
+interface:
+  display_name: "ShipGuard Beat Reference"
+  short_description: "Improve work until it beats a named reference"
+  default_prompt: "Use $sg-beat-reference to turn this goal into a paste-ready prompt judged against a real reference."
+
+policy:
+  allow_implicit_invocation: false

@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
-  "version": "2.7.0",
-  "description": "AI-assisted code audit, process simulation, visual E2E review, and agent mission guardrails.",
+  "version": "2.8.0",
+  "description": "AI-assisted code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
   "author": {
     "name": "bacoco",
     "url": "https://github.com/bacoco"
@@ -11,6 +11,7 @@
   "license": "MIT",
   "keywords": [
     "code-audit",
+    "logic-audit",
     "visual-testing",
     "process-check",
     "regression-testing",
@@ -20,8 +21,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "ShipGuard",
-    "shortDescription": "Audit code, simulate behavior, review visuals, and guard agent scope",
-    "longDescription": "ShipGuard bundles focused skills for static code audit, diff-scoped process behavior simulation, browser-based visual checks, mission and authority guardrails, and unified review dashboards. It exposes what changed and how it was verified while leaving scope, fix, and ship decisions to the human.",
+    "shortDescription": "Audit code and logic, simulate behavior, review visuals, guard scope",
+    "longDescription": "ShipGuard bundles focused skills for static code audit, contract and invariant checking, diff-scoped process behavior simulation, browser-based visual checks, mission and authority guardrails, and unified review dashboards. It exposes what changed and how it was verified while leaving scope, fix, and ship decisions to the human.",
     "developerName": "bacoco",
     "category": "Developer Tools",
     "capabilities": [
@@ -33,6 +34,7 @@
     "termsOfServiceURL": "https://github.com/bacoco/shipguard",
     "defaultPrompt": [
       "Run ShipGuard on my current diff.",
+      "Audit this workflow or algorithm against its contracts and invariants.",
       "Simulate the process behavior for this change.",
       "Review visual regressions for impacted routes.",
       "Lock this agent to my stated mission before working."

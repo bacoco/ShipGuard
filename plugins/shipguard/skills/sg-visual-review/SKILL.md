@@ -1,13 +1,13 @@
 ---
 name: sg-visual-review
-description: Use after visual runs, code audits, or process checks when results need human review — builds and serves the interactive ShipGuard dashboard.
+description: Use after visual runs, code audits, logic audits, or process checks when results need human review — builds and serves the interactive ShipGuard dashboard.
 context: conversation
 argument-hint: "[--port=N]"
 ---
 
 # /sg-visual-review — Interactive Screenshot Review
 
-Generate and serve the ShipGuard dashboard to review visual test screenshots, code audit findings, and process-check results, annotate problems, and export re-run / fix manifests.
+Generate and serve the ShipGuard dashboard to review visual test screenshots, code audit findings, logic contract/invariant findings, and process-check results, annotate problems, and export re-run / fix manifests.
 
 ## Invocations
 
@@ -43,10 +43,11 @@ This script:
 4. Reads `visual-tests/_regressions.yaml` for failure reasons
 5. Matches screenshots from `visual-tests/_results/screenshots/`
 6. Rewrites canonical `visual-tests/_results/visual-results.json` from the resolved statuses, preserving the producer's run `timestamp` and per-test `duration_ms` (build time is recorded separately as `generated_at`)
-7. Reads `visual-tests/_results/process-results.json` (written by `/sg-process-check`) into the Process tab, if present
-8. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
-9. While `/sg-code-audit` is running (or `audit-monitor.json` exists in `_results/`), live agent progress renders **inside the Code Audit tab** — a progress bar in Overview and per-agent pods in the Agents sub-tab. There is no separate Monitor tab.
-10. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
+7. Reads `visual-tests/_results/logic-results.json` (written by `/sg-logic-audit`) into the Logic tab, if present
+8. Reads `visual-tests/_results/process-results.json` (written by `/sg-process-check`) into the Process tab, if present
+9. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
+10. While `/sg-code-audit` is running (or `audit-monitor.json` exists in `_results/`), live agent progress renders **inside the Code Audit tab** — a progress bar in Overview and per-agent pods in the Agents sub-tab. There is no separate Monitor tab.
+11. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
 
 `--serve` binds to `127.0.0.1` by default and refuses path traversal after decoding and resolving paths. Cross-origin POSTs to the server are rejected. LAN exposure requires an explicit host:
 
@@ -87,17 +88,17 @@ open http://127.0.0.1:8888
 agent-browser open http://127.0.0.1:8888
 ```
 
-The Code Audit tab, the live audit monitor, and the "Validate & Generate Report" button require the HTTP server. Opening `review.html` via `file://` only shows the data embedded at build time (Visual Tests, Process, Recorded Tests) and cannot save fix manifests.
+The Code Audit tab, the live audit monitor, and the "Validate & Generate Report" button require the HTTP server. Opening `review.html` via `file://` only shows the data embedded at build time (Logic, Visual Tests, Process, Recorded Tests) and cannot save fix manifests.
 
 ### Step 3: Human Review
 
 The review page provides:
 
 **Findings tab (unified, evidence-first — default when findings exist)**
-- Renders `visual-tests/_results/findings.json`, a derived list the builder generates on every build: audit bugs, process deltas, visual failures + `browser_errors`, crawler breakage (`crawl-results.json` from `shipguard crawl`/`run`), and human annotations (`fix-manifest.json`)
+- Renders `visual-tests/_results/findings.json`, a derived list the builder generates on every build: audit bugs, logic violations, process deltas, visual failures + `browser_errors`, crawler breakage (`crawl-results.json` from `shipguard crawl`/`run`), and human annotations (`fix-manifest.json`)
 - Each finding: `SG-###` id, severity (sorted first), an **evidence badge** — `measured` (a real observation), `reasoned` (a static/simulated prediction), `manual` (a human annotation) — source lane, and route/file location
 - The canonical per-lane schemas are untouched; findings.json is an additive projection
-- **Dynamic default tab:** the dashboard opens on the first tab with data (findings → audit → visual → process → recorded)
+- **Dynamic default tab:** the dashboard opens on the first tab with data (findings → audit → logic → visual → process → recorded)
 - **Lane chips:** `run.json` (written by `sg-ship` / `shipguard run`) renders per-lane status chips (`ran` / `skipped` / `not-applicable` / `error` / `needs-agent`); a declared skipped lane shows its reason in place of a generic empty state
 - CLI equivalent: `node visual-tests/shipguard.mjs review [--serve]`
 
@@ -115,6 +116,13 @@ The review page provides:
 - Sub-tabs: Overview, Bugs, Routes, Agents
 - Bug filters: severity buttons (All / Critical / High / Medium / Low, with counts), a route chip (click a row in the Routes sub-tab to filter bugs by route; click the chip to clear it), and free-text search over title, file, id, and category
 - Live monitor: while an audit runs, the Overview shows a progress bar (agents done, bugs found so far) and the Agents sub-tab shows per-agent pods (status, bugs found, duration), fed by `audit-monitor.json` and the `/api/monitor/*` endpoints
+
+**Logic tab**
+- Renders `visual-tests/_results/logic-results.json` written by `/sg-logic-audit`
+- Shows contract/invariant violations with candidate, obligation, smallest counterexample, evidence, and severity
+- Separately shows contract conflicts, questions, and uncovered paths so uncertainty is not presented as a bug
+- Summary chips expose candidates, obligations, violations, risks, conflicts, coverage gaps, and reasoned/measured evidence
+- Friendly empty or declared-skip state when the lane did not run
 
 **Process tab**
 - Renders `visual-tests/_results/process-results.json` written by `/sg-process-check` (embedded at build time — rebuild after a new process check)

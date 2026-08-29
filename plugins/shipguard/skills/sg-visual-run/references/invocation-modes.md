@@ -7,8 +7,9 @@ Recognized scope flags:
 - `--all` → full suite, skip interactive menu.
 - `--diff=<ref>` → "only what changed" logic against that ref, skip menu.
 - `--from-audit` → read `impacted_ui_routes` (or legacy `impacted_routes`) from audit results (see From-Audit Mode).
+- `--from-logic` → read `impacted_ui_routes` from logic-audit results (see From-Logic Mode).
 - `--from-process` → read `impacted_ui_routes` from process-check results (see From-Process Mode).
-- `--from-audit` AND `--from-process` together → **Union Mode** (see below).
+- any two or more bridge flags together → **Union Mode** (see below).
 - `--regressions` → read `_regressions.yaml`, run only those tests, skip menu.
 - Free text, no flags → Natural Language Mode.
 - Nothing → Interactive Mode.
@@ -155,30 +156,42 @@ Use `scope.type: "from-process"` and `scope.source` pointing to the consumed fil
 
 ---
 
-## Union Mode (`--from-audit --from-process` together)
+## From-Logic Mode (`--from-logic`)
 
-When BOTH bridge flags are passed:
+Use the same matching, severity ordering, uncovered-route handling, and reporting rules as
+`--from-audit`, but read `impacted_ui_routes` from:
 
-1. Read BOTH results files, using each mode's search order above. If either file is not found, fail with a clear message naming the missing file — do not silently degrade to single-source mode.
-2. Take the **union** of the two `impacted_ui_routes` arrays.
-3. **Dedupe by `route`**: when both sources list the same route, keep the entry with the highest severity (`critical` > `high` > `medium` > `low`). Preserve `bug_count` from the audit entry when present.
+1. `visual-tests/_results/logic-results.json`
+2. `logic-results.json` at repository root
+
+Entries have the shape `{"route": "/dashboard", "reason": "...", "severity": "high"}`.
+Use `scope.type: "from-logic"` and `scope.source` pointing to the consumed file.
+
+---
+
+## Union Mode (two or more bridge flags)
+
+When two or more of `--from-audit`, `--from-logic`, and `--from-process` are passed:
+
+1. Read every selected results file, using each mode's search order above. If a selected file is not found, fail with a clear message naming it — do not silently drop a requested source.
+2. Take the **union** of all selected `impacted_ui_routes` arrays.
+3. **Dedupe by `route`**: when sources list the same route, keep the entry with the highest severity (`critical` > `high` > `medium` > `low`). Preserve `bug_count` from the audit entry when present.
 4. **Order severity-first**; tie-break equal severities by manifest `priority` (`high` > `medium` > `low`).
 5. Matching, uncovered-route handling, and reporting follow the From-Audit rules.
-6. In `visual-results.json`, use `scope.type: "union"` and set `scope.source` to both consumed files, e.g. `"visual-tests/_results/audit-results.json + visual-tests/_results/process-results.json"`.
+6. In `visual-results.json`, use `scope.type: "union"` and set `scope.source` to every consumed file joined with ` + `.
 
 ---
 
 ## Build Execution List — priority order
 
-**This is the single authoritative statement of scope precedence** (SKILL.md and the Flag parsing section above defer to it). When multiple scope sources are present, the highest entry in this list wins — bridge flags (`--from-audit`, `--from-process`, union) win over `--diff` AND over `--all`:
+**This is the single authoritative statement of scope precedence** (SKILL.md and the Flag parsing section above defer to it). When multiple scope sources are present, the highest entry in this list wins — bridge flags (`--from-audit`, `--from-logic`, `--from-process`, union) win over `--diff` AND over `--all`:
 
-1. **`--from-audit` + `--from-process` (Union Mode)** → merged, severity-ordered list (dedupe by route, highest severity kept; tie-break by manifest `priority`)
-2. **`--from-audit`** → severity-ordered list from audit `impacted_ui_routes`
-3. **`--from-process`** → severity-ordered list from process-check `impacted_ui_routes`
-4. **`--diff=<ref>` or "Only what changed"** → diff-based route detection + regressions
-5. **Natural language** → intent analysis + generate missing tests
-6. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` descending
-7. **`--all` or "Full suite"** → all manifests, regressions first, then by priority `high` → `medium` → `low`
+1. **Two or more bridge flags (Union Mode)** → merged, severity-ordered list (dedupe by route, highest severity kept; tie-break by manifest `priority`)
+2. **One bridge flag** → severity-ordered list from that lane's `impacted_ui_routes`
+3. **`--diff=<ref>` or "Only what changed"** → diff-based route detection + regressions
+4. **Natural language** → intent analysis + generate missing tests
+5. **`--regressions`** → from `_regressions.yaml`, ordered by `last_failed` descending
+6. **`--all` or "Full suite"** → all manifests, regressions first, then by priority `high` → `medium` → `low`
 
 **Always skip** manifests with `deprecated: true` (top-level key).
-**Regressions among matched tests always run first** (except in bridge modes — `--from-audit`, `--from-process`, union — where severity order takes precedence).
+**Regressions among matched tests always run first** (except in bridge modes, where severity order takes precedence).

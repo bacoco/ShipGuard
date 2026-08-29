@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
-  "description": "ShipGuard — AI-assisted code audit, process simulation, visual E2E review, and agent mission guardrails.",
-  "version": "2.7.0",
+  "description": "ShipGuard — AI-assisted code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
+  "version": "2.8.0",
   "author": {
     "name": "bacoco"
   },
@@ -10,6 +10,7 @@
   "license": "MIT",
   "keywords": [
     "code-audit",
+    "logic-audit",
     "visual-testing",
     "process-check",
     "regression-testing",

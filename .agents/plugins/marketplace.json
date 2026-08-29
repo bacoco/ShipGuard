@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "shipguard",
-      "description": "AI-assisted code audit, process simulation, visual E2E review, and agent mission guardrails.",
+      "description": "AI-assisted code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
       "source": {
         "source": "local",
         "path": "./plugins/shipguard"

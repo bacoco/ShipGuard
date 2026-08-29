@@ -1,6 +1,6 @@
 # ShipGuard Product Roadmap
 
-> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.6.0** — and git tags follow it from now on.
+> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.8.0** — and git tags follow it from now on.
 
 ## Shipped in v2.0.0
 
@@ -64,6 +64,13 @@
 - **Model-aware Codex activation** -- a read-only, stateless plugin hook activates the guard for `gpt-5.6` / `gpt-5.6-sol` at any reasoning effort, including after compaction and inside subagents.
 - **Honest trust boundary** -- automatic activation requires the user to review and trust the plugin hook; implicit skill selection remains a fallback, not a guarantee.
 - **Regression harness** -- standalone Node smoke tests cover standard/Ultra effort, explicit model naming, lifecycle events, malformed input, and ordinary “sol” false positives.
+
+## Shipped in 2.8.0
+
+- **`sg-logic-audit`** -- report-only semantic audit for workflows, state machines, retries, transactions, authorization paths, and algorithms against traceable contracts/invariants.
+- **Counterexample-first result contract** -- `logic-results.json` and `logic-report.md` distinguish confirmed violations, risks, conflicts, questions, uncovered paths, and reasoned versus measured evidence.
+- **Pipeline and dashboard integration** -- `/sg-ship --logic` adds the semantic lane; `sg-visual-run --from-logic` consumes impacted routes; the unified review gains a Logic tab and logic findings.
+- **`sg-beat-reference` rename** -- discoverable canonical name for the bounded reference-comparison prompt, with `sg-gauntlet` retained as a deprecated alias.
 
 ---
 

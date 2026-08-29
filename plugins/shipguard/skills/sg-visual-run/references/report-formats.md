@@ -87,7 +87,7 @@ Additive optional per-test fields (producers may emit them; consumers must toler
 - `browser_errors`: `[{"level": "error"|"warn", "text": "..."}]` — normalized console/pageerror entries captured after the test's steps. **Measured** evidence; feeds `findings.json`.
 - `llm_steps_pending`: integer — number of `llm-check`/`llm-wait` steps a mechanical (`shipguard run`) execution could not evaluate. `0` or absent after a full agent run; non-zero values are declared as a `needs-agent` lane in `run.json`.
 
-For union runs (`--from-audit --from-process`), `scope.type` is `"union"` and `scope.source` lists both consumed files (see invocation-modes.md, Union Mode).
+For union runs (two or more bridge flags), `scope.type` is `"union"` and `scope.source` lists every consumed file (see invocation-modes.md, Union Mode).
 
 For scoped runs, `summary.total` is the selected run total. Preserve the global suite size in `scope.full_suite_total`, and preserve routes that were not executable as `scope.uncovered_routes` rather than dropping them from the machine contract.
 
