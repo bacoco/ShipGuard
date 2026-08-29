@@ -20,7 +20,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 |--------|--------|-------|
 | Visual E2E Debugger | 🟢 Stable | discover → run → review → fix loop |
 | Code Audit | 🟢 Stable | parallel agents, multi-round, verification |
-| Logic Audit | 🟢 New in 2.8.0 | contract/invariant checks, counterexamples, reasoned vs measured evidence |
+| Logic Audit | 🟢 Updated in 2.8.1 | detected automatically by SG-SHIP; contract/invariant checks and counterexamples |
 | Macro Recorder | 🟢 Stable | record → replay via YAML manifests |
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
@@ -66,9 +66,7 @@ Parallel AI agents scan your entire codebase, find bugs, and **fix them automati
 
 Check procedures and algorithms against their **declared contracts and invariants**. ShipGuard models paths, failure transitions, retries, ordering, termination, idempotency, atomicity, and algorithmic edge cases; then reports counterexamples with reasoned or measured evidence. **Report-only.**
 
-```
-/sg-logic-audit --diff=main --focus=src/workflows/
-```
+> « Vérifie si le nouveau workflow de remboursement respecte bien ses invariants. »
 
 </td>
 </tr>
@@ -112,11 +110,11 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 
 ### 🔗 One pipeline — `/sg-ship`
 
-Static **find** (`sg-code-audit`) → optional **logic check** (`sg-logic-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Run it on your diff with one command — **`/sg-ship`** — and add `--logic` when contracts, procedures, or algorithms matter. Report-only by default; `--fix` opts in.
+Static **find** → semantic **logic check** when applicable → dynamic **process check** → **visual**
+confirm → **human** decides. Speak normally: ShipGuard inspects the change, proposes the perimeter
+and checks in one sentence, then asks once if anything is ambiguous.
 
-```
-/sg-ship [quick|standard|deep|paranoid] [--logic] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]
-```
+> « Vérifie avec ShipGuard si ce que je viens de modifier est prêt à livrer. »
 
 </td>
 </tr>
@@ -218,7 +216,8 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 /sg-visual-run --all                            # Full suite
 ```
 
-`--from-audit`, `--from-logic`, and `--from-process` read `impacted_ui_routes` (or legacy `impacted_routes`) from the corresponding result contract under `visual-tests/_results/`. Any combination unions its routes; `/sg-ship --logic` passes all three bridges to the visual lane.
+Internally, ShipGuard unions the routes found by Code Audit, Logic Audit, and Process Check before
+the visual pass. The user does not need to select or name those lanes.
 
 ### Discover options
 

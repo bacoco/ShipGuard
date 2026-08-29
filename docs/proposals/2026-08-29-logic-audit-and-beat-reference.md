@@ -2,7 +2,7 @@
 
 Date : 2026-08-29
 
-Décision : implémentée dans ShipGuard 2.8.0
+Décision : implémentée dans ShipGuard 2.8.0, interface conversationnelle corrigée en 2.8.1
 
 Périmètre : frontière produit, oracle, contrat de résultat et intégration
 
@@ -184,15 +184,17 @@ static FIND       semantic CHECK      dynamic SIMULATE     visual CONFIRM     hu
 sg-code-audit  -> sg-logic-audit  ->  sg-process-check  -> sg-visual-run  ->  sg-visual-review
 ```
 
-L'activation initiale est explicite :
+L'intégration finale est automatique et conversationnelle. L'utilisateur dit par exemple :
 
 ```text
-/sg-ship --logic
+Vérifie avec ShipGuard si ce que je viens de modifier est prêt à livrer.
 ```
 
-Ce choix évite de payer une analyse sémantique sans contrat ou candidat crédible. `sg-ship` écrit
-la lane dans `run.json`. Sans `--logic`, son statut est `skipped` avec une raison. Avec `--logic`,
-un résultat `not-applicable` signifie que l'audit s'est bien exécuté et n'a trouvé aucun candidat.
+`sg-ship` effectue une détection bornée des procédures et algorithmes pendant la résolution du
+périmètre. Si un candidat est clair, Logic Audit est inclus automatiquement. S'il n'y en a aucun,
+le résultat le déclare `not-applicable`. Si le candidat ou son contrat est ambigu, une seule
+clarification est intégrée à la question de périmètre déjà nécessaire. L'utilisateur n'a pas à
+connaître les lanes, les noms de skills ni leurs paramètres.
 
 Le dashboard possède une tab Logic, inclut les findings dans la projection unifiée et rend les
 conflits, questions et chemins non couverts. `sg-visual-run --from-logic` consomme les routes
@@ -230,7 +232,8 @@ La compatibilité est assurée ainsi :
 - **Duplication de Process Check** : l'oracle absolu reste séparé du delta historique.
 - **Explosion de contexte** : les candidats sont bornés et les fichiers/sources explicités.
 - **Fausse preuve formelle** : preuve, hypothèses, confiance et chemins non couverts sont visibles.
-- **Coût permanent** : l'intégration est opt-in avec `--logic`.
+- **Coût permanent** : la détection est toujours bornée ; la trace sémantique complète ne démarre
+  que pour les candidats applicables confirmés dans la conversation de périmètre.
 - **Schéma fragile** : le contrat JSON est versionné et documenté avant consommation dashboard.
 
 ## Points à challenger par une seconde IA

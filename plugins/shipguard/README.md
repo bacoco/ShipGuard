@@ -6,13 +6,19 @@
 
 Six AI-powered modules. Use one, some, or all. No test files to write.
 
+Speak normally. For example: **“Vérifie avec ShipGuard si ce que je viens de modifier est prêt à
+livrer.”** ShipGuard proposes the scope and applicable checks, then asks one combined question only
+when something is ambiguous. Skill identifiers below are implementation names, not syntax the user
+must memorize.
+
 | | 📸 **Visual E2E** | 🎬 **Recorder** | 🔍 **Code Audit** | 🧭 **Logic Audit** | 🧪 **Process Check** | 🧠 **Improve** |
 |---|---|---|---|---|---|---|
 | **What** | Discover routes and verify screenshots | Record interactions as replayable tests | Find implementation bugs | Check procedures and algorithms against contracts/invariants | Compare behavior before/after the diff | Preserve learnings and scout techniques |
 | **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-logic-audit` | `/sg-process-check` | `/sg-improve` |
 | **Output** | Screenshots + annotations | YAML manifests | `audit-results.json` | `logic-results.json` + counterexamples | `process-results.json` | `.shipguard/learnings.yaml` + issues |
 
-One orchestrator ties them together: `/sg-ship --logic` runs code audit → logic audit → process check → visual → review on your diff. Without `--logic`, the semantic lane is skipped explicitly.
+One orchestrator ties them together: `sg-ship` runs code audit → applicable logic audit → process
+check → visual → review. Logic candidates are detected automatically during the scope conversation.
 
 ### All skills (15 canonical + 1 deprecated alias)
 
@@ -21,7 +27,7 @@ One orchestrator ties them together: `/sg-ship --logic` runs code audit → logi
 | `/sg-mission-lock` | Lock the literal mission and authority before work; model-aware Codex activation for GPT-5.6 Sol |
 | `/sg-beat-reference` | Build a paste-ready comparison loop that improves work until it beats a named, fetchable reference |
 | `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
-| `/sg-ship` | One-command pipeline: code audit → optional logic audit → process check → visual run → unified review |
+| `/sg-ship` | Conversational pipeline: propose scope once, then code → applicable logic → process → visual → review |
 | `/sg-code-audit` | Dispatch parallel AI agents to audit changed or scoped code for bugs |
 | `/sg-logic-audit` | Check workflows, state machines, retries, transactions, and algorithms against declared contracts and invariants |
 | `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |
@@ -78,28 +84,28 @@ Migrating from an older local Codex adapter or a Claude marketplace install? See
 
 ---
 
-## One command — `/sg-ship`
+## One request — SG-SHIP
 
-Don't want to run the lanes by hand? `/sg-ship` runs the whole pipeline on your diff and opens one review:
+Ask in ordinary language. SG-SHIP inspects the change, names the proposed scope and useful checks,
+and asks once if the scope or an inferred contract is ambiguous:
 
-```bash
-/sg-ship                 # code audit + process-check + visual + review
-/sg-ship --logic         # add contract/invariant checking for procedures and algorithms
-/sg-ship deep --all      # full-repo, deeper audit
-/sg-ship --no-visual     # headless project / no UI
-/sg-ship --fix           # opt into fix mode (default is report-only: find & observe, fix nothing)
-/sg-ship --diff=main --focus=src/   # explicit base ref + directory focus
-/sg-ship --mode=execute  # process lane: literal before/after execution
-```
+> “Vérifie avec ShipGuard ce que je viens de modifier.”
+>
+> “Contrôle le nouveau cycle de retry avant la PR.”
+>
+> “Vérifie `src/jobs` sans modifier le code.”
 
-Full signature: `/sg-ship [quick|standard|deep|paranoid] [--logic] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]`. Diffs use the three-dot convention (`git diff {base}...HEAD` — committed changes only), and the resolved base is passed explicitly to every lane.
+Existing command syntax remains compatible for automation, but it is not required or presented as
+the normal interface.
 
 ```
 static FIND ──► semantic CHECK ──► dynamic SIMULATE ──► visual CONFIRM ──► human DECIDES
 sg-code-audit    sg-logic-audit      sg-process-check      sg-visual-run        sg-visual-review
 ```
 
-It's a **thin sequencer** over the skills below — same scope threaded through every lane, connected by the `--from-audit`, `--from-logic`, and `--from-process` bridges. The logic lane is opt-in because it needs an authoritative contract or invariant rather than inventing intent. Skips any lane that doesn't apply and says so. You can still run each skill individually.
+It's a **thin sequencer** over the skills below. It performs bounded logic-candidate detection on
+every run, traces applicable procedures/algorithms, and records `not-applicable` when none exist.
+When the contract is ambiguous, that clarification is folded into the single scope question.
 
 ---
 
@@ -375,10 +381,10 @@ visual-tests/_results/logic-results.json
 visual-tests/_results/logic-report.md
 ```
 
-Use `/sg-ship --logic` to run it between Code Audit and Process Check. Logic Audit uses the contract
-as its oracle; Process Check still uses the previous version as its before/after reference. A clean
-delta therefore does not replace a logic audit, and a clean logic audit does not claim every path
-was proven.
+SG-SHIP places it automatically between Code Audit and Process Check when the selected change
+contains a relevant procedure or algorithm. Logic Audit uses the contract as its oracle; Process
+Check still uses the previous version as its before/after reference. A clean delta therefore does
+not replace a logic audit, and a clean logic audit does not claim every path was proven.
 
 ---
 

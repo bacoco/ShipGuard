@@ -1,6 +1,6 @@
 {
   "name": "shipguard",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "AI-assisted code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
   "author": {
     "name": "bacoco",
@@ -33,7 +33,7 @@
     "privacyPolicyURL": "https://github.com/bacoco/shipguard",
     "termsOfServiceURL": "https://github.com/bacoco/shipguard",
     "defaultPrompt": [
-      "Run ShipGuard on my current diff.",
+      "Check whether my recent changes are ready and propose the verification scope in plain language.",
       "Audit this workflow or algorithm against its contracts and invariants.",
       "Simulate the process behavior for this change.",
       "Review visual regressions for impacted routes.",

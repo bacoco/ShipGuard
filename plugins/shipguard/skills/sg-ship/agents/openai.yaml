@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Ship"
   short_description: "Run ShipGuard verification on the current diff"
-  default_prompt: "Use $sg-ship to run ShipGuard on my current diff, adding --logic when contract or invariant checking matters."
+  default_prompt: "Use $sg-ship to verify whether my recent changes are ready; propose the scope in plain language and include applicable logic checks automatically."
 
 policy:
   allow_implicit_invocation: false
