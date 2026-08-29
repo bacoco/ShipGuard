@@ -1,6 +1,6 @@
 # ShipGuard Product Roadmap
 
-> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.8.0** — and git tags follow it from now on.
+> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.8.1** — and git tags follow it from now on.
 
 ## Shipped in v2.0.0
 
@@ -69,8 +69,14 @@
 
 - **`sg-logic-audit`** -- report-only semantic audit for workflows, state machines, retries, transactions, authorization paths, and algorithms against traceable contracts/invariants.
 - **Counterexample-first result contract** -- `logic-results.json` and `logic-report.md` distinguish confirmed violations, risks, conflicts, questions, uncovered paths, and reasoned versus measured evidence.
-- **Pipeline and dashboard integration** -- `/sg-ship --logic` adds the semantic lane; `sg-visual-run --from-logic` consumes impacted routes; the unified review gains a Logic tab and logic findings.
+- **Pipeline and dashboard integration** -- SG-SHIP sequences the semantic lane; Visual Run consumes impacted routes; the unified review gains a Logic tab and logic findings.
 - **`sg-beat-reference` rename** -- discoverable canonical name for the bounded reference-comparison prompt, with `sg-gauntlet` retained as a deprecated alias.
+
+## Shipped in 2.8.1
+
+- **Conversational SG-SHIP** -- users describe the desired verification in ordinary language; no lane name or parameter is required.
+- **Automatic Logic Audit selection** -- bounded candidate detection is part of scope resolution; applicable procedures/algorithms are checked automatically.
+- **One scope question** -- an ambiguous contract is clarified inside the existing scope confirmation instead of creating a separate technical prompt.
 
 ---
 

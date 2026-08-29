@@ -1,41 +1,44 @@
 ---
 name: sg-ship
-description: "Use when a change is ready to ship — before a PR or release — and the user wants ShipGuard verification across code bugs, optional contract/invariant logic, behavior changes, visual evidence, and human review."
-context: conversation
-argument-hint: "[quick|standard|deep|paranoid] [--all] [--diff=ref] [--focus=path] [--logic] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]"
+description: "Use when a user asks in ordinary language whether a change is ready, wants ShipGuard to check recent work, or requests end-to-end verification before a PR or release. Resolve and confirm scope conversationally, then orchestrate code bugs, applicable contract/invariant logic, behavior changes, visual evidence, and human review without requiring the user to know skill names or flags."
 ---
 
-# /sg-ship — Run the whole ShipGuard pipeline, one command
+# sg-ship — Conversational ShipGuard orchestration
 
-`sg-ship` is the orchestrator: it runs ShipGuard's applicable discovery lanes in order and opens a single review for you to decide.
+`sg-ship` is the orchestrator. The user speaks normally; never require them to know a slash command,
+skill name, flag, lane, or result filename. Infer the request, propose one concrete scope and lane plan,
+ask one combined question only when needed, then open a single review for the user to decide.
 
 ```
 static FIND ──► semantic CHECK ──► dynamic SIMULATE ──► visual CONFIRM ──► human DECIDES
 sg-code-audit    sg-logic-audit      sg-process-check      sg-visual-run        sg-visual-review
 ```
 
-It is a **thin sequencer** — it invokes the existing skills through the bridges they already expose (`--from-audit`, `--from-logic`, `--from-process`) and **adds no new analysis logic**. Each lane governs its own behavior; `sg-ship` only resolves the scope once, threads it through every lane so they all look at the **same diff**, and consolidates the result. **Diff-scoped by default** (the module you're working on), not the whole repo. The semantic lane is opt-in with `--logic` while its cost and false-positive rate are being established.
+It is a **thin sequencer** — it invokes the existing skills through internal bridges and **adds no new
+analysis logic**. Each lane governs its own behavior; `sg-ship` resolves the scope once, threads it
+through every lane so they all inspect the same change, and consolidates the result. Logic Audit is
+an integral lane: always perform bounded candidate detection and run the semantic trace when a
+workflow, state machine, retry, transaction, authorization path, or non-trivial algorithm is in scope.
 
 > **Model guidance:** a fast, capable general-purpose model is enough to drive the orchestration; each sub-skill picks its own model (e.g. `sg-process-check` leans on the strongest available reasoning model for `reason` mode).
 
-> ⚠️ **Token cost.** The audit alone is token-heavy (`standard` ≈ 2M), and `--logic` adds cross-file semantic tracing. Default diff-scope keeps it sane; `--all` on a large repo is expensive. See each sub-skill's own budget notes.
+> ⚠️ **Token cost.** The audit alone is token-heavy (`standard` ≈ 2M), and semantic tracing adds
+> cross-file work when applicable. Keep the proposed scope narrow and disclose a materially large
+> plan before starting.
 
-## Invocations
+## Conversational entry
 
-| Command | Behavior |
-|---------|----------|
-| `/sg-ship` | **Diff-scoped full pipeline** — audit + process-check + visual + review on what changed |
-| `/sg-ship deep` | Pass audit depth (`quick`/`standard`/`deep`/`paranoid`) to `sg-code-audit` |
-| `/sg-ship --all` | Full-repo scope (skips the "audit only changes?" question) |
-| `/sg-ship --diff=main` | Scope to everything changed since `main` |
-| `/sg-ship --focus=src/api` | Narrow the audit lane to a path (passed through to `sg-code-audit`) |
-| `/sg-ship --logic` | Add contract/invariant checking with `sg-logic-audit` on the same diff |
-| `/sg-ship --no-visual` | Skip the browser lane (headless project, no UI, or agent-browser absent) |
-| `/sg-ship --report-only` | States the default explicitly: no fixes anywhere — pure find/observe, human decides |
-| `/sg-ship --fix` | Opt the **audit lane** into fix-mode (the only lane that may modify sources — see Phase 1) |
-| `/sg-ship --mode=hybrid` | Pass the process-check mode through (default `reason`) |
+Examples of user requests that should trigger this skill:
 
-Flags combine: `/sg-ship deep --diff=main --fix`.
+- "Vérifie avec ShipGuard ce que je viens de modifier."
+- "Est-ce que cette branche est prête à livrer ?"
+- "Contrôle le nouveau cycle de retry avant la PR."
+- "Fais une vérification complète de `src/jobs`, sans modifier le code."
+
+Translate ordinary language into internal depth, scope, evidence, visual, and mutation controls.
+Existing command/flag syntax remains backward compatible, but never advertise it or ask the user to
+reformulate. A natural-language exclusion such as "sans navigateur" or "ne vérifie pas la logique
+métier" is authoritative and must be recorded as the lane's skip reason.
 
 ---
 
@@ -44,9 +47,22 @@ Flags combine: `/sg-ship deep --diff=main --fix`.
 1. **Resolve the diff once.** Default scope = committed changes vs the merge-base of the upstream branch:
    - `base = git merge-base HEAD @{upstream}` (fall back to the repo's default branch if no upstream is set); `--diff=<ref>` overrides the base; `--all` means full-repo scope.
    - Scope = `git diff {base}...HEAD` (three-dot). **The diff scope covers committed changes only.**
-   - If `git status --porcelain` shows uncommitted or staged work, warn explicitly: *"uncommitted changes are not visible to the pipeline — commit or stash them first"*, then ask **once** whether to continue on the committed state.
+   - If `git status --porcelain` shows uncommitted or staged work, include that fact in the single
+     scope question. Do not create a separate interrogation round.
    - The resolved ref is passed as an explicit `--diff={ref}` to every lane. Passing `--diff` also suppresses each sub-skill's own interactive scope question — the lanes never re-ask.
-2. **Detect applicable lanes.** Backend code present? `--logic` requested? UI/routes present? `agent-browser --version` available? `visual-tests/_config.yaml` present? A lane with nothing to do is skipped and logged.
+2. **Detect applicable lanes.** Inspect the changed symbols and their immediate contracts/tests for
+   backend code, UI/routes, and semantic candidates. Logic candidate signals include lifecycle/state
+   transitions, retries, transactions, ordered effects, workers/callbacks, authorization across
+   entry points, and algorithms with conservation, boundary, termination, or complexity properties.
+   Always do this bounded detection; the user does not opt into it.
+
+   Classify Logic Audit before asking about scope:
+
+   - **applicable**: name the candidate in the proposed plan and include the lane;
+   - **not applicable**: say no procedural/algorithmic candidate was detected and record the reason;
+   - **ambiguous**: fold one short clarification into the scope question, naming the candidate and
+     why its contract is unclear. Never ask the user what a lane or flag means.
+
    If the visual lane is applicable but `{base_url}` is down and `_config.yaml` declares `app.start`, start the app once for the whole pipeline: `node visual-tests/shipguard.mjs serve` (copy the CLI from `$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs` if missing). Stop it after Phase 5 with `node visual-tests/shipguard.mjs stop` — only if the CLI started it.
 
 2bis. **Write the lane manifest.** Create `visual-tests/_results/run.json` now and update it after every phase, so skipped work is *declared*, never silent:
@@ -59,7 +75,7 @@ Flags combine: `/sg-ship deep --diff=main --fix`.
   "scope": {"type": "diff", "value": "<ref>"},
   "lanes": {
     "audit":   {"status": "ran", "results": "audit-results.json"},
-    "logic":   {"status": "skipped", "reason": "not requested (pass --logic)"},
+    "logic":   {"status": "ran", "results": "logic-results.json"},
     "process": {"status": "ran", "results": "process-results.json"},
     "visual":  {"status": "skipped", "reason": "no agent-browser"},
     "crawl":   {"status": "not-applicable", "reason": "crawl is a CLI recette lane (shipguard run) — not part of the diff pipeline"}
@@ -69,7 +85,15 @@ Flags combine: `/sg-ship deep --diff=main --fix`.
 
 Lane statuses: `ran` | `skipped` | `not-applicable` | `error` | `needs-agent` — every non-`ran` status MUST carry a `reason`. The dashboard renders these as lane chips and shows the declared reason in place of generic empty states.
 3. **Freshness check (audit reuse).** The audit is the most expensive lane. If `visual-tests/_results/audit-results.json` already exists and is **newer than the last commit touching the scoped files**, offer to reuse it instead of re-running Phase 1. Never reuse silently — say what is being reused and why it is still fresh.
-4. **Print the plan** (which lanes will run, on what scope) and confirm if the scope is large. Then proceed.
+4. **Ask at most one scope question.** Present the concrete scope and planned checks in plain
+   language, including any Logic Audit candidate or reason it does not apply. Example:
+
+   > Je vais vérifier les changements depuis `main` dans `src/jobs` : bugs de code, invariants du
+   > cycle de retry et comportement avant/après. Aucune interface n'est touchée. Je lance ce
+   > périmètre ?
+
+   If the user's request already fixes the scope and checks unambiguously, proceed without asking a
+   redundant question. Never make the user choose among internal lane names.
 
 ---
 
@@ -97,9 +121,10 @@ If the audit finds nothing impacted, note it and still run the diff-scoped proce
 
 ---
 
-## Phase 1.5 — Logic audit (semantic contract check, opt-in)
+## Phase 1.5 — Logic audit (semantic contract check)
 
-When `--logic` is present, run literally:
+After Phase 0 confirmation, run the bounded discovery internally unless the user explicitly
+excluded semantic checking:
 
 ```
 /sg-logic-audit --from-audit --diff={ref} --report-only [--focus={path}]
@@ -109,9 +134,11 @@ It extracts traceable obligations for workflows, state machines, retries, transa
 non-trivial algorithms impacted by the diff, searches for counterexamples, and writes
 `visual-tests/_results/logic-results.json` plus `logic-report.md`. It is always report-only.
 
-Update `run.json` with `logic.status = "ran"` and its result path. A valid `not-applicable` result
-still counts as `ran`: the skill executed and declared why it found no semantic candidate. If
-`--logic` is absent, keep the lane `skipped` with reason `not requested (pass --logic)`.
+For an applicable candidate, continue through the semantic trace. For a candidate classified
+not-applicable in Phase 0, stop after discovery and write the valid `not-applicable` result. Update
+`run.json` with `logic.status = "ran"` and its result path in both cases: the skill executed and
+declared its result. Skip the lane only when the user excluded it in ordinary language, and record
+that exact exclusion.
 
 Logic findings judge absolute contracts and invariants. They do not replace the before/after
 process lane, even when the logic result is clean.
@@ -138,7 +165,7 @@ Unless `--no-visual`, no UI was detected, or agent-browser is unavailable — ru
 /sg-visual-run --from-audit --from-process
 ```
 
-Under `--logic`, add the logic bridge:
+When Logic Audit ran, use its internal bridge:
 
 ```
 /sg-visual-run --from-audit --from-logic --from-process
@@ -160,7 +187,9 @@ Run, literally:
 
 It builds the single dashboard from `visual-tests/_results/`. Signals land side by side as tabs: **Visual Tests** (browser), **Code Audit** (static, `audit-results.json`), **Logic** (contracts/invariants, `logic-results.json`), and **Process** (behavior delta, `process-results.json`) — plus **Recorded** for recorded manifests. The human annotates and decides; `/sg-visual-fix` handles anything they choose to fix.
 
-When the visual lane was skipped (`--no-visual`, headless project, no agent-browser), the dashboard still shows the **Code Audit**, optional **Logic**, and **Process** tabs — every lane writes its results to `visual-tests/_results/`, so the review works without a browser run.
+When the visual lane was skipped (user exclusion, headless project, or no browser driver), the
+dashboard still shows **Code Audit**, **Logic** when applicable, and **Process** — every lane writes
+its results to `visual-tests/_results/`, so the review works without a browser run.
 
 ---
 
@@ -168,7 +197,7 @@ When the visual lane was skipped (`--no-visual`, headless project, no agent-brow
 
 Print one summary across all applicable lanes:
 - **Static:** bugs by severity (from `visual-tests/_results/audit-results.json`)
-- **Logic:** confirmed violations / risks / contract conflicts / uncovered, or `skipped — not requested` (from `logic-results.json`)
+- **Logic:** confirmed violations / risks / contract conflicts / uncovered, `not applicable — reason`, or `skipped — user exclusion` (from `logic-results.json`)
 - **Behavior:** units changed / new errors / surprises, reasoned-vs-measured mix (from `visual-tests/_results/process-results.json`)
 - **Visual:** pass/fail on impacted routes (or "skipped — reason")
 - **Findings:** total from `visual-tests/_results/findings.json` with the evidence mix (measured/reasoned/manual) — the dashboard's Findings tab is the entry point
@@ -181,9 +210,9 @@ Print one summary across all applicable lanes:
 
 ## Graceful degradation (stay lean)
 
-- **No semantic candidate under `--logic`** → keep the valid `not-applicable` result and continue; do not claim an audit was skipped.
+- **No semantic candidate** → keep the valid `not-applicable` result and continue; do not claim an audit was skipped.
 - **No backend / no API** → process-check still runs in `reason` on the diff'd functions; its API seam is simply not used.
-- **No UI / no agent-browser / `--no-visual`** → skip Phase 3, log the reason, continue — the Phase 4 dashboard still shows the Code Audit, optional Logic, and Process tabs from `visual-tests/_results/`.
+- **No UI / no agent-browser / user excludes visual checking** → skip Phase 3, log the reason, continue — the dashboard still shows the non-visual evidence.
 - **Fix policy:** `--report-only` applies to the audit lane (and is its default under `sg-ship`); process-check and visual-run never modify sources by design. Only `--fix` allows mutation, and only in the audit lane.
 - **Clean audit** → still run process-check on the diff; a no-bug audit is not a no-change diff.
 - Any lane that errors is reported and the pipeline continues with the others (partial results beat no results).
@@ -192,10 +221,11 @@ Print one summary across all applicable lanes:
 
 ## Final checklist
 
-- [ ] Scope resolved once — `git diff {base}...HEAD`, committed changes only; uncommitted work warned about; plan printed; large scope confirmed
+- [ ] Scope resolved once; one plain-language scope/plan question asked only if needed
+- [ ] Logic candidate detection integrated into that scope decision; no flag or lane knowledge requested from the user
 - [ ] Freshness check done — a still-fresh `visual-tests/_results/audit-results.json` offered for reuse before re-running the audit lane
 - [ ] `/sg-code-audit {depth} --diff={ref} --report-only` run (or without `--report-only` under `--fix`, with scope re-resolved afterwards) → `visual-tests/_results/audit-results.json`
-- [ ] Under `--logic`, `/sg-logic-audit --from-audit --diff={ref} --report-only` run → `visual-tests/_results/logic-results.json`; otherwise lane declared skipped with reason
+- [ ] `/sg-logic-audit --from-audit --diff={ref} --report-only` run for applicable candidates → `logic-results.json`; `not-applicable` or explicit user exclusion recorded honestly
 - [ ] `/sg-process-check --from-audit --diff={ref}` run (mode passthrough) → `visual-tests/_results/process-results.json`
 - [ ] `/sg-visual-run --from-audit [--from-logic] --from-process` run (union of selected route lists, dedupe by route, highest severity wins), or skipped **with a stated reason**
 - [ ] `/sg-visual-review` built — one dashboard with Visual Tests, Code Audit, Logic, Process, and Recorded tabs

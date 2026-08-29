@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ShipGuard is a Claude Code and Codex plugin providing `sg-*` skills for mission control and diff-scoped verification: code audit, contract/invariant logic audit, process simulation, visual E2E testing, macro recording, review dashboards, and self-improvement. GitHub: `bacoco/ShipGuard`. License MIT. Main branch: `main`.
 
-Pipeline: static **find** (`sg-code-audit`) → optional semantic **check** (`sg-logic-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `/sg-ship --logic` orchestrates all lanes. Report-only by default; `--fix` opts in.
+Pipeline: static **find** (`sg-code-audit`) → applicable semantic **check** (`sg-logic-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `sg-ship` detects semantic candidates during one conversational scope decision and orchestrates the applicable lanes. Report-only by default; mutation requires an explicit natural-language request.
 
 ## Structure
 

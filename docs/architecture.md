@@ -13,7 +13,7 @@ ShipGuard is composed of 15 canonical skills plus one deprecated alias: a cross-
 | `sg-mission-lock` | Lock literal objective, mode, authority, scope, and Done before work; Codex hook activates it for GPT-5.6 Sol | User mission + active model metadata | Developer-context guard; no project files or runtime state |
 | `sg-beat-reference` | Build a bounded prompt that compares an artifact against a named, fetchable reference | Quality goal + reference + ceiling | Paste-ready comparison-loop prompt |
 | `sg-gauntlet` | Deprecated compatibility alias for `sg-beat-reference` | Former command | Delegates to canonical skill |
-| `sg-ship` | One-command orchestrator -- code audit -> optional logic audit -> process check -> visual -> review | Repo + git diff | Unified review across applicable signals |
+| `sg-ship` | Conversational orchestrator -- proposes scope once, then code -> applicable logic -> process -> visual -> review | User request + repo diff | Unified review across applicable signals |
 | `sg-code-audit` | Parallel AI codebase audit -- dispatches agents to find and fix bugs | Repo source code | `audit-results.json` (structured bug list) |
 | `sg-logic-audit` | Check procedures and algorithms against traceable contracts/invariants; report only | Diff or named procedure/algorithm | `logic-results.json` + `logic-report.md` |
 | `sg-process-check` | Diff-driven behavior simulation at the PROCESS level -- traces changed units before/after (reasoning by default, optional real execution), observe-not-fix | Git diff (+ optional running code) | `process-results.json` + `process-report.md` |
@@ -94,7 +94,7 @@ Written by `shipguard run` and `sg-ship`. Per-lane status `ran | skipped | not-a
 
 Derived by `build-review.mjs` on every build — an additive projection over the signal sources (audit bugs and logic findings → `reasoned` unless logic measured a seam; process units → per-action `measured`/`reasoned`; visual failures and `browser_errors[]` → `measured`; crawler breakage → `measured`; annotations → `manual`), severity-sorted with `SG-###` ids and a `by_evidence`/`by_source` summary. The canonical per-lane schemas are unchanged.
 
-The entry points can run independently. `sg-visual-run` bridges static/semantic/dynamic results to visual verification with `--from-audit`, `--from-logic`, and `--from-process`, unioning selected routes. `sg-process-check` reads `audit-results.json`'s `impacted_backend[]` to exercise flagged endpoints. `sg-logic-audit` reads impact lists only as discovery seeds and keeps the declared contract as its oracle. `sg-visual-review` merges every data source into a single dashboard. `sg-ship` is the optional one-command orchestrator over one resolved scope; it adds no analysis of its own.
+The entry points can run independently. Internally, `sg-visual-run` bridges static, semantic, and dynamic results to visual verification and unions selected routes. `sg-process-check` reads `audit-results.json`'s `impacted_backend[]` to exercise flagged endpoints. `sg-logic-audit` reads impact lists only as discovery seeds and keeps the declared contract as its oracle. `sg-visual-review` merges every data source into a single dashboard. `sg-ship` is the conversational orchestrator over one resolved scope; it detects applicable lanes but adds no analysis of its own.
 
 ---
 
@@ -102,11 +102,12 @@ The entry points can run independently. `sg-visual-run` bridges static/semantic/
 
 The orchestrator. It runs ShipGuard's applicable verification lanes in order and opens one review — a **thin sequencer**, not a new analyzer.
 
-- **Resolves scope once.** The diff (working tree, `--diff`, or `--all`) is resolved a single time and threaded into every lane so they all look at the same change.
-- **Sequences via existing bridges.** `sg-code-audit` → optional `sg-logic-audit --from-audit` → `sg-process-check --from-audit` → `sg-visual-run --from-audit [--from-logic] --from-process` → `sg-visual-review`. The handoff is the result files each lane already writes; `sg-ship` adds no schema or analysis.
+- **Resolves scope once, conversationally.** It inspects the diff, proposes the scope and applicable checks in plain language, and folds any ambiguity about a procedure or contract into that single question.
+- **Detects semantic work automatically.** Bounded candidate discovery runs without user flags; applicable procedures/algorithms are traced, while an empty candidate set is recorded as `not-applicable`.
+- **Sequences via existing internal bridges.** `sg-code-audit` → `sg-logic-audit` when applicable → `sg-process-check` → `sg-visual-run` → `sg-visual-review`. The handoff is the result files each lane already writes; `sg-ship` adds no schema or analysis.
 - **Order matters.** Audit runs first because it produces `impacted_backend[]` / `impacted_ui_routes[]`, which the process and visual lanes consume.
 - **Degrades gracefully.** Lanes with nothing to do are skipped and logged (no backend → process-check reasons on functions only; no UI / no agent-browser / `--no-visual` → visual skipped). A failing lane doesn't abort the others.
-- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; fixing stays with `sg-visual-fix` / `sg-code-audit`. `--logic` explicitly activates the report-only semantic lane. Other flags are passed through to their relevant lane. The resolved `--diff` is passed explicitly everywhere, and the visual lane unions the selected result sources.
+- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; fixing stays with `sg-visual-fix` / `sg-code-audit`. Natural-language exclusions are respected and recorded. Internal flags and bridges remain implementation details for compatibility and automation.
 
 ---
 
