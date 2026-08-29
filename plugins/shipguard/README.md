@@ -28,7 +28,7 @@ check → visual → review. Logic candidates are detected automatically during 
 | `/sg-beat-reference` | Build a paste-ready comparison loop that improves work until it beats a named, fetchable reference |
 | `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
 | `/sg-ship` | Conversational pipeline: propose scope once, then code → applicable logic → process → visual → review |
-| `/sg-code-audit` | Dispatch parallel AI agents to audit changed or scoped code for bugs |
+| `/sg-code-audit` | Audit changed or scoped code; report-only by default, tier-gated fixes by opt-in |
 | `/sg-logic-audit` | Check workflows, state machines, retries, transactions, and algorithms against declared contracts and invariants |
 | `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |
 | `/sg-visual-discover` | Scan the codebase and generate YAML visual test manifests per route |
@@ -296,7 +296,9 @@ Both feed into the same pipeline: `sg-visual-run` executes them, `sg-visual-revi
 
 ## Code Audit
 
-Dispatch parallel AI agents to audit your entire codebase. Each agent reviews a non-overlapping zone, finds bugs, fixes them, and produces structured JSON. Watch progress in real-time on the Mission Control dashboard.
+Dispatch parallel AI agents to audit your codebase. Each agent reviews a non-overlapping zone,
+classifies findings by fix-safety tier, and produces structured JSON. The default is report-only;
+source changes require explicit `--fix`. Watch progress in real-time on the Mission Control dashboard.
 
 ```bash
 /sg-code-audit deep
@@ -332,9 +334,11 @@ Override with flags:
 | `--all` | Force full scope, skip the question |
 | `--diff=<ref>` | Use a specific base reference |
 | `--focus=path/` | Restrict to a directory |
-| `--report-only` | Find bugs but do not fix them |
+| `--report-only` | Explicitly select the default: report findings without source changes |
+| `--fix` | Opt in to safe fixes: mechanical, or test-first with failing-before/passing-after proof |
 
-Flags combine freely: `/sg-code-audit deep --focus=src/ --report-only`
+Flags combine freely except `--fix` and `--report-only`, which are mutually exclusive:
+`/sg-code-audit deep --focus=src/ --fix`
 
 ### Live Dashboard
 
@@ -342,18 +346,27 @@ At startup, the audit offers to open the Mission Control dashboard. The **Code A
 
 ![Code Audit — Bugs filtered by Critical](screenshots/code-audit-dark.jpg)
 
+Before aggregation, claims that a test, guard, caller, endpoint, or shell exit check is absent must
+carry a complete search record. ShipGuard applies this evidence gate at every severity; unsupported
+absence claims move to the audit trail instead of the headline report. This is targeted evidence
+validation, not a promise of formal coverage analysis.
+
 ### Output
 
-Results are written to `visual-tests/_results/audit-results.json` (the directory is created if missing; legacy `.code-audit-results/` is read as a fallback):
+Results are written to `visual-tests/_results/audit-results.json` (the directory is created if
+missing; legacy `.code-audit-results/` is read as a fallback). In-flight artifacts are isolated by
+`run_id` under `visual-tests/_results/runs/` and never aggregated by a broad glob:
 
-- `summary` — totals by severity and category
-- `bugs[]` — file, line, severity, description, fix status
+- `run_id` + `base_sha` — immutable run identity
+- `summary` — totals by severity, category, and fix-safety tier
+- `bugs[]` — file, line, severity, description, fix tier/evidence, and fix status
+- `unverified_bugs[]` — unsupported absence claims and rejected critical/high findings
 - `impacted_ui_routes[]` — UI routes affected (consumed by `/sg-visual-run --from-audit`)
 - `impacted_backend[]` — API endpoints/services affected (reported in dashboard)
 
 ### Supported languages
 
-Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
+Python, TypeScript/React, Next.js, Shell, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
 
 ---
 

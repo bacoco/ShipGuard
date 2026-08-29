@@ -155,6 +155,8 @@ async function main() {
     log = createProcessLog(server);
     await waitForServer(port);
     let res = await request(port, 'POST', '/api/monitor/audit-start', {
+      run_id: 'audit-monitor-fixture',
+      base_sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       timestamp: '2026-06-29T13:30:00Z',
       round_count: 1,
       zones: [
@@ -171,14 +173,6 @@ async function main() {
       duration_s: 12,
     });
     assert(res.status === 200, 'first agent update failed');
-
-    res = await request(port, 'POST', '/api/monitor/agent-update', {
-      agent_id: 'z2',
-      status: 'completed',
-      bugs_found: 0,
-      duration_s: 8,
-    });
-    assert(res.status === 200, 'second agent update failed');
 
     res = await request(port, 'POST', '/api/monitor/agent-update', {
       status: 'completed',
@@ -200,6 +194,44 @@ async function main() {
     assert((res.json.agents.z1.aliases || []).includes('r1:z1'), 'z1 aliases do not retain r1:z1');
 
     res = await request(port, 'POST', '/api/monitor/audit-complete', {
+      run_id: 'audit-monitor-fixture',
+      base_sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      status: 'paused_quota',
+      reset_at: '2026-06-29T14:00:00Z',
+      timestamp: '2026-06-29T13:30:30Z',
+    });
+    assert(res.status === 200, 'audit quota pause failed');
+
+    res = await request(port, 'GET', '/api/monitor/status');
+    assert(res.json?.status === 'paused_quota', 'status is not paused_quota');
+    assert(res.json?.run_id === 'audit-monitor-fixture', 'paused state lost run_id');
+    assert(res.json?.base_sha === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'paused state lost base_sha');
+    assert(res.json?.reset_at === '2026-06-29T14:00:00Z', 'paused state lost reset_at');
+
+    res = await request(port, 'POST', '/api/monitor/agent-update', {
+      run_id: 'audit-monitor-fixture',
+      base_sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      agent_id: 'z2',
+      status: 'started',
+      started_at: '2026-06-29T14:00:01Z',
+    });
+    assert(res.status === 200, 'resumed agent update failed');
+
+    res = await request(port, 'GET', '/api/monitor/status');
+    assert(res.json?.status === 'running', 'started pending agent did not resume monitor');
+
+    res = await request(port, 'POST', '/api/monitor/agent-update', {
+      agent_id: 'z2',
+      status: 'completed',
+      bugs_found: 0,
+      duration_s: 8,
+    });
+    assert(res.status === 200, 'second agent completion failed');
+
+    res = await request(port, 'POST', '/api/monitor/audit-complete', {
+      run_id: 'audit-monitor-fixture',
+      base_sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      status: 'completed',
       timestamp: '2026-06-29T13:31:00Z',
     });
     assert(res.status === 200, 'audit-complete failed');
@@ -209,6 +241,9 @@ async function main() {
     const persisted = JSON.parse(readFileSync(join(root, '_results', 'audit-monitor.json'), 'utf8'));
     assert(persisted.status === 'completed', 'monitor state was not persisted');
     assert(!Object.keys(persisted.agents || {}).includes('undefined'), 'persisted monitor contains agents.undefined');
+    const reviewHtml = readFileSync(join(root, '_results', 'review.html'), 'utf8');
+    assert(reviewHtml.includes("monitor.status === 'paused_quota'"), 'dashboard does not recognize quota pause');
+    assert(reviewHtml.includes('AUDIT PAUSED'), 'dashboard does not render a paused audit state');
     passed = true;
     console.log('monitor smoke test passed');
     if (options.debug) console.error(log.tail());

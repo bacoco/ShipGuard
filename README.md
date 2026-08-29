@@ -19,8 +19,8 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 | Module | Status | Notes |
 |--------|--------|-------|
 | Visual E2E Debugger | 🟢 Stable | discover → run → review → fix loop |
-| Code Audit | 🟢 Stable | parallel agents, multi-round, verification |
-| Logic Audit | 🟢 Updated in 2.8.1 | detected automatically by SG-SHIP; contract/invariant checks and counterexamples |
+| Code Audit | 🟢 Updated in 2.9.0 | report-only default, fix-safety tiers, run isolation, evidence gates |
+| Logic Audit | 🟢 Stable | detected automatically by SG-SHIP; contract/invariant checks and counterexamples |
 | Macro Recorder | 🟢 Stable | record → replay via YAML manifests |
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
@@ -51,7 +51,9 @@ Auto-discover routes, generate tests, mark bugs on screenshots — **AI traces t
 
 ### 🔍 Code Audit
 
-Parallel AI agents scan your entire codebase, find bugs, and **fix them automatically**. Race conditions, auth gaps, silent exceptions, resource leaks.
+Parallel AI agents scan your codebase and report bugs without changing source files. Add an explicit
+`--fix` only when you want tier-gated safe fixes. Race conditions, auth gaps, shell failures, silent
+exceptions, resource leaks.
 
 ```
 /sg-code-audit
@@ -282,7 +284,9 @@ Both feed into the same pipeline: `sg-visual-run` executes them, `sg-visual-revi
 
 ## Code Audit
 
-Dispatch parallel AI agents to audit your entire codebase. Each agent reviews a non-overlapping zone, finds bugs, fixes them, and produces structured JSON. Watch progress in real-time on the Mission Control dashboard.
+Dispatch parallel AI agents to audit your codebase. Each agent reviews a non-overlapping zone,
+classifies findings by fix-safety tier, and produces structured JSON. The default is report-only;
+source changes require explicit `--fix`. Watch progress in real-time on the Mission Control dashboard.
 
 ```bash
 /sg-code-audit deep
@@ -338,10 +342,12 @@ Override with flags:
 | `--all` | Force full scope, skip the question |
 | `--diff=<ref>` | Use a specific base reference |
 | `--focus=path/` | Restrict to a directory |
-| `--report-only` | Find bugs but do not fix them |
+| `--report-only` | Explicitly select the default: report findings without source changes |
+| `--fix` | Opt in to safe fixes: mechanical, or test-first with failing-before/passing-after proof |
 | `--model=<model>` | Override model strategy (see above) |
 
-Flags combine freely: `/sg-code-audit deep --focus=src/ --report-only --model=opus`
+Flags combine freely except `--fix` and `--report-only`, which are mutually exclusive:
+`/sg-code-audit deep --focus=src/ --fix --model=opus`
 
 ### Live Dashboard
 
@@ -351,12 +357,17 @@ At startup, the audit offers to open the Mission Control dashboard. The **Code A
 
 ### Finding Verification
 
-After zone agents return findings, ShipGuard independently verifies each critical/high bug is real — not a hallucination.
+After zone agents return findings, ShipGuard first rejects unsupported absence claims at every
+severity, then independently verifies each remaining critical/high bug is real — not a hallucination.
 
-**Two-stage filter:**
+**Three-stage filter:**
 
-1. **Constitutional pre-filter (zero LLM cost)** — checks the cited file exists, line number is in range, bug ID format is valid. Catches obvious hallucinations instantly.
-2. **Sonnet verification agents** — one agent per finding, all dispatched in parallel. Each reads the actual file:line and scores 0-100.
+1. **Negative-evidence gate (zero LLM cost, all severities)** — missing tests, guards, callers,
+   endpoints, and shell exit checks require complete repository-search evidence.
+2. **Constitutional pre-filter (zero LLM cost)** — checks the cited file exists, line number is in
+   range, and bug ID format is valid.
+3. **Sonnet verification agents** — one agent per critical/high finding. Each reads the actual
+   file:line and scores 0-100.
 
 | Score | Verdict | Action |
 |-------|---------|--------|
@@ -389,9 +400,10 @@ A single 0-100 number representing codebase risk. Uses geometric weighting — m
 Results are written to `visual-tests/_results/` (created if missing; legacy `.code-audit-results/` is read as a fallback), in two formats:
 
 **`audit-results.json`** (canonical):
-- `summary` — totals by severity, category, and `risk_score` (0-100)
+- `run_id` + `base_sha` — immutable run identity; in-flight artifacts live under `runs/{run_id}/`
+- `summary` — totals by severity, category, fix-safety tier, and `risk_score` (0-100)
 - `verification` — how many findings were checked, confirmed, uncertain, rejected
-- `bugs[]` — file, line, severity, description, fix status, `verification_score`, `verified`
+- `bugs[]` — file, line, severity, description, fix tier/evidence, `verification_score`, `verified`
 - `unverified_bugs[]` — findings rejected by verification (score < 40)
 - `impacted_ui_routes[]` — UI routes affected (consumed by `/sg-visual-run --from-audit`)
 - `impacted_backend[]` — API endpoints/services affected (reported in dashboard)
@@ -407,7 +419,7 @@ Header-once + CSV-rows encoding. Used by `sg-improve` for cheaper LLM analysis.
 
 ### Supported languages
 
-Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
+Python, TypeScript/React, Next.js, Shell, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
 
 ---
 

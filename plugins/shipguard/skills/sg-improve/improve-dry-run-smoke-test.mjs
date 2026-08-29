@@ -44,11 +44,14 @@ function createFixture() {
 function validateFixtureSchemas(root) {
   const resultsDir = join(root, 'visual-tests', '_results');
   const audit = JSON.parse(readFileSync(join(resultsDir, 'audit-results.json'), 'utf8'));
+  assert(typeof audit.run_id === 'string' && audit.run_id.length > 0, 'audit fixture missing run_id');
+  assert(typeof audit.base_sha === 'string' && audit.base_sha.length > 0, 'audit fixture missing base_sha');
   assert(typeof audit.prompt_hash === 'string' && audit.prompt_hash.length > 0, 'audit fixture missing prompt_hash');
   assert(audit.scope_info && typeof audit.scope_info.mode === 'string', 'audit fixture missing scope_info.mode');
   assert(audit.verification && Number.isInteger(audit.verification.checked), 'audit fixture missing verification.checked');
   assert(Number.isInteger(audit.verification.confirmed), 'audit fixture missing verification.confirmed');
   assert(audit.summary?.lifecycle && Number.isInteger(audit.summary.lifecycle.new), 'audit fixture missing summary.lifecycle');
+  assert(Number.isInteger(audit.summary?.by_fix_tier?.['test-first']), 'audit fixture missing summary.by_fix_tier');
   assert(Array.isArray(audit.impacted_backend), 'audit fixture missing impacted_backend');
   assert(Array.isArray(audit.fixed_since_last_run), 'audit fixture missing fixed_since_last_run');
   assert(Array.isArray(audit.agents) && Number.isInteger(audit.agent_count), 'audit fixture missing agents/agent_count');
@@ -58,6 +61,7 @@ function validateFixtureSchemas(root) {
   assert(typeof bug.verification_score === 'number', 'audit fixture bug missing verification_score');
   assert(typeof bug.verified === 'boolean', 'audit fixture bug missing verified');
   assert(typeof bug.lifecycle === 'string', 'audit fixture bug missing lifecycle');
+  assert(typeof bug.fix_tier === 'string' && typeof bug.fix_tier_reason === 'string', 'audit fixture bug missing fix tier');
 
   const visual = JSON.parse(readFileSync(join(resultsDir, 'visual-results.json'), 'utf8'));
   assert(typeof visual.run_id === 'string' && visual.run_id.length > 0, 'visual fixture missing run_id');
