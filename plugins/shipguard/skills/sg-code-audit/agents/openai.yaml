@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Code Audit"
-  short_description: "Audit code changes and write structured findings."
-  default_prompt: "Run a ShipGuard code audit on my current diff."
+  short_description: "Audit code changes safely; report-only unless fixes are explicit."
+  default_prompt: "Use $sg-code-audit to audit my current diff and report findings without changing source files."
 
 policy:
   allow_implicit_invocation: false

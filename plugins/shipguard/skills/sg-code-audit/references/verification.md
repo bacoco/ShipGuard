@@ -75,12 +75,21 @@ If fewer than 3 flow pairs are found, skip this phase — the codebase is too sm
 
 ### Step 2: Build flow tracer prompt
 
-Flow tracers run against the current working tree (no worktree), so `{results_dir}` here is the orchestrator's results directory (`visual-tests/_results/`).
+Flow tracers run against the current working tree (no worktree). Their immutable identity is
+`{run_id}` + `{base_sha}` and their output is isolated under `{run_dir}` =
+`visual-tests/_results/runs/{run_id}/`; the canonical root results directory is never scanned for
+flow artifacts. Immediately before building the prompt, record `source_sha = git rev-parse HEAD`;
+this may differ from `base_sha` only when verified audit fixes were merged earlier in the same run.
 
 ````
 You are a cross-zone integration validator. Your job is to trace flows that span multiple parts of the codebase and find bugs that file-by-file audits cannot see.
 
 You have READ-ONLY access to the entire repository. Do NOT modify any files.
+
+Audit identity: run_id={run_id}, base_sha={base_sha}, source_sha={source_sha},
+agent_id={agent_id}, round={round_number}. Echo these exact values in the output. `base_sha` is the
+immutable zone-dispatch base; `source_sha` is the exact post-merge source snapshot the tracer reads.
+Stop without writing if the current HEAD is not `{source_sha}`.
 
 {IF CLAUDE.md content exists}
 ## Project Rules (from CLAUDE.md — follow these strictly)
@@ -94,6 +103,13 @@ You have READ-ONLY access to the entire repository. Do NOT modify any files.
   - caller: src/hooks/use-dossier-api.ts:45 → callee: apps/api-synthesia/routes/dossier/dossier_routes.py:120
   - caller: src/lib/api-client.ts:78 → callee: apps/api-synthesia/routes/chat_routes.py:55
 }
+
+## Previous Comparable Findings
+
+{For each comparable previous-run cross-zone finding, list its file/title/severity and whether its
+match key is present in fixed_since_last_run. This is context, not proof. Do not re-report a
+previous finding unless current source evidence reproduces it; do not call it fixed without the
+complete current search evidence below.}
 
 ## What to Look For
 
@@ -117,6 +133,17 @@ For each flow pair:
 4. Compare: do they agree on field names, types, required vs optional, error shapes?
 5. If they disagree → record as bug
 
+For `dead-endpoint`, `unreachable`, `missing-construct`, or another negative claim, include a
+`negative_evidence` object containing the exact repository-wide literal/regex queries, excluded
+generated/result directories, every inspected match, and the inspected caller/test files. A zero
+caller count alone supports at most `low` severity unless separate current execution or contract
+evidence proves higher impact.
+
+Every integration finding, including payload/response drift, MUST also include `flow_evidence`:
+the literal symbol or route searched, declared search scope and exclusions, exact matching caller
+files/lines, deterministic caller count, and all caller/callee/proxy files inspected. Do not infer a
+caller count from the flow-pair sample supplied in this prompt.
+
 ## Severity Definitions
 
 | Severity | When to use |
@@ -128,10 +155,14 @@ For each flow pair:
 
 ## Output Format
 
-Write findings to: {results_dir}/cross-zone-r{round_number}.json
+Write findings to: {run_dir}/cross-zone-r{round_number}-{agent_id}.json
 
 ```json
 {
+  "run_id": "{run_id}",
+  "base_sha": "{base_sha}",
+  "source_sha": "{source_sha}",
+  "agent_id": "{agent_id}",
   "zone": "cross-zone",
   "round": {round_number},
   "files_audited": <number of flow pairs traced>,
@@ -148,6 +179,19 @@ Write findings to: {results_dir}/cross-zone-r{round_number}.json
       "description": "...",
       "caller_file": "<file that initiates the call>",
       "callee_file": "<file that receives the call>",
+      "fix_tier": "human-only",
+      "fix_tier_reason": "Cross-zone tracers are read-only",
+      "fix_evidence": null,
+      "negative_evidence": null,
+      "flow_evidence": {
+        "symbol_or_route": "/api/documents",
+        "scope": ["src/", "apps/"],
+        "exclusions": [".git/", "node_modules/", "visual-tests/_results/"],
+        "searches": [{"query": "rg -n -F '/api/documents' src apps", "matches": ["src/lib/api.ts:78"]}],
+        "matching_callers": ["src/lib/api.ts:78"],
+        "caller_count": 1,
+        "inspected_files": ["src/lib/api.ts", "apps/api/routes/documents.py"]
+      },
       "fix_applied": false,
       "fix_commit": ""
     }
@@ -178,10 +222,24 @@ Dispatch 1 flow tracer agent (or 2 if flow pairs > 20, splitting the list in hal
 ### Step 4: Collect results
 
 When the flow tracer completes:
-1. Read `{results_dir}/cross-zone-r{round_number}.json`
-2. Validate JSON schema (same rules as zone results)
-3. Store bugs for aggregation in Phase 6 — these bugs use the special category `integration` which is valid only for cross-zone results
-4. Print: `Cross-zone validation: {N} integration bugs found across {M} flow pairs`
+1. Read only the exact artifact registered for the tracer in the current dispatch record:
+   `{run_dir}/cross-zone-r{round_number}-{agent_id}.json`.
+2. Validate the JSON schema and require exact matches for `run_id`, `base_sha`, `source_sha`,
+   `agent_id`, zone, and round. Reject stale or mismatched artifacts; never fall back to a
+   root-level glob.
+3. For every integration finding, require and deterministically replay `flow_evidence` before
+   aggregation:
+   - use `rg -n -F` for literal route/symbol names and `rg -n` only for an explicitly recorded regex;
+   - search the declared full scope while excluding `.git`, dependencies, generated output, and
+     `visual-tests/_results`;
+   - store the replayed query, match paths/lines, inspected callers, and caller count, correcting
+     the finding if and only if the deterministic evidence still proves it;
+   - reject a `dead-endpoint` or other absence claim whose evidence is incomplete or whose replay
+     finds an uninspected caller;
+   - cap a zero-caller-only claim at `low` unless independent present-run evidence justifies more.
+4. Store accepted bugs for aggregation in Phase 6 — these bugs use the special category
+   `integration`, which is valid only for cross-zone results.
+5. Print: `Cross-zone validation: {N} integration bugs found across {M} flow pairs`.
 
 If the flow tracer fails (context overflow, error), log and continue — cross-zone validation is additive, not blocking.
 
@@ -197,9 +255,26 @@ Zone agents can hallucinate file paths, misquote code, or describe patterns that
 
 ### Step 1: Collect all findings
 
-Gather all bugs from all zone JSONs collected in Phase 5 (including cross-zone results from Phase 5.6). Group by severity.
+Gather all bugs from the exact accepted artifact paths in the current dispatch record (including
+cross-zone results from Phase 5.6). Group by severity. Do not glob `results_dir`.
 
-Count critical + high bugs. If the count is 0, skip this phase entirely.
+### Step 1.4: Negative-Evidence Gate (all severities, zero-LLM cost)
+
+Before severity-based verification, validate every claim whose truth depends on something being
+absent: `missing-construct`, `missing-test`, `unchecked-exit`, `dead-endpoint`, `unreachable`, or an
+equivalent negative assertion.
+
+Require `negative_evidence.complete == true`, at least one exact recorded search query, declared
+scope and exclusions, all matches, and the list of inspected files. Replay each query against the
+current `base_sha`. If the evidence is missing, scoped too narrowly, stale, or a replayed match was
+not inspected, move the finding to `unverified_bugs` with `verification_score: 0`,
+`verified: false`, and `rejection_reason: "incomplete_negative_evidence"`. This gate applies to
+critical, high, medium, and low findings; lowering severity never substitutes for proof.
+
+Print: `Negative-evidence gate: {N} claims checked, {R} rejected, {P} retained`.
+
+Count the retained critical + high bugs. If the count is 0, skip only the verification-agent steps;
+keep the negative-evidence outcome and continue to aggregation.
 
 ### Step 1.5: Constitutional Pre-Validation (zero-LLM cost filter)
 

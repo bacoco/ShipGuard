@@ -66,6 +66,16 @@ Find what R1+R2 missed. Think like a security auditor + QA tester.
 - Hardcoded localhost URLs that break inside Docker networking
 - Volume mounts pointing to non-existent paths
 
+## Shell Checklist (`.sh`, `.bash`, `.zsh`)
+
+- Read the complete file before judging it. Distinguish an executed script from a sourced library; a sourced library does not require a shebang and must not unconditionally change the caller's shell options.
+- Detect strict mode wherever it appears, not only in the first 15 lines: `set -e`, `set -u`, `set -o pipefail`, and combined forms such as `set -euo pipefail`. A license block, comments, or helper prelude before strict mode is valid.
+- Do not claim "unchecked exit" merely because a command is bare. Account for `errexit`, `if`/`while`/`until` tests, `&&`/`||` lists, negation, command substitutions, and callers that deliberately inspect `$?`.
+- For pipelines, determine whether `pipefail` is active at that exact point. Without `pipefail`, an early-stage failure may be hidden; with it, do not report the same pipeline as unchecked without contrary evidence.
+- Treat output capture as deliberate when the value or exit status is checked later. Trace assignments, command substitutions, redirections, and deferred status checks before reporting swallowed output or failure.
+- Check quoting of expansions, safe temporary-file creation and cleanup, traps, signal forwarding, and cleanup on early exit.
+- A claim that a guard, error check, trap, caller, or test is missing requires the positive search record defined in `agent-prompt.md`; absence by inspection of one local snippet is not proof.
+
 ## Next.js Checklist
 
 - Server Component importing client-only module (useState, useEffect, browser APIs)

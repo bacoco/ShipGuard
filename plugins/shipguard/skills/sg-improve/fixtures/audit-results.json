@@ -1,4 +1,6 @@
 {
+  "run_id": "audit-20260629-133000-fixture1",
+  "base_sha": "1111111111111111111111111111111111111111",
   "repo": "shipguard-improve-fixture",
   "timestamp": "2026-06-29T13:30:00Z",
   "mode": "quick",
@@ -22,6 +24,7 @@
   "summary": {
     "total_bugs": 1,
     "by_severity": {"critical": 0, "high": 1, "medium": 0, "low": 0},
+    "by_fix_tier": {"mechanical": 0, "test-first": 1, "human-only": 0},
     "by_category": {"logic-error": 1},
     "files_audited": 3,
     "files_modified": 0,
@@ -58,6 +61,10 @@
       "line": 10,
       "title": "Fixture bug",
       "description": "Fixture bug used by sg-improve dry-run smoke test.",
+      "fix_tier": "test-first",
+      "fix_tier_reason": "The fixture models a behavioral finding that would require regression proof.",
+      "fix_evidence": null,
+      "negative_evidence": null,
       "fix_applied": false,
       "fix_commit": null,
       "confidence": "high",

@@ -1608,6 +1608,10 @@ if (process.argv.includes('--serve')) {
           aliases: [...aliases].filter(alias => alias !== id),
         };
         if (key !== id) delete auditState.agents[key];
+        if (auditState.status === 'paused_quota' && data.status === 'started') {
+          auditState.status = 'running';
+          auditState.resumed_at = data.started_at || new Date().toISOString();
+        }
         persistMonitor();
         res.writeHead(200, { 'Content-Type': 'application/json', ...CORS });
         res.end(JSON.stringify({ ok: true }));
@@ -1622,8 +1626,18 @@ if (process.argv.includes('--serve')) {
     if (req.method === 'POST' && req.url === '/api/monitor/audit-complete') {
       try {
         const data = await readBody(req);
-        if (auditState) {
-          auditState.status = 'completed';
+        const status = data.status === 'paused_quota' ? 'paused_quota' : 'completed';
+        if (!auditState) {
+          auditState = { agents: {}, started_at: data.timestamp || new Date().toISOString() };
+        }
+        auditState.status = status;
+        if (data.run_id) auditState.run_id = data.run_id;
+        if (data.base_sha) auditState.base_sha = data.base_sha;
+        if (status === 'paused_quota') {
+          auditState.paused_at = data.timestamp || new Date().toISOString();
+          auditState.reset_at = data.reset_at || null;
+          delete auditState.completed_at;
+        } else {
           auditState.completed_at = data.timestamp || new Date().toISOString();
         }
         persistMonitor();

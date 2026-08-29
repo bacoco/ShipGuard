@@ -118,6 +118,7 @@ Check these paths in order (first found wins):
 3. `audit-results.json` (repo root)
 
 If found, extract:
+- `run_id`, `base_sha` — use them to resolve the exact current dispatch inventory in Step 2
 - `summary.total_bugs`, `summary.by_severity`, `summary.by_category`
 - `summary.duration_ms`, `agent_count` (fallback `agents.length` for legacy reports — never a bare `agents`)
 - `prompt_hash` — store it in this session's history entry (Phase 4)
@@ -131,7 +132,17 @@ If not found, log: "No audit-results.json — extracting from conversation only.
 
 ### Step 2: Read zone JSON files
 
-Glob `visual-tests/_results/zone-*-r*.json` or `.code-audit-results/zone-*-r*.json`. Per file: `zone`, `files_audited`, `bugs` count, and whether the zone ID has an `a`/`b` suffix (a re-split happened).
+For a canonical result with `run_id`, read
+`visual-tests/_results/runs/{audit.run_id}/dispatch.json`, require its `run_id` and `base_sha` to
+match the canonical audit, and read only its `accepted_artifacts` paths. Revalidate each artifact's
+identity against its dispatch entry. Never glob the shared results directory or another run. Per
+accepted file, extract `zone`, `files_audited`, `bugs` count, and whether the zone ID has an `a`/`b`
+suffix (a re-split happened).
+
+If a current-format canonical result exists but its dispatch record is absent or mismatched, warn
+and use the aggregate's `agents` data; do not fall back to stale zone files. Only for a legacy audit
+without `run_id`, use the legacy fallback glob `.code-audit-results/zone-*-r*.json` and label the
+signal source `legacy`.
 
 ### Step 3: Read regressions
 
@@ -356,7 +367,8 @@ The loop: a `max_files` hint saved today re-splits that zone on the next audit; 
 ## Final Checklist
 
 - [ ] Snapshot taken BEFORE any modification; per-file pre-existence in meta.yaml (skipped only with `--github-only`)
-- [ ] audit-results.json (incl. `prompt_hash`), visual-results.json, zone JSONs, git log read where present
+- [ ] audit-results.json (incl. `run_id`, `base_sha`, `prompt_hash`), visual-results.json, exact
+      dispatch-inventory zone JSONs, and git log read where present
 - [ ] Conversation scanned for error/performance/quality/friction/success signals
 - [ ] Each signal classified (project-specific / generic / both; when in doubt → LOCAL ONLY)
 - [ ] `.shipguard/learnings.yaml` merged; `prompt_hash` recorded; discontinuity flagged if changed (unless `--github-only`)

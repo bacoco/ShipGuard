@@ -38,7 +38,9 @@ Examples of user requests that should trigger this skill:
 Translate ordinary language into internal depth, scope, evidence, visual, and mutation controls.
 Existing command/flag syntax remains backward compatible, but never advertise it or ask the user to
 reformulate. A natural-language exclusion such as "sans navigateur" or "ne vérifie pas la logique
-métier" is authoritative and must be recorded as the lane's skip reason.
+métier" is authoritative and must be recorded as the lane's skip reason. Source mutation remains
+off unless the user explicitly asks ShipGuard to fix/apply/correct the findings; translate that
+ordinary-language authorization into the internal audit fix control.
 
 ---
 
@@ -107,10 +109,12 @@ Run, literally:
 
 where `{depth}` is `quick|standard|deep|paranoid` (default `standard`) and `{ref}` is the base resolved in Phase 0. The audit lane runs with **`--report-only` by default** — `sg-ship` never lets it mutate sources unless asked.
 
-**`--fix` path (opt-in):** when `sg-ship` was invoked with `--fix`, drop `--report-only` and let the audit apply its fixes:
+**Fix path (opt-in):** when the user explicitly asked in ordinary language to fix/apply/correct the
+audit findings (or used the backward-compatible `--fix` syntax), pass that authorization to the
+audit as its internal explicit opt-in:
 
 ```
-/sg-code-audit {depth} --diff={ref} [--focus={path}]
+/sg-code-audit {depth} --diff={ref} --fix [--focus={path}]
 ```
 
 The tree **mutates during Phase 1** in this case, so after the audit lane finishes, **re-resolve the scope** before Phase 2 (the audit's fixes are now part of the tree) and label the audit-fix delta **separately** in the Phase 5 summary — never blend the audit's edits into the user's own change.
@@ -224,7 +228,7 @@ Print one summary across all applicable lanes:
 - [ ] Scope resolved once; one plain-language scope/plan question asked only if needed
 - [ ] Logic candidate detection integrated into that scope decision; no flag or lane knowledge requested from the user
 - [ ] Freshness check done — a still-fresh `visual-tests/_results/audit-results.json` offered for reuse before re-running the audit lane
-- [ ] `/sg-code-audit {depth} --diff={ref} --report-only` run (or without `--report-only` under `--fix`, with scope re-resolved afterwards) → `visual-tests/_results/audit-results.json`
+- [ ] `/sg-code-audit {depth} --diff={ref} --report-only` run (or with explicit `--fix`, with scope re-resolved afterwards) → `visual-tests/_results/audit-results.json`
 - [ ] `/sg-logic-audit --from-audit --diff={ref} --report-only` run for applicable candidates → `logic-results.json`; `not-applicable` or explicit user exclusion recorded honestly
 - [ ] `/sg-process-check --from-audit --diff={ref}` run (mode passthrough) → `visual-tests/_results/process-results.json`
 - [ ] `/sg-visual-run --from-audit [--from-logic] --from-process` run (union of selected route lists, dedupe by route, highest severity wins), or skipped **with a stated reason**

@@ -1,13 +1,20 @@
 # Output Schema Reference — Canonical Formats
 
-Referenced from SKILL.md Phase 6 ("Aggregate + Report"). This file is the single canonical definition of every output format the audit produces. All output files are written to `results_dir` = `visual-tests/_results/` (`.code-audit-results/` is a legacy location some older runs used; consumers still read it as a fallback, but this skill never writes there).
+Referenced from SKILL.md Phase 6 ("Aggregate + Report"). This file is the single canonical definition of every output format the audit produces. Stable final outputs are written to `results_dir` = `visual-tests/_results/`; in-flight agent artifacts are isolated in `run_dir` = `visual-tests/_results/runs/{run_id}/`. `.code-audit-results/` is a read-only legacy fallback. The skill never writes there and never aggregates by globbing either legacy or root-level artifacts.
 
 ## Per-zone output schema
 
-Written by each zone agent to the relative path `visual-tests/_results/zone-{zone.id}-r{round}.json` inside its own worktree (see `references/agent-prompt.md` § "Output Format"), then copied into the orchestrator's `results_dir` by SKILL.md Phase 5:
+Written by each zone agent to the unique relative path
+`visual-tests/_results/runs/{run_id}/zone-{zone.id}-r{round}-{agent_id}.json` inside its own
+worktree (see `references/agent-prompt.md` § "Output Format"), then copied to that exact path in the
+orchestrator's `run_dir` by SKILL.md Phase 5:
 
 ```json
 {
+  "run_id": "audit-20260829T090000Z-8b57f33a",
+  "base_sha": "8b57f33af55ef13d64657355c93c4fe636a22ca0",
+  "zone_id": "z03",
+  "agent_id": "r1-z03-a1",
   "zone": "src/routes/",
   "round": 1,
   "files_audited": 23,
@@ -22,6 +29,15 @@ Written by each zone agent to the relative path `visual-tests/_results/zone-{zon
       "line": 119,
       "title": "Missing ownership check",
       "description": "Any authenticated user can access any document by guessing the document ID. The route handler checks authentication but not authorization — no ownership verification.",
+      "fix_tier": "test-first",
+      "fix_tier_reason": "Authorization behavior requires a failing regression test before editing",
+      "fix_evidence": {
+        "kind": "test-first",
+        "test_path": "tests/test_documents.py::test_rejects_foreign_owner",
+        "before": "pytest tests/test_documents.py::test_rejects_foreign_owner — failed",
+        "after": "pytest tests/test_documents.py::test_rejects_foreign_owner — passed"
+      },
+      "negative_evidence": null,
       "fix_applied": true,
       "fix_commit": "abc1234",
       "confidence": "high",
@@ -32,7 +48,36 @@ Written by each zone agent to the relative path `visual-tests/_results/zone-{zon
 }
 ```
 
-Cross-zone flow tracers write the same shape to `cross-zone-r{round}.json` with `"zone": "cross-zone"`, IDs `r{n}-xz-NNN`, category `integration`, plus `caller_file`/`callee_file` fields (see `references/verification.md` § "Step 2: Build flow tracer prompt").
+Cross-zone flow tracers write the same identity-bearing shape to
+`runs/{run_id}/cross-zone-r{round}-{agent_id}.json` with `"zone": "cross-zone"`, IDs
+`r{n}-xz-NNN`, category `integration`, plus `caller_file`/`callee_file` fields and deterministic
+flow evidence. They additionally carry `source_sha`, the exact post-merge HEAD they inspected; in
+report-only mode it equals `base_sha` (see `references/verification.md` § "Step 2: Build flow tracer
+prompt"). Every cross-zone bug also carries the required `flow_evidence` object shown there; its
+recorded caller count must equal the deterministic matches before aggregation.
+
+`fix_tier` is required on every finding and is exactly one of `mechanical`, `test-first`, or
+`human-only`. `fix_evidence` is required and non-null for every applied fix. A negative assertion
+uses this additional object:
+
+```json
+{
+  "negative_evidence": {
+    "claim": "missing-test",
+    "complete": true,
+    "scope": ["src/", "tests/"],
+    "exclusions": [".git/", "node_modules/", "visual-tests/_results/"],
+    "searches": [
+      {
+        "query": "rg -n -F '/documents' src tests",
+        "mode": "literal",
+        "matches": ["src/routes/documents.py:119"]
+      }
+    ],
+    "inspected_files": ["src/routes/documents.py", "tests/test_documents.py"]
+  }
+}
+```
 
 ## Aggregated output: audit-results.json (canonical)
 
@@ -40,6 +85,8 @@ Merge all zone results into a single aggregated file:
 
 ```json
 {
+  "run_id": "audit-20260829T090000Z-8b57f33a",
+  "base_sha": "8b57f33af55ef13d64657355c93c4fe636a22ca0",
   "repo": "<repository name from git remote or directory name>",
   "timestamp": "<ISO 8601 timestamp, e.g. 2026-04-10T08:30:00Z>",
   "mode": "<quick|standard|deep|paranoid>",
@@ -72,6 +119,11 @@ Merge all zone results into a single aggregated file:
       "high": <count>,
       "medium": <count>,
       "low": <count>
+    },
+    "by_fix_tier": {
+      "mechanical": <count>,
+      "test-first": <count>,
+      "human-only": <count>
     },
     "by_category": {
       "security": <count>,
@@ -124,6 +176,14 @@ Notes:
   - `verification_score`: 0-100 integer (or `null` if not verified — medium/low severity)
   - `verified`: `true` (score >= 80), `"uncertain"` (40-79), or `null` (not checked)
 - Each bug also carries `"lifecycle"`: `"new"` or `"persistent"` (Phase 6 Step 1.6), and `"acceptance_expired": true` when a matching accepted-risk entry has lapsed (Phase 6 Step 1.7).
+- Each bug carries the required fix-safety fields `fix_tier`, `fix_tier_reason`, and
+  `fix_evidence`. Report-only runs classify every finding but never apply a fix. Fix mode may apply
+  `mechanical` findings directly and `test-first` findings only with recorded failing-before and
+  passing-after evidence; `human-only` findings are never edited automatically.
+- Negative assertions carry `negative_evidence`. Phase 5.7 validates that record for every severity
+  before the finding may enter `bugs`.
+- Cross-zone bugs carry `flow_evidence` with the searched symbol/route, scope, exclusions, searches,
+  matching callers, caller count, and inspected files.
 - Each UI-visible bug SHOULD also carry `"impacted_routes": ["<route>", ...]`. This is the exact route mapping used by the dashboard and by `/sg-visual-run --from-audit`. Do not make the dashboard infer route impact from file path strings, especially for `/`.
 - When `scope_mode == "full"`: `"scope_info": {"mode": "full"}` — no other fields.
 - When `scope_mode == "diff"`: include all `scope_info` fields above.
@@ -205,6 +265,8 @@ Written to `{results_dir}/_skipped_zones.json` by SKILL.md Phase 5.5 Step 4 for 
 
 ```json
 {
+  "run_id": "audit-20260829T090000Z-8b57f33a",
+  "base_sha": "8b57f33af55ef13d64657355c93c4fe636a22ca0",
   "skipped": [
     {"zone_id": "z01", "paths": ["src/hooks/"], "reason": "api_overload", "retries": 3, "date": "2026-04-14"},
     {"zone_id": "z03a", "paths": ["src/components/chat/"], "reason": "syntax_error_after_merge", "file": "chat-tab.tsx", "date": "2026-04-14"}
@@ -213,16 +275,52 @@ Written to `{results_dir}/_skipped_zones.json` by SKILL.md Phase 5.5 Step 4 for 
 }
 ```
 
+## Run-scoped dispatch record
+
+The orchestrator persists `{run_dir}/dispatch.json` atomically after every state transition. This
+record is the only source of artifact paths accepted by Phase 5 and Phase 6:
+
+```json
+{
+  "run_id": "audit-20260829T090000Z-8b57f33a",
+  "base_sha": "8b57f33af55ef13d64657355c93c4fe636a22ca0",
+  "status": "running",
+  "reset_at": null,
+  "entries": [
+    {
+      "agent_id": "r1-z03-a1",
+      "zone_id": "z03",
+      "round": 1,
+      "status": "completed",
+      "artifact": "visual-tests/_results/runs/audit-20260829T090000Z-8b57f33a/zone-z03-r1-r1-z03-a1.json",
+      "superseded_by": null
+    }
+  ],
+  "accepted_artifacts": [
+    "visual-tests/_results/runs/audit-20260829T090000Z-8b57f33a/zone-z03-r1-r1-z03-a1.json"
+  ]
+}
+```
+
+Allowed `status` values are `running`, `paused_quota`, and `completed`. A quota pause records the
+provider's `reset_at` when known and leaves pending entries pending; it does not overwrite the
+canonical audit. Resume is allowed only when repository HEAD still equals `base_sha`, and resumes
+only pending entries after one successful minimal capacity probe. Superseded attempts remain in
+the record for traceability but never enter `accepted_artifacts`. Aggregation reads this array
+verbatim and rejects identity mismatches; broad result-file globs are forbidden.
+
 ## Terminal summary template (Phase 6 Step 5)
 
 ```
 === Code Audit Complete ===
 
+Run: {run_id} | Base: {base_sha}
 Mode: {mode} | Agents: {actual_count} | Rounds: {round_count}
 Duration: {formatted_duration}
 
 Bugs found: {total} ({verified_count} verified, {uncertain_count} uncertain, {rejected_count} rejected)
   Critical: {count}  High: {count}  Medium: {count}  Low: {count}
+  Fix tiers: {mechanical} mechanical | {test_first} test-first | {human_only} human-only
 
 {IF lifecycle_summary.compared_to is not null}
 Lifecycle vs last audit ({compared_to}): {new} new | {persistent} persistent | {fixed} fixed | {not_rechecked} not re-checked
@@ -334,14 +432,14 @@ Also write `audit-results.toon` alongside the JSON file. TOON (Token-Optimized O
 
 ```
 # audit-results.toon
-# repo:{repo} mode:{mode} ts:{timestamp} rounds:{rounds} agents:{agent_count}
+# run:{run_id} base:{base_sha} repo:{repo} mode:{mode} ts:{timestamp} rounds:{rounds} agents:{agent_count}
 # scope:{scope_mode} diff_files:{diff_files} total:{total_in_scope}
 # summary: total={total_bugs} critical={critical} high={high} medium={medium} low={low}
 # verified: checked={checked} confirmed={confirmed} uncertain={uncertain} rejected={rejected}
-# bugs[{bug_count}]{id,severity,category,file,line,title,verified,score}:
-r1-z01-001,high,logic-error,apps/uranus/src/components/foo.tsx,71,key={index} on reorderable list,true,95
-r1-z01-002,medium,error-handling,apps/api-synthesia/routes/chat.py,142,bare except swallows errors,uncertain,55
-r1-z03-001,high,security,apps/uranus/src/lib/auth.ts,23,JWT secret in client bundle,true,98
+# bugs[{bug_count}]{id,severity,category,fix_tier,file,line,title,verified,score}:
+r1-z01-001,high,logic-error,test-first,apps/uranus/src/components/foo.tsx,71,key={index} on reorderable list,true,95
+r1-z01-002,medium,error-handling,mechanical,apps/api-synthesia/routes/chat.py,142,bare except swallows errors,uncertain,55
+r1-z03-001,high,security,human-only,apps/uranus/src/lib/auth.ts,23,JWT secret in client bundle,true,98
 ...
 ```
 

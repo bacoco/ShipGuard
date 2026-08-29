@@ -12,7 +12,10 @@ Referenced from SKILL.md Phase 4 ("Build Prompts + Dispatch Agents"). Load this 
   Do not self-censor bulk patterns like missing env guards, key={index}, or f-string loggers.
   ```
 
-- The template instructs the agent to write its zone JSON to the RELATIVE path `visual-tests/_results/zone-{zone.id}-r{round_number}.json` inside its own worktree. The orchestrator copies that file out of the worktree at agent completion (SKILL.md Phase 5, "Zone-JSON transport"). Never point agents at an absolute path outside their worktree — that would escape worktree isolation.
+- The template instructs the agent to write its zone JSON to the RELATIVE run-scoped path
+  `visual-tests/_results/runs/{run_id}/zone-{zone.id}-r{round_number}-{agent_id}.json` inside its
+  own worktree. The orchestrator copies and identity-validates that file at completion. Never point
+  agents at an absolute path outside their worktree.
 - `{base_sha}` is the repository HEAD recorded once at dispatch time (SKILL.md Phase 4, "Note on worktrees").
 - Retry handling for malformed zone JSON is the orchestrator's job and lives in SKILL.md Phase 5 ("On agent completion") — it is intentionally NOT part of this template.
 - In multi-round mode, rounds 2+ additionally receive the applicable context block from § "Round 2+ context blocks" at the end of this file.
@@ -22,6 +25,8 @@ Referenced from SKILL.md Phase 4 ("Build Prompts + Dispatch Agents"). Load this 
 ````
 You are auditing a codebase for bugs. Your primary scope is these paths: {zone.paths joined with " AND "}.
 Do NOT modify files outside your scope. You MAY read files outside your scope to verify cross-module integration (caller/callee contracts, import chains, shared types).
+
+Audit identity: run_id={run_id}, base_sha={base_sha}, zone_id={zone.id}, round={round_number}, agent_id={agent_id}.
 
 ## Worktree Base Verification (do this FIRST)
 
@@ -93,6 +98,38 @@ Before assigning `critical` or `high` severity, you MUST verify context:
 
 If you cannot verify context (file is outside your scope), add `"confidence": "low"` to the bug object and note "context not verified — severity may be overstated" in the description.
 
+## Negative Claims Require Positive Proof Of The Search
+
+For any claim that something is absent — including `missing-construct`, `missing-test`,
+`unchecked-exit`, `dead-endpoint`, or `unreachable-feature` — search the complete relevant file or
+repository scope before reporting it. Inspect every plausible match. Test-coverage claims must
+search project-declared and conventional test roots for the symbol, route, method/path pair, status
+code, and error condition, then read relevant matches.
+
+Such a finding MUST carry a non-null `negative_evidence` object with the searched scope, literal or
+explicitly marked regex queries, every match, exclusions, and inspected files. If the search cannot be completed, do not present absence
+as fact: set confidence low and leave `negative_evidence.complete = false`; aggregation will move it
+out of headline results. If a relevant rejection-path test exists, do not report the path as
+untested. If only a happy-path test exists, name only the specific missing branch.
+
+For shell scripts, read the complete file, determine whether it is executed or sourced, and inspect
+the shebang before applying dialect rules. Recognize combined safety forms such as
+`set -euo pipefail`. A bare simple command under active errexit normally propagates failure, but
+errexit has exceptions in conditions, lists, and pipelines. Output capture followed by deliberate
+status/content branching may intentionally handle nonzero status; trace it before recommending a
+blanket safety flag.
+
+## Fix Safety Tier (REQUIRED for every finding)
+
+Assign one conservative tier and a concrete reason:
+
+- `mechanical`: narrowly local, behavior-preserving, and deterministically verifiable.
+- `test-first`: changes behavior; requires a characterization or regression test that fails before
+  the fix and passes after it in the same zone commit.
+- `human-only`: ambiguous requirement, public contract, migration, authorization/security policy,
+  destructive or financial behavior, or any fix whose local safety is not established. This is the
+  fallback when uncertain and is never auto-edited.
+
 ## Category Taxonomy (STRICT — do NOT invent new categories)
 
 Use **exactly** one of these 16 values. No variations, no synonyms, no new categories:
@@ -132,14 +169,19 @@ Categories not in the table (including underscore variants) group poorly in the 
 
 After auditing all files in your scope, write your findings to a JSON file at EXACTLY this path, **relative to the root of your own worktree** — do not use any other filename and do not write outside your worktree:
 
-**visual-tests/_results/zone-{zone.id}-r{round_number}.json**
+**visual-tests/_results/runs/{run_id}/zone-{zone.id}-r{round_number}-{agent_id}.json**
 
-Run `mkdir -p visual-tests/_results` first. The orchestrator collects this file from your worktree after you finish. The aggregation phase depends on this exact naming convention. Using a different filename (e.g., adding descriptive suffixes) will cause your results to be lost.
+Run `mkdir -p visual-tests/_results/runs/{run_id}` first. The orchestrator collects this exact file
+from your worktree after you finish. Do not add a suffix or write a root-level zone file.
 
 The JSON MUST follow this exact schema:
 
 ```json
 {
+  "run_id": "{run_id}",
+  "base_sha": "{base_sha}",
+  "zone_id": "{zone.id}",
+  "agent_id": "{agent_id}",
   "zone": "{zone.paths[0]}",
   "round": {round_number},
   "files_audited": <number of files you actually read>,
@@ -154,8 +196,12 @@ The JSON MUST follow this exact schema:
       "line": <line number>,
       "title": "<short title, max 80 chars>",
       "description": "<detailed explanation of the bug and its impact>",
+      "fix_tier": "mechanical|test-first|human-only",
+      "fix_tier_reason": "<why this tier is safe and sufficient>",
       "fix_applied": <true if you fixed it, false otherwise>,
       "fix_commit": "<commit hash if fix_applied is true, empty string otherwise>",
+      "fix_evidence": <null when not fixed, or {"kind":"mechanical","check":"...","result":"passed"}, or {"kind":"test-first","test_path":"...","before":"failed","after":"passed"}>,
+      "negative_evidence": <null, or {"claim":"missing-construct|missing-test|unchecked-exit|dead-endpoint|unreachable-feature","complete":true,"scope":["src/","tests/"],"exclusions":[".git/","node_modules/","visual-tests/_results/"],"searches":[{"query":"...","mode":"literal|regex","matches":["path:line"]}],"inspected_files":["..."]}>,
       "confidence": "<high if you verified interprocedural context, medium if you checked the immediate file, low if you could not verify context>",
       "verification_score": null,
       "verified": null
@@ -173,11 +219,17 @@ Increment the bug counter sequentially: r{round_number}-{zone.id}-001, r{round_n
 The zone JSON MUST pass these checks. If any check fails, fix and rewrite the file before reporting completion:
 
 1. **JSON parseable** — valid JSON syntax
-2. **Required fields present** — `zone`, `round`, `bugs` (array)
-3. **Each bug has required fields** — `id`, `severity`, `category`, `file`, `line`, `title`, `description`, `fix_applied`
+2. **Required identity fields present and exact** — `run_id`, `base_sha`, `zone_id`, `agent_id`,
+   `zone`, `round`, `bugs` (array)
+3. **Each bug has required fields** — `id`, `severity`, `category`, `file`, `line`, `title`,
+   `description`, `fix_tier`, `fix_tier_reason`, `fix_applied`, `fix_evidence`, `negative_evidence`
 4. **Severity is one of** — `critical`, `high`, `medium`, `low` (lowercase, no other values)
 5. **Category is one of** — the 16 valid categories listed above (hyphens, no underscores)
 6. **Bug ID format** — `r{round}-{zone_id}-{NNN}` (sequential)
+7. **Fix tier valid** — `mechanical`, `test-first`, or `human-only`; non-empty reason; every applied
+   fix has non-null evidence appropriate to its tier
+8. **Negative evidence complete when required** — every absence subcategory above has a complete
+   search record; all other findings may use `null`
 
 ## Self-Validation (REQUIRED before writing JSON)
 
@@ -186,19 +238,27 @@ Before writing your zone JSON file, re-read every `category` and `severity` valu
 {IF fix_mode is true}
 ## Fix Mode: ON
 
-Fix every bug you find using the Edit tool. After fixing all bugs in your scope, commit all fixes with:
+Apply fixes only according to their tier:
+
+- `mechanical`: edit, then run the smallest deterministic check covering the change.
+- `test-first`: add and run the characterization/regression test against the original behavior;
+  record `before: failed`, apply the fix, rerun once, and record `after: passed`. If either proof is
+  missing, do not fix.
+- `human-only`: never edit.
+
+Commit only successfully verified mechanical and test-first fixes with:
 ```
 git add <fixed files>
 git commit -m "audit-r{round_number}({zone.id}): fix N bugs"
 ```
 Do NOT add the zone JSON (`visual-tests/_results/`) to the commit — the orchestrator collects it separately.
-Set `"fix_applied": true` and `"fix_commit": "<actual commit hash>"` for each fixed bug.
-
-If a bug cannot be safely fixed (risk of breaking behavior), set `"fix_applied": false` and explain why in the description.
+Set `"fix_applied": true`, the actual `fix_commit`, and required `fix_evidence` for each fixed bug.
+All human-only or unproven test-first findings remain `fix_applied: false`.
 {ELSE}
 ## Fix Mode: OFF (report only)
 
-Do NOT modify any source files. Report all bugs with `"fix_applied": false` and `"fix_commit": ""`.
+Do NOT modify any source files or create source commits. Still classify every finding. Report all
+bugs with `"fix_applied": false`, `"fix_commit": ""`, and `"fix_evidence": null`.
 {END IF}
 
 {IF round_number > 1}

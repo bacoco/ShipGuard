@@ -1928,6 +1928,9 @@ function loadAuditMonitor() {
       if (monitor.status === 'running') {
         renderAuditLive(monitor);
         startAuditPoll();
+      } else if (monitor.status === 'paused_quota') {
+        renderAuditLive(monitor);
+        startAuditPoll();
       } else if (monitor.status === 'completed') {
         loadAuditData();
       } else {
@@ -1970,6 +1973,9 @@ function updateAuditBadge(val) {
   if (val === 'live') {
     badge.classList.add('main-tab-badge-live');
     badge.textContent = 'LIVE';
+  } else if (val === 'paused') {
+    badge.classList.add('main-tab-badge-live');
+    badge.textContent = 'PAUSED';
   } else if (typeof val === 'number' && val > 0) {
     badge.classList.add('main-tab-badge-bugs');
     badge.textContent = val + ' bugs';
@@ -1979,6 +1985,7 @@ function updateAuditBadge(val) {
 }
 
 function renderAuditLive(monitor) {
+  var paused = monitor.status === 'paused_quota';
   document.getElementById('mc-empty').style.display = 'none';
   document.getElementById('mc-stat-row').style.display = 'none';
   document.getElementById('mc-summary-line').style.display = 'none';
@@ -1988,7 +1995,7 @@ function renderAuditLive(monitor) {
   badge.style.display = 'inline-flex';
   badge.className = 'live';
   badge.textContent = '';
-  var t = document.createTextNode('AUDIT LIVE');
+  var t = document.createTextNode(paused ? 'AUDIT PAUSED' : 'AUDIT LIVE');
   badge.appendChild(t);
 
   var agents = Object.values(monitor.agents || {});
@@ -2001,7 +2008,13 @@ function renderAuditLive(monitor) {
   document.getElementById('mc-progress-box').style.display = 'block';
   document.getElementById('mc-progress-fill').style.width = pct + '%';
   document.getElementById('mc-progress-title').textContent = done + '/' + total + ' agents  \u2022  Round ' + round + ' Depth';
-  document.getElementById('mc-progress-label').textContent = bugs > 0 ? bugs + ' bugs found so far' : 'Scanning\u2026';
+  if (paused) {
+    document.getElementById('mc-progress-label').textContent = monitor.reset_at
+      ? 'Quota reached — capacity resets at ' + monitor.reset_at
+      : 'Quota reached — waiting for an explicit resume';
+  } else {
+    document.getElementById('mc-progress-label').textContent = bugs > 0 ? bugs + ' bugs found so far' : 'Scanning\u2026';
+  }
 
   // Agents sub-tab pod grid
   var grid = document.getElementById('mc-pod-grid');
@@ -2015,7 +2028,7 @@ function renderAuditLive(monitor) {
   });
   document.getElementById('sub-tab-agents-count').textContent = total || '';
 
-  updateAuditBadge(bugs > 0 ? bugs : 'live');
+  updateAuditBadge(paused ? 'paused' : (bugs > 0 ? bugs : 'live'));
 }
 
 function makePod(a) {

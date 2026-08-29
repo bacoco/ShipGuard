@@ -72,7 +72,8 @@ Sent **once**, after zones are known and before the round loop begins. Must NOT 
 
 ```
 POST {monitor_url}/api/monitor/audit-start
-Body: {"mode": "{mode}", "round_count": {round_count}, "agent_count": {agent_count},
+Body: {"run_id": "{run_id}", "base_sha": "{base_sha}",
+       "mode": "{mode}", "round_count": {round_count}, "agent_count": {agent_count},
        "zones": [{zone objects with zone_id, paths, file_count}],
        "scope_mode": "{scope_mode}", "scope_ref": "{scope_ref}",
        "timestamp": "{ISO 8601 now}"}
@@ -90,7 +91,8 @@ After dispatching each agent (every round):
 
 ```
 POST {monitor_url}/api/monitor/agent-update
-Body: {"agent_id": "r{round}:{zone_id}", "zone_id": "{zone_id}", "status": "started",
+Body: {"run_id": "{run_id}", "base_sha": "{base_sha}",
+       "agent_id": "{agent_id}", "zone_id": "{zone_id}", "status": "started",
        "round": {round}, "started_at": "{ISO 8601 now}"}
 ```
 
@@ -101,7 +103,8 @@ After processing each agent's result:
 - **Success:** POST agent-update with completion data:
   ```
   POST {monitor_url}/api/monitor/agent-update
-  Body: {"agent_id": "r{round}:{zone_id}", "zone_id": "{zone_id}", "status": "completed",
+  Body: {"run_id": "{run_id}", "base_sha": "{base_sha}",
+         "agent_id": "{agent_id}", "zone_id": "{zone_id}", "status": "completed",
          "round": {round}, "started_at": "{original}", "ended_at": "{ISO 8601 now}",
          "duration_ms": {from agent result footer or elapsed time},
          "tokens": {"total": {total_tokens}, "input": {input_tokens}, "output": {output_tokens}},
@@ -116,7 +119,8 @@ After processing each agent's result:
 - **Context overflow:** POST overflow + started for children:
   ```
   POST {monitor_url}/api/monitor/agent-update
-  Body: {"agent_id": "r{round}:{zone_id}", "status": "overflow",
+  Body: {"run_id": "{run_id}", "base_sha": "{base_sha}",
+         "agent_id": "{agent_id}", "status": "overflow",
          "error": "context overflow — re-splitting", "overflow_into": ["{child_id_a}", "{child_id_b}"]}
   POST {monitor_url}/api/monitor/agent-update
   Body: {"agent_id": "r{round}:{child_id_a}", "zone_id": "{child_id_a}", "status": "started", ...}
@@ -124,17 +128,28 @@ After processing each agent's result:
   Body: {"agent_id": "r{round}:{child_id_b}", "zone_id": "{child_id_b}", "status": "started", ...}
   ```
 
-- **Error:** POST agent-update with `status: "failed"` and `error: "{error message}"`.
+- **Error:** POST agent-update with `run_id`, `base_sha`, `agent_id`, `status: "failed"`, and
+  `error: "{error message}"`.
+
+- **Quota pause:** POST agent-update for the affected attempt with `status: "paused_quota"`, then:
+  ```
+  POST {monitor_url}/api/monitor/audit-complete
+  Body: {"run_id": "{run_id}", "base_sha": "{base_sha}", "status": "paused_quota",
+         "reset_at": "{provider reset time or null}", "timestamp": "{ISO 8601 now}"}
+  ```
+  This is a paused-run signal, not a completed audit. Do not send a second audit-start on resume.
 
 ### flow tracer (Phase 5.6)
 
-POST agent-update for flow tracers with `zone_id: "cross-zone"` and `agent_id: "r{round}:cross-zone"` — same started/completed/failed payloads as zone agents above.
+POST agent-update for flow tracers with `run_id`, `base_sha`, `zone_id: "cross-zone"`, and the
+current unique `agent_id` — same started/completed/failed payloads as zone agents above.
 
 ### audit-complete (Phase 6)
 
 ```
 POST {monitor_url}/api/monitor/audit-complete
-Body: {"status": "completed", "timestamp": "{ISO 8601 now}"}
+Body: {"run_id": "{run_id}", "base_sha": "{base_sha}", "status": "completed",
+       "timestamp": "{ISO 8601 now}"}
 ```
 
 Print: `Monitor: audit complete — view results at {monitor_url}`
