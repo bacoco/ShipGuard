@@ -21,7 +21,7 @@ The main branch is `main`. Create feature branches for changes; do not commit di
 ## Critical Constraints
 
 - This is a Claude Code plugin: each skill lives in `plugins/shipguard/skills/<name>/` with a `SKILL.md` (YAML frontmatter + prompt) and an `agents/openai.yaml` Codex adapter — keep both in sync when changing a skill's interface.
-- Keep the `visual-tests/_results/` output contract stable (`audit-results.json`, `process-results.json`, TOON format): skills consume each other's files.
+- Keep the `visual-tests/_results/` output contract stable (`audit-results.json`, `logic-results.json`, `process-results.json`, TOON format): skills consume each other's files.
 - Version lives in `plugins/shipguard/.claude-plugin/plugin.json`; mirror metadata changes in `.codex-plugin/plugin.json` and both marketplace manifests (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`).
 - Keep `sg-mission-lock`, its Codex hook, and its smoke test aligned. The hook must remain read-only, stateless, non-blocking, and a no-op for unrelated models/prompts.
 - Skills are report-only by default; `--fix` is always opt-in. Do not change that default.

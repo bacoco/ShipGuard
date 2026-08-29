@@ -130,6 +130,7 @@ const SCREENSHOTS_DIR = join(RESULTS_DIR, 'screenshots');
 const VISUAL_RESULTS_PATH = join(RESULTS_DIR, 'visual-results.json');
 const REPORT_PATH = join(RESULTS_DIR, 'report.md');
 const PROCESS_RESULTS_PATH = join(RESULTS_DIR, 'process-results.json');
+const LOGIC_RESULTS_PATH = join(RESULTS_DIR, 'logic-results.json');
 const REGRESSIONS_PATH = join(ROOT, '_regressions.yaml');
 const CONFIG_PATH = join(ROOT, '_config.yaml');
 const OUTPUT_PATH = join(RESULTS_DIR, 'review.html');
@@ -1037,7 +1038,7 @@ function generatePersonaReports() {
 }
 
 // ── Unified findings (evidence-first) ──
-// One derived list merging all five signal sources. The three canonical
+// One derived list merging all signal sources. The canonical producer
 // schemas stay untouched — this is an additive projection. Evidence taxonomy:
 // measured (a real observation), reasoned (a static/simulated prediction),
 // manual (a human annotation).
@@ -1051,7 +1052,7 @@ function readJsonSafe(path) {
 
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
 
-function buildFindings({ audit, processResults, visual, crawlResults, fixManifest }) {
+function buildFindings({ audit, logicResults, processResults, visual, crawlResults, fixManifest }) {
   const findings = [];
   for (const bug of (audit && Array.isArray(audit.bugs) ? audit.bugs : [])) {
     if (!bug || typeof bug !== 'object') continue;
@@ -1066,6 +1067,33 @@ function buildFindings({ audit, processResults, visual, crawlResults, fixManifes
       detail: bug.description || '',
       origin: { lane: 'audit', id: bug.id || null },
     });
+  }
+  for (const candidate of (logicResults && Array.isArray(logicResults.candidates) ? logicResults.candidates : [])) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const obligations = new Map(
+      (Array.isArray(candidate.obligations) ? candidate.obligations : [])
+        .filter((o) => o && typeof o === 'object')
+        .map((o) => [o.id, o])
+    );
+    for (const finding of (Array.isArray(candidate.findings) ? candidate.findings : [])) {
+      if (!finding || typeof finding !== 'object') continue;
+      const obligation = obligations.get(finding.obligation_id);
+      const detail = [
+        obligation && obligation.statement ? `Obligation: ${obligation.statement}` : null,
+        finding.counterexample ? `Counterexample: ${finding.counterexample}` : null,
+      ].filter(Boolean).join(' — ');
+      findings.push({
+        title: `${candidate.name || candidate.id || 'Logic candidate'}: ${finding.kind || 'logic finding'}`,
+        severity: SEV_RANK[finding.severity] !== undefined ? finding.severity : 'medium',
+        evidence: finding.evidence === 'measured' ? 'measured' : 'reasoned',
+        source: 'logic',
+        route: null,
+        file: finding.file || (Array.isArray(candidate.files) ? candidate.files[0] : null) || null,
+        line: Number.isFinite(finding.line) ? finding.line : null,
+        detail,
+        origin: { lane: 'logic', id: finding.id || null },
+      });
+    }
   }
   for (const unit of (processResults && Array.isArray(processResults.units) ? processResults.units : [])) {
     if (!unit || typeof unit !== 'object' || unit.verdict === 'unchanged') continue;
@@ -1265,6 +1293,22 @@ if (existsSync(PROCESS_RESULTS_PATH)) {
   }
 }
 
+// ── Collect logic-audit results (sg-logic-audit → Logic tab) ──
+let logicResults = null;
+if (existsSync(LOGIC_RESULTS_PATH)) {
+  try {
+    const parsed = JSON.parse(readFileSync(LOGIC_RESULTS_PATH, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      logicResults = parsed;
+      console.log('  Logic audit results: found');
+    } else {
+      console.warn('  WARN: logic-results.json is not a JSON object — Logic tab shows its empty state');
+    }
+  } catch (e) {
+    console.warn(`  WARN: logic-results.json is invalid JSON (${e.message}) — Logic tab shows its empty state`);
+  }
+}
+
 // ── Build the unified findings projection + lane availability ──
 const auditForFindings = readJsonSafe(AUDIT_RESULTS_PATH);
 const crawlResults = readJsonSafe(CRAWL_RESULTS_PATH);
@@ -1272,6 +1316,7 @@ const runData = readJsonSafe(RUN_JSON_PATH);
 const fixManifestData = readJsonSafe(FIX_MANIFEST_PATH);
 const findingsData = buildFindings({
   audit: auditForFindings,
+  logicResults,
   processResults,
   visual: visualRawForFindings,
   crawlResults,
@@ -1284,6 +1329,7 @@ console.log(`  Findings: ${findingsData.summary.total} (evidence: ${JSON.stringi
 data.laneAvailability = {
   findings: findingsData.summary.total,
   audit: !!auditForFindings,
+  logic: !!logicResults,
   process: !!processResults,
   visual: tests.some((t) => t.status && t.status !== 'STALE'),
   recorded: recordedTests.length,
@@ -1302,6 +1348,7 @@ const template = getHtmlTemplate();
 const html = template
   .replace('"__PLACEHOLDER_VISUAL_DATA__"', () => embedJson(data))
   .replace('"__PLACEHOLDER_RECORDED_DATA__"', () => embedJson(recordedTests))
+  .replace('"__PLACEHOLDER_LOGIC_DATA__"', () => embedJson(logicResults))
   .replace('"__PLACEHOLDER_PROCESS_DATA__"', () => embedJson(processResults))
   .replace('"__PLACEHOLDER_FINDINGS_DATA__"', () => embedJson(findingsData))
   .replace('"__PLACEHOLDER_RUN_DATA__"', () => embedJson(runData));

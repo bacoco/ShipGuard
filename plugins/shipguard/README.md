@@ -4,28 +4,30 @@
 
 **Ship with confidence.** ShipGuard finds bugs before your users do.
 
-Five AI-powered modules. Use one, some, or all. No test files to write.
+Six AI-powered modules. Use one, some, or all. No test files to write.
 
-| | 📸 **Visual E2E Debugger** | 🎬 **Macro Recorder** | 🔍 **Code Audit** | 🧪 **Process Check** | 🧠 **Self-Improving Engine** |
-|---|---|---|---|---|---|
-| **What** | Auto-discover routes, generate tests, mark bugs on screenshots — AI fixes the code | Record your browser interactions and turn them into replayable tests | Parallel AI agents scan your codebase, find bugs, fix them | Simulate the process your diff touched (runs the code "in its head") before/after, report how the behavior moved | Learn from every session — save what worked, scout GitHub for new techniques |
-| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-process-check` | `/sg-improve` |
-| **Output** | Screenshots + annotation cards + auto-fix | YAML test manifests + test library cards | Bug report + auto-fixes + Mission Control dashboard | Before/after behavior report + `process-results.json` | `.shipguard/learnings.yaml` + GitHub issues |
+| | 📸 **Visual E2E** | 🎬 **Recorder** | 🔍 **Code Audit** | 🧭 **Logic Audit** | 🧪 **Process Check** | 🧠 **Improve** |
+|---|---|---|---|---|---|---|
+| **What** | Discover routes and verify screenshots | Record interactions as replayable tests | Find implementation bugs | Check procedures and algorithms against contracts/invariants | Compare behavior before/after the diff | Preserve learnings and scout techniques |
+| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-logic-audit` | `/sg-process-check` | `/sg-improve` |
+| **Output** | Screenshots + annotations | YAML manifests | `audit-results.json` | `logic-results.json` + counterexamples | `process-results.json` | `.shipguard/learnings.yaml` + issues |
 
-One orchestrator ties them together: `/sg-ship` runs audit → process check → visual → review on your diff.
+One orchestrator ties them together: `/sg-ship --logic` runs code audit → logic audit → process check → visual → review on your diff. Without `--logic`, the semantic lane is skipped explicitly.
 
-### All 14 skills
+### All skills (15 canonical + 1 deprecated alias)
 
 | Skill | Purpose |
 |-------|---------|
 | `/sg-mission-lock` | Lock the literal mission and authority before work; model-aware Codex activation for GPT-5.6 Sol |
-| `/sg-gauntlet` | Turn a quality goal into one paste-ready prompt that grinds builders against blind critics until the work beats a named, fetchable bar |
-| `/sg-ship` | One-command pipeline: code audit → process check → visual run → unified review, scoped to your diff |
+| `/sg-beat-reference` | Build a paste-ready comparison loop that improves work until it beats a named, fetchable reference |
+| `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
+| `/sg-ship` | One-command pipeline: code audit → optional logic audit → process check → visual run → unified review |
 | `/sg-code-audit` | Dispatch parallel AI agents to audit changed or scoped code for bugs |
+| `/sg-logic-audit` | Check workflows, state machines, retries, transactions, and algorithms against declared contracts and invariants |
 | `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |
 | `/sg-visual-discover` | Scan the codebase and generate YAML visual test manifests per route |
 | `/sg-visual-run` | Execute visual test manifests with agent-browser |
-| `/sg-visual-review` | Interactive review dashboard — Visual Tests, Code Audit, Process, and Recorded Tests tabs |
+| `/sg-visual-review` | Interactive review dashboard — Visual Tests, Code Audit, Logic, Process, and Recorded Tests tabs |
 | `/sg-visual-fix` | Trace human annotations on screenshots to source code and fix them |
 | `/sg-visual-review-stop` | Stop the review HTTP server |
 | `/sg-change-report` | Save before/after UI evidence as durable PR/client change reports |
@@ -81,7 +83,8 @@ Migrating from an older local Codex adapter or a Claude marketplace install? See
 Don't want to run the lanes by hand? `/sg-ship` runs the whole pipeline on your diff and opens one review:
 
 ```bash
-/sg-ship                 # audit + process-check + visual + review, scoped to what changed
+/sg-ship                 # code audit + process-check + visual + review
+/sg-ship --logic         # add contract/invariant checking for procedures and algorithms
 /sg-ship deep --all      # full-repo, deeper audit
 /sg-ship --no-visual     # headless project / no UI
 /sg-ship --fix           # opt into fix mode (default is report-only: find & observe, fix nothing)
@@ -89,14 +92,14 @@ Don't want to run the lanes by hand? `/sg-ship` runs the whole pipeline on your 
 /sg-ship --mode=execute  # process lane: literal before/after execution
 ```
 
-Full signature: `/sg-ship [quick|standard|deep|paranoid] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]`. Diffs use the three-dot convention (`git diff {base}...HEAD` — committed changes only), and the resolved base is passed explicitly to every lane.
+Full signature: `/sg-ship [quick|standard|deep|paranoid] [--logic] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]`. Diffs use the three-dot convention (`git diff {base}...HEAD` — committed changes only), and the resolved base is passed explicitly to every lane.
 
 ```
-static FIND ──► dynamic SIMULATE ──► visual CONFIRM ──► human DECIDES
-sg-code-audit    sg-process-check      sg-visual-run        sg-visual-review
+static FIND ──► semantic CHECK ──► dynamic SIMULATE ──► visual CONFIRM ──► human DECIDES
+sg-code-audit    sg-logic-audit      sg-process-check      sg-visual-run        sg-visual-review
 ```
 
-It's a **thin sequencer** over the skills below — same scope threaded through every lane, connected by the `--from-audit` / `--from-process` bridges (the visual lane receives both and unions their routes), no new analysis. Skips any lane that doesn't apply (no UI → no browser pass) and says so. You can still run each skill individually.
+It's a **thin sequencer** over the skills below — same scope threaded through every lane, connected by the `--from-audit`, `--from-logic`, and `--from-process` bridges. The logic lane is opt-in because it needs an authoritative contract or invariant rather than inventing intent. Skips any lane that doesn't apply and says so. You can still run each skill individually.
 
 ---
 
@@ -216,11 +219,13 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 /sg-visual-run                                  # Interactive — choose scope
 /sg-visual-run I changed the sidebar, check it  # Natural language
 /sg-visual-run --from-audit                     # Test audit-impacted routes
+/sg-visual-run --from-logic                     # Test routes flagged by Logic Audit
+/sg-visual-run --from-process                   # Test routes flagged by Process Check
 /sg-visual-run --regressions                    # Re-run previously failed tests
 /sg-visual-run --all                            # Full suite
 ```
 
-`--from-audit` reads `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json` — a natural bridge between the two features.
+The three `--from-*` bridges read `impacted_ui_routes` (or legacy `impacted_routes`) from `audit-results.json`, `logic-results.json`, and `process-results.json`; multiple sources are unioned.
 
 ### Discover options
 
@@ -343,6 +348,37 @@ Results are written to `visual-tests/_results/audit-results.json` (the directory
 ### Supported languages
 
 Python, TypeScript/React, Next.js, Infrastructure (Docker/YAML/CI), Go, Rust, JVM.
+
+---
+
+## Logic Audit
+
+`sg-logic-audit` checks absolute correctness against **declared contracts and invariants**. It is
+for workflows, state machines, retries, transactions, authorization paths, and non-trivial
+algorithms where each function can look reasonable while the end-to-end property is still wrong.
+
+```bash
+/sg-logic-audit --diff=main
+/sg-logic-audit --procedure="job retry lifecycle"
+/sg-logic-audit --algorithm=chunk_document --mode=hybrid
+```
+
+It extracts obligations and their provenance before judging the implementation, models states and
+effects across files, then searches for the smallest counterexample. Findings distinguish
+`confirmed`, `risk`, `contract-conflict`, `question`, and `uncovered`; evidence is always labeled
+`reasoned` or `measured`. It never presents bounded analysis as formal proof.
+
+The lane is report-only and writes:
+
+```text
+visual-tests/_results/logic-results.json
+visual-tests/_results/logic-report.md
+```
+
+Use `/sg-ship --logic` to run it between Code Audit and Process Check. Logic Audit uses the contract
+as its oracle; Process Check still uses the previous version as its before/after reference. A clean
+delta therefore does not replace a logic audit, and a clean logic audit does not claim every path
+was proven.
 
 ---
 

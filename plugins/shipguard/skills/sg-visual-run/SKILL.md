@@ -1,8 +1,8 @@
 ---
 name: sg-visual-run
-description: Use when UI changes need visual verification — after an audit or process check flags routes, after frontend edits, or on demand to run or re-run the project's visual test manifests.
+description: Use when UI changes need visual verification — after code, logic, or process lanes flag routes, after frontend edits, or on demand to run or re-run the project's visual test manifests.
 context: conversation
-argument-hint: "[tests to run or natural language description] [--from-audit] [--from-process] [--regressions] [--all] [--diff=ref]"
+argument-hint: "[tests to run or natural language description] [--from-audit] [--from-logic] [--from-process] [--regressions] [--all] [--diff=ref]"
 ---
 
 # /sg-visual-run — Execute Visual Tests
@@ -18,8 +18,9 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 | `/sg-visual-run` | **Interactive** — asks what to test |
 | `/sg-visual-run <text>` | Natural language — figures out what tests to run |
 | `/sg-visual-run --from-audit` | Run tests for `impacted_ui_routes` from `visual-tests/_results/audit-results.json` |
+| `/sg-visual-run --from-logic` | Run tests for `impacted_ui_routes` from `visual-tests/_results/logic-results.json` |
 | `/sg-visual-run --from-process` | Run tests for `impacted_ui_routes` from `visual-tests/_results/process-results.json` |
-| `/sg-visual-run --from-audit --from-process` | **Union mode** — merge routes from both files (see invocation-modes.md) |
+| `/sg-visual-run --from-audit --from-logic --from-process` | **Union mode** — merge routes from every selected result file |
 | `/sg-visual-run --diff=main` | Run tests impacted by changes since `main` |
 | `/sg-visual-run --all` | Full suite (skip interactive menu) |
 | `/sg-visual-run --regressions` | Re-run tests that failed last run |
@@ -43,7 +44,7 @@ Sandbox note: browser sockets, local network, and cache writes may require expli
 
 ## Build execution list
 
-Scope-source precedence (bridge flags > `--diff` > natural language > `--regressions` > `--all`), the union rule for `--from-audit --from-process`, the `deprecated: true` skip, and the regressions-first ordering are defined once, authoritatively, in [references/invocation-modes.md — "Build Execution List — priority order"](references/invocation-modes.md). Follow that list; do not restate it here.
+Scope-source precedence (bridge flags > `--diff` > natural language > `--regressions` > `--all`), multi-source union, the `deprecated: true` skip, and regressions-first ordering are defined once, authoritatively, in [references/invocation-modes.md — "Build Execution List — priority order"](references/invocation-modes.md). Follow that list; do not restate it here.
 
 ## Execution strategy
 

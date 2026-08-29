@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 import subprocess, shutil
 
-REPO = Path("/Users/macstudio/agentic-visual-debugger")
+REPO = Path(__file__).resolve().parents[1]
 SCREENSHOTS = REPO / "docs" / "screenshots"
 OUT = REPO / "docs" / "screenshots" / "demo.gif"
 OUT_MP4 = REPO / "docs" / "screenshots" / "demo.mp4"

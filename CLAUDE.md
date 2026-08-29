@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-ShipGuard is a Claude Code and Codex plugin providing `sg-*` skills for mission control and diff-scoped verification: code audit, process simulation, visual E2E testing, macro recording, review dashboards, and self-improvement. GitHub: `bacoco/ShipGuard`. License MIT. Main branch: `main`.
+ShipGuard is a Claude Code and Codex plugin providing `sg-*` skills for mission control and diff-scoped verification: code audit, contract/invariant logic audit, process simulation, visual E2E testing, macro recording, review dashboards, and self-improvement. GitHub: `bacoco/ShipGuard`. License MIT. Main branch: `main`.
 
-Pipeline: static **find** (`sg-code-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `/sg-ship` orchestrates all of it. Report-only by default; `--fix` opts in.
+Pipeline: static **find** (`sg-code-audit`) → optional semantic **check** (`sg-logic-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `/sg-ship --logic` orchestrates all lanes. Report-only by default; `--fix` opts in.
 
 ## Structure
 
@@ -14,16 +14,18 @@ Pipeline: static **find** (`sg-code-audit`) → dynamic **simulate** (`sg-proces
 .claude-plugin/marketplace.json      # Claude Code marketplace manifest
 .agents/plugins/marketplace.json     # Codex marketplace manifest
 plugins/shipguard/                   # The plugin itself
-├── .claude-plugin/plugin.json       # Plugin manifest (name, version — currently 2.6.0)
+├── .claude-plugin/plugin.json       # Plugin manifest (name and release version)
 ├── .codex-plugin/plugin.json        # Codex plugin manifest
 ├── hooks/hooks.json                 # Codex model-aware mission-lock injection
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 14 skills, one dir each
+└── skills/                          # 15 canonical skills + 1 deprecated alias
     ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
-    ├── sg-gauntlet/                 # Writes the paste-ready beat-a-named-bar prompt
+    ├── sg-beat-reference/           # Paste-ready compare/improve loop against a named reference
+    ├── sg-gauntlet/                 # Deprecated alias for sg-beat-reference
     ├── sg-ship/                     # Orchestrator: full pipeline on a diff
     ├── sg-code-audit/               # Parallel audit agents + verification
+    ├── sg-logic-audit/              # Contracts, invariants, paths, counterexamples
     ├── sg-process-check/            # Before/after behavior simulation (reason/hybrid/execute)
     ├── sg-visual-discover/          # Generate YAML test manifests from routes
     ├── sg-visual-run/               # Execute manifests via agent-browser
@@ -65,7 +67,7 @@ Run the relevant smoke test after touching a skill's scripts or templates.
 
 ## Conventions and constraints
 
-- Results contract: skills read/write `visual-tests/_results/` (`audit-results.json` canonical, `audit-results.toon` compact, `process-results.json`, change reports under `change-reports/`). Legacy `.code-audit-results/` is read as a fallback. Keep these paths and JSON shapes stable — skills consume each other's outputs (`--from-audit`, `--from-process`).
+- Results contract: skills read/write `visual-tests/_results/` (`audit-results.json` canonical, `audit-results.toon` compact, `logic-results.json`, `process-results.json`, change reports under `change-reports/`). Legacy `.code-audit-results/` is read as a fallback. Keep these paths and JSON shapes stable — skills consume each other's outputs (`--from-audit`, `--from-logic`, `--from-process`).
 - Version bumps go in `plugins/shipguard/.claude-plugin/plugin.json` (keep `.codex-plugin/plugin.json` and marketplace manifests consistent).
 - Visual flows require `agent-browser` (npm, global). Always close browsers after use.
 - Code audit parallelism relies on Claude Code's Agent tool with worktree isolation; other CLIs get the non-parallel lanes.

@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Visual Run"
   short_description: "Run browser visual tests with honest coverage."
-  default_prompt: "Run ShipGuard visual tests for impacted routes."
+  default_prompt: "Use $sg-visual-run to run ShipGuard visual tests for impacted routes."
 
 policy:
   allow_implicit_invocation: false

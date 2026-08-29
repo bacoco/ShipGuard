@@ -192,6 +192,30 @@ function createFixture() {
       actions: [{ seed: 1, evidence: 'measured', delta: 'output length 12 -> 9', surprise: false }],
     }],
   });
+  writeJson(join(root, '_results', 'logic-results.json'), {
+    schema_version: '1.0',
+    repo: 'smoke-fixture',
+    timestamp: '2026-08-29T10:00:00Z',
+    mode: 'reason',
+    depth: 'standard',
+    status: 'completed',
+    summary: {
+      candidates_checked: 1, obligations_checked: 1, confirmed_violations: 1,
+      risks: 0, contract_conflicts: 0, questions: 0, uncovered: 0,
+      evidence_mix: { reasoned: 1, measured: 0 },
+    },
+    candidates: [{
+      id: 'p01', kind: 'procedure', name: 'job lifecycle', files: ['worker.py'],
+      obligations: [{ id: 'o01', statement: 'Completed jobs cannot return to running', source_kind: 'declared', confidence: 'high' }],
+      findings: [{
+        id: 'logic-001', kind: 'invariant-violation', severity: 'high', status: 'confirmed',
+        obligation_id: 'o01', evidence: 'reasoned', confidence: 'high',
+        counterexample: 'late retry callback', file: 'worker.py', line: 41,
+      }],
+    }],
+    contract_conflicts: [], questions: [], uncovered: [], skipped: [],
+    impacted_backend: [], impacted_ui_routes: [],
+  });
   writeJson(join(root, '_results', 'crawl-results.json'), {
     schema_version: '1.0',
     timestamp: '2026-07-04T10:00:00Z',
@@ -211,6 +235,7 @@ function createFixture() {
     scope: { type: 'profile', value: 'site-accessible' },
     lanes: {
       audit: { status: 'ran', results: 'audit-results.json' },
+      logic: { status: 'ran', results: 'logic-results.json' },
       process: { status: 'ran', results: 'process-results.json' },
       visual: { status: 'ran', results: 'visual-results.json' },
       crawl: { status: 'ran', results: 'crawl-results.json' },
@@ -251,11 +276,12 @@ async function main() {
     assert(existsSync(join(root, '_results', 'findings.json')), 'findings.json was not generated');
     const findings = JSON.parse(readFileSync(join(root, '_results', 'findings.json'), 'utf8'));
     assert(findings.schema_version === '1.0', 'findings: schema_version missing');
-    assert(findings.findings.length === 6, `findings: expected 6, got ${findings.findings.length}`);
+    assert(findings.findings.length === 7, `findings: expected 7, got ${findings.findings.length}`);
     assert(findings.findings[0].id === 'SG-001' && findings.findings[0].severity === 'critical', 'findings: not severity-sorted with SG ids');
     const f = findings.findings;
     assert(f.some(x => x.source === 'audit' && x.evidence === 'reasoned' && x.file === 'app.py'), 'findings: audit -> reasoned');
     assert(f.some(x => x.source === 'process' && x.evidence === 'measured'), 'findings: process w/ measured action -> measured');
+    assert(f.some(x => x.source === 'logic' && x.evidence === 'reasoned' && x.file === 'worker.py'), 'findings: logic -> reasoned');
     assert(f.some(x => x.source === 'browser' && x.evidence === 'measured' && x.title.includes('FAIL')), 'findings: visual FAIL -> measured');
     assert(f.some(x => x.source === 'browser' && x.title === 'Browser console error'), 'findings: browser_errors surfaced');
     assert(f.some(x => x.source === 'crawler' && x.evidence === 'measured' && x.severity === 'high'), 'findings: crawler -> measured/high');
@@ -264,9 +290,12 @@ async function main() {
 
     const builtHtml = readFileSync(join(root, '_results', 'review.html'), 'utf8');
     assert(!builtHtml.includes('__PLACEHOLDER_FINDINGS_DATA__'), 'template: findings placeholder not replaced');
+    assert(!builtHtml.includes('__PLACEHOLDER_LOGIC_DATA__'), 'template: logic placeholder not replaced');
     assert(!builtHtml.includes('__PLACEHOLDER_RUN_DATA__'), 'template: run placeholder not replaced');
     assert(builtHtml.includes('"laneAvailability"'), 'data: laneAvailability not injected');
     assert(builtHtml.includes('id="main-tab-findings"'), 'template: Findings tab button missing');
+    assert(builtHtml.includes('id="main-tab-logic"'), 'template: Logic tab button missing');
+    assert(builtHtml.includes('renderLogicTab'), 'template: logic renderer missing');
     assert(builtHtml.includes('renderFindingsTab'), 'template: findings renderer missing');
     assert(builtHtml.includes('DEFAULT_TAB_ORDER'), 'template: dynamic default tab logic missing');
     assert(builtHtml.includes('id="lane-chips"'), 'template: lane chips container missing');
@@ -303,6 +332,7 @@ async function main() {
     assert(review.status === 200, 'review.html was not served');
     assert(review.body.includes('recorded-login.yaml'), 'recorded manifest was not embedded in review.html');
     assert((await request(port, 'GET', '/audit-results.json')).status === 200, 'audit-results.json was not served');
+    assert((await request(port, 'GET', '/logic-results.json')).status === 200, 'logic-results.json was not served');
     assert((await request(port, 'GET', '/visual-results.json')).status === 200, 'visual-results.json was not served');
     assert((await request(port, 'GET', '/persona-reports/demo/index.html')).status === 200, 'persona report was not served');
 

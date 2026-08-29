@@ -9,10 +9,10 @@
 ![ShipGuard Demo](docs/screenshots/demo.gif)
 
 ```
-code audit → find bugs → visual test → confirm on screen → human review → annotate → auto-fix → repeat
+code audit → check contracts and invariants → simulate behavior → confirm on screen → human review
 ```
 
-ShipGuard closes the loop between static analysis and visual reality. Code audit finds bugs in source. Visual tests verify if users see them. You annotate what matters. AI fixes it. The system learns and gets better each run.
+ShipGuard closes the loop between static analysis, intended behavior, and visual reality. Code audit finds implementation bugs. Logic Audit checks workflows, state machines, retries, transactions, and algorithms against declared contracts and invariants. Process Check compares before/after behavior. Visual tests verify what users see. You decide what ships.
 
 ## Status
 
@@ -20,6 +20,7 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 |--------|--------|-------|
 | Visual E2E Debugger | 🟢 Stable | discover → run → review → fix loop |
 | Code Audit | 🟢 Stable | parallel agents, multi-round, verification |
+| Logic Audit | 🟢 New in 2.8.0 | contract/invariant checks, counterexamples, reasoned vs measured evidence |
 | Macro Recorder | 🟢 Stable | record → replay via YAML manifests |
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
@@ -31,7 +32,7 @@ ShipGuard closes the loop between static analysis and visual reality. Code audit
 
 ---
 
-Five AI-powered modules. Use one, some, or all five. No test files to write.
+Six AI-powered modules. Use one, some, or all six. No test files to write.
 
 <table>
 <tr>
@@ -54,6 +55,19 @@ Parallel AI agents scan your entire codebase, find bugs, and **fix them automati
 
 ```
 /sg-code-audit
+```
+
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="top">
+
+### 🧭 Logic Audit
+
+Check procedures and algorithms against their **declared contracts and invariants**. ShipGuard models paths, failure transitions, retries, ordering, termination, idempotency, atomicity, and algorithmic edge cases; then reports counterexamples with reasoned or measured evidence. **Report-only.**
+
+```
+/sg-logic-audit --diff=main --focus=src/workflows/
 ```
 
 </td>
@@ -98,10 +112,10 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 
 ### 🔗 One pipeline — `/sg-ship`
 
-Static **find** (`sg-code-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Run all of it on your diff with one command — **`/sg-ship`** — or use any subset. Report-only by default; `--fix` opts in.
+Static **find** (`sg-code-audit`) → optional **logic check** (`sg-logic-audit`) → dynamic **process check** (`sg-process-check`) → **visual** confirm (`sg-visual-run`) → **human** decides. Run it on your diff with one command — **`/sg-ship`** — and add `--logic` when contracts, procedures, or algorithms matter. Report-only by default; `--fix` opts in.
 
 ```
-/sg-ship [quick|standard|deep|paranoid] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]
+/sg-ship [quick|standard|deep|paranoid] [--logic] [--all] [--diff=ref] [--focus=path] [--no-visual] [--report-only|--fix] [--mode=reason|hybrid|execute]
 ```
 
 </td>
@@ -198,12 +212,13 @@ The review dashboard uses **draggable annotation cards** to mark visual bugs on 
 /sg-visual-run                                  # Interactive — choose scope
 /sg-visual-run I changed the sidebar, check it  # Natural language
 /sg-visual-run --from-audit                     # Test audit-impacted routes
+/sg-visual-run --from-logic                     # Test routes flagged by Logic Audit
 /sg-visual-run --from-process                   # Test routes flagged by process check
 /sg-visual-run --regressions                    # Re-run previously failed tests
 /sg-visual-run --all                            # Full suite
 ```
 
-`--from-audit` reads `impacted_ui_routes` (or legacy `impacted_routes`) from `visual-tests/_results/audit-results.json` — a natural bridge between Code Audit and Visual Debugger. `--from-process` does the same with `process-results.json`; combined, the two flags union their routes (that's how `/sg-ship` invokes the visual lane).
+`--from-audit`, `--from-logic`, and `--from-process` read `impacted_ui_routes` (or legacy `impacted_routes`) from the corresponding result contract under `visual-tests/_results/`. Any combination unions its routes; `/sg-ship --logic` passes all three bridges to the visual lane.
 
 ### Discover options
 

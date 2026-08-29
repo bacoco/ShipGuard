@@ -396,6 +396,7 @@ body.light #bug-search{background:var(--surface)}
 <div class="main-tab-bar">
   <button class="main-tab-btn" id="main-tab-findings" onclick="switchMainTab('findings')">Findings <span class="main-tab-badge" id="findings-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-audit" onclick="switchMainTab('audit')">Code Audit <span class="main-tab-badge" id="audit-tab-badge"></span></button>
+  <button class="main-tab-btn" id="main-tab-logic" onclick="switchMainTab('logic')">Logic <span class="main-tab-badge" id="logic-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-visual" onclick="switchMainTab('visual')">Visual Tests</button>
   <button class="main-tab-btn" id="main-tab-process" onclick="switchMainTab('process')">Process <span class="main-tab-badge" id="process-tab-badge"></span></button>
   <button class="main-tab-btn" id="main-tab-recorded" onclick="switchMainTab('recorded')">Recorded Tests <span class="main-tab-badge" id="recorded-tab-badge"></span></button>
@@ -509,6 +510,36 @@ body.light #bug-search{background:var(--surface)}
   </div>
 
 </div>
+
+<!-- ════════════════ LOGIC TAB (sg-logic-audit) ════════════════ -->
+<div id="logic-view" style="display:none">
+  <div style="padding:24px 28px">
+    <div class="mc-summary-line" id="logic-summary-line" style="display:none"></div>
+    <div class="mc-stat-row" id="logic-stat-row" style="display:none"></div>
+
+    <div id="logic-findings-section" style="display:none">
+      <div class="mc-section-header" id="logic-findings-header">Contract and invariant findings</div>
+      <table class="mc-table">
+        <thead><tr><th>Status</th><th>Severity</th><th>Candidate</th><th>Obligation</th><th>Counterexample</th><th>Evidence</th></tr></thead>
+        <tbody id="logic-findings-tbody"></tbody>
+      </table>
+    </div>
+
+    <div id="logic-concerns-section" style="display:none;margin-top:28px">
+      <div class="mc-section-header">Conflicts, questions, and uncovered paths</div>
+      <table class="mc-table">
+        <thead><tr><th>Type</th><th>Candidate</th><th>Description</th><th>Source</th></tr></thead>
+        <tbody id="logic-concerns-tbody"></tbody>
+      </table>
+    </div>
+
+    <div id="logic-empty" class="mc-empty" style="display:none">
+      <div class="mc-empty-icon">&#9878;</div>
+      <p id="logic-empty-title">No logic audit results found.</p>
+      <p style="margin-top:8px">Run <code>/sg-logic-audit</code> or <code>/sg-ship --logic</code> to check contracts and invariants.</p>
+    </div>
+  </div>
+</div><!-- /logic-view -->
 
 <!-- ════════════════ VISUAL TESTS TAB ════════════════ -->
 <div id="visual-view" style="display:none">
@@ -701,6 +732,7 @@ body.light #bug-search{background:var(--surface)}
 <script>
 var __VISUAL_DATA__ = "__PLACEHOLDER_VISUAL_DATA__";
 var __RECORDED_DATA__ = "__PLACEHOLDER_RECORDED_DATA__";
+var __LOGIC_DATA__ = "__PLACEHOLDER_LOGIC_DATA__";
 var __PROCESS_DATA__ = "__PLACEHOLDER_PROCESS_DATA__";
 var __FINDINGS_DATA__ = "__PLACEHOLDER_FINDINGS_DATA__";
 var __RUN_DATA__ = "__PLACEHOLDER_RUN_DATA__";
@@ -1725,7 +1757,7 @@ function setTheme(t) {
 
 // ════════════════ MAIN TAB SWITCH ════════════════
 function switchMainTab(tab) {
-  ['findings', 'audit', 'visual', 'process', 'recorded'].forEach(function(t) {
+  ['findings', 'audit', 'logic', 'visual', 'process', 'recorded'].forEach(function(t) {
     var btn = document.getElementById('main-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
     var view = document.getElementById(t + '-view');
@@ -1733,6 +1765,7 @@ function switchMainTab(tab) {
   });
   if (tab === 'audit') loadAuditData();
   else stopAuditPoll(); // stop polling when switching away from audit tab
+  if (tab === 'logic') renderLogicTab();
   if (tab === 'process') renderProcessTab();
   if (tab === 'recorded') renderRecordedGrid();
   if (tab === 'findings') renderFindingsTab();
@@ -1740,12 +1773,13 @@ function switchMainTab(tab) {
 
 // ════════════════ FINDINGS TAB + LANE CHIPS (run.json / findings.json) ═══════
 // All dynamic strings set via textContent — never innerHTML.
-var DEFAULT_TAB_ORDER = ['findings', 'audit', 'visual', 'process', 'recorded'];
+var DEFAULT_TAB_ORDER = ['findings', 'audit', 'logic', 'visual', 'process', 'recorded'];
 
 function tabHasData(tab) {
   var la = (__VISUAL_DATA__ && __VISUAL_DATA__.laneAvailability) || {};
   if (tab === 'findings') return !!(__FINDINGS_DATA__ && __FINDINGS_DATA__.findings && __FINDINGS_DATA__.findings.length > 0);
   if (tab === 'audit') return !!la.audit;
+  if (tab === 'logic') return !!la.logic;
   if (tab === 'visual') return !!la.visual;
   if (tab === 'process') return !!la.process;
   if (tab === 'recorded') return (la.recorded || 0) > 0;
@@ -2610,6 +2644,7 @@ function makeBugRow(bug) {
 (function() {
   renderLaneChips();
   renderFindingsTab(); // badge always reflects the count, whichever tab opens
+  if (typeof renderLogicTab === 'function') renderLogicTab();
   // Render the Process tab once at load so its badge reflects embedded data
   if (typeof renderProcessTab === 'function') renderProcessTab();
   var initial = null;
@@ -2621,6 +2656,163 @@ function makeBugRow(bug) {
   // Keep the audit badge/monitor behavior of the old default: always load once
   if (initial !== 'audit') loadAuditData();
 })();
+
+// ════════════════ LOGIC TAB (sg-logic-audit) ════════════════
+// Renders _results/logic-results.json embedded at build time. Dynamic strings
+// use textContent so repository-authored contracts cannot inject markup.
+
+function logicEntries(data) {
+  var rows = [];
+  var candidates = data && Array.isArray(data.candidates) ? data.candidates : [];
+  candidates.forEach(function(candidate) {
+    if (!candidate || typeof candidate !== 'object') return;
+    var obligations = {};
+    (Array.isArray(candidate.obligations) ? candidate.obligations : []).forEach(function(o) {
+      if (o && o.id) obligations[o.id] = o;
+    });
+    (Array.isArray(candidate.findings) ? candidate.findings : []).forEach(function(finding) {
+      if (!finding || typeof finding !== 'object') return;
+      rows.push({ candidate: candidate, finding: finding, obligation: obligations[finding.obligation_id] || null });
+    });
+  });
+  return rows;
+}
+
+function logicConcernEntries(data) {
+  var rows = [];
+  ['contract_conflicts', 'questions', 'uncovered'].forEach(function(key) {
+    (data && Array.isArray(data[key]) ? data[key] : []).forEach(function(entry) {
+      rows.push({ type: key.replace(/_/g, '-'), entry: entry });
+    });
+  });
+  return rows;
+}
+
+function logicText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try { return JSON.stringify(value); } catch (e) { return String(value); }
+}
+
+function logicCell(text) {
+  var td = document.createElement('td');
+  td.textContent = logicText(text) || '—';
+  return td;
+}
+
+function updateLogicBadge(data) {
+  var badge = document.getElementById('logic-tab-badge');
+  if (!badge) return;
+  badge.className = 'main-tab-badge';
+  badge.textContent = '';
+  if (!data || typeof data !== 'object') return;
+  var summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
+  var confirmed = Number.isFinite(summary.confirmed_violations)
+    ? summary.confirmed_violations
+    : logicEntries(data).filter(function(row) { return row.finding.status === 'confirmed'; }).length;
+  if (confirmed > 0) {
+    badge.classList.add('main-tab-badge-bugs');
+    badge.textContent = confirmed + ' violation' + (confirmed === 1 ? '' : 's');
+  }
+}
+
+function renderLogicTab() {
+  var data = __LOGIC_DATA__;
+  var empty = document.getElementById('logic-empty');
+  var summaryLine = document.getElementById('logic-summary-line');
+  var statRow = document.getElementById('logic-stat-row');
+  var findingsSection = document.getElementById('logic-findings-section');
+  var concernsSection = document.getElementById('logic-concerns-section');
+  if (!empty || !summaryLine || !statRow || !findingsSection || !concernsSection) return;
+
+  if (!data || typeof data !== 'object') {
+    empty.style.display = 'block';
+    var declared = laneReason('logic');
+    if (declared) document.getElementById('logic-empty-title').textContent = 'Logic lane: ' + declared;
+    summaryLine.style.display = 'none';
+    statRow.style.display = 'none';
+    findingsSection.style.display = 'none';
+    concernsSection.style.display = 'none';
+    updateLogicBadge(null);
+    return;
+  }
+
+  var summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
+  var findings = logicEntries(data);
+  var concerns = logicConcernEntries(data);
+  var line = [];
+  if (data.status) line.push('Status: ' + logicText(data.status));
+  if (data.mode) line.push('Mode: ' + logicText(data.mode));
+  if (data.depth) line.push('Depth: ' + logicText(data.depth));
+  if (data.repo) line.push(logicText(data.repo));
+  if (data.timestamp) line.push(logicText(data.timestamp));
+  summaryLine.textContent = line.join(' — ');
+  summaryLine.style.display = line.length ? 'block' : 'none';
+
+  statRow.textContent = '';
+  var mix = summary.evidence_mix && typeof summary.evidence_mix === 'object' ? summary.evidence_mix : {};
+  var chips = [
+    { n: summary.candidates_checked, label: 'Candidates', cls: 'total' },
+    { n: summary.obligations_checked, label: 'Obligations', cls: 'audited inert' },
+    { n: summary.confirmed_violations, label: 'Violations', cls: 'critical' },
+    { n: summary.risks, label: 'Risks', cls: 'high' },
+    { n: summary.contract_conflicts, label: 'Conflicts', cls: 'medium' },
+    { n: summary.uncovered, label: 'Uncovered', cls: 'low inert' },
+    { n: mix.measured, label: 'Measured', cls: 'audited inert' },
+    { n: mix.reasoned, label: 'Reasoned', cls: 'low inert' }
+  ];
+  var shown = 0;
+  chips.forEach(function(chip) {
+    if (!Number.isFinite(chip.n)) return;
+    var card = document.createElement('div');
+    card.className = 'mc-stat inert ' + chip.cls;
+    var number = document.createElement('div');
+    number.className = 'mc-stat-num';
+    number.textContent = chip.n;
+    var label = document.createElement('div');
+    label.className = 'mc-stat-label';
+    label.textContent = chip.label;
+    card.appendChild(number);
+    card.appendChild(label);
+    statRow.appendChild(card);
+    shown++;
+  });
+  statRow.style.display = shown ? 'flex' : 'none';
+
+  var findingsBody = document.getElementById('logic-findings-tbody');
+  findingsBody.textContent = '';
+  findings.forEach(function(row) {
+    var tr = document.createElement('tr');
+    tr.appendChild(logicCell(row.finding.status || 'risk'));
+    tr.appendChild(procSeverityCell(row.finding.severity));
+    tr.appendChild(logicCell(row.candidate.name || row.candidate.id));
+    tr.appendChild(logicCell(row.obligation && row.obligation.statement));
+    tr.appendChild(logicCell(row.finding.counterexample));
+    tr.appendChild(logicCell(row.finding.evidence));
+    findingsBody.appendChild(tr);
+  });
+  findingsSection.style.display = findings.length ? 'block' : 'none';
+  document.getElementById('logic-findings-header').textContent = findings.length + ' contract/invariant finding' + (findings.length === 1 ? '' : 's');
+
+  var concernsBody = document.getElementById('logic-concerns-tbody');
+  concernsBody.textContent = '';
+  concerns.forEach(function(row) {
+    var entry = row.entry;
+    var tr = document.createElement('tr');
+    tr.appendChild(logicCell(row.type));
+    tr.appendChild(logicCell(entry && typeof entry === 'object' ? entry.candidate_id : ''));
+    tr.appendChild(logicCell(entry && typeof entry === 'object' ? (entry.description || entry.reason) : entry));
+    tr.appendChild(logicCell(entry && typeof entry === 'object' ? (entry.source || entry.file) : ''));
+    concernsBody.appendChild(tr);
+  });
+  concernsSection.style.display = concerns.length ? 'block' : 'none';
+
+  var hasRenderable = shown || findings.length || concerns.length || line.length;
+  empty.style.display = hasRenderable ? 'none' : 'block';
+  if (!hasRenderable) document.getElementById('logic-empty-title').textContent = 'logic-results.json found, but it contains no renderable data.';
+  updateLogicBadge(data);
+}
 
 // ════════════════ PROCESS TAB (sg-process-check) ════════════════
 // Renders _results/process-results.json embedded at build time. The schema is

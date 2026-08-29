@@ -1,0 +1,13 @@
+interface:
+  display_name: "ShipGuard Logic Audit"
+  short_description: "Audit workflows and algorithms against contracts"
+  default_prompt: "Use $sg-logic-audit to check this workflow or algorithm against its declared contracts and invariants."
+
+policy:
+  allow_implicit_invocation: false
+
+dependencies:
+  tools:
+    - type: "shell"
+      value: "git"
+      description: "Resolve committed diff scope and inspect before/after references."
