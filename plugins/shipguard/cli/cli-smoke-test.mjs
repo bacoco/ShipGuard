@@ -255,17 +255,20 @@ function cliRun(cmd, cwd, env) {
   return { code: 0, err: '' };
 }
 
-// async path: a scheme-less base_url with a fixed-port app.start makes startApp
-// throw "Invalid URL" before it spawns anything.
+// async path: a DIRECTORY where run.json must be written makes cmdRun throw
+// EISDIR mid-await. The trigger used to be a scheme-less base_url — until
+// validateConfig started rejecting that at load and returning exit 3 before
+// anything could throw. Two correct fixes, and the old fixture stopped
+// reproducing its own scenario: the config here is deliberately VALID, so the
+// only thing left to fail is the write itself.
 const projT = mkdtempSync(join(tmpdir(), 'sg-throw-'));
-mkdirSync(join(projT, 'visual-tests'), { recursive: true });
-wf(join(projT, 'visual-tests', '_config.yaml'),
-  'base_url: "127.0.0.1:4711"\napp:\n  start: "python3 -m http.server 4711 --bind 127.0.0.1"\n');
-const thrownAsync = cliRun('serve', projT, {});
+mkdirSync(join(projT, 'visual-tests', '_results', 'run.json'), { recursive: true });
+wf(join(projT, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:4711"\n');
+const thrownAsync = cliRun('run', projT, {});
 assert(thrownAsync.code === EXIT.INFRA, 'async throw -> exit 2 (infra), not 1 (findings)');
 assert(/^shipguard: /m.test(thrownAsync.err), 'async throw -> one-line "shipguard:" diagnostic');
-assert(!thrownAsync.err.includes('at new URL'), 'async throw -> no raw stack by default');
-assert(cliRun('serve', projT, { SHIPGUARD_DEBUG: '1' }).err.includes('at new URL'),
+assert(!thrownAsync.err.includes('at writeFileSync'), 'async throw -> no raw stack by default');
+assert(cliRun('run', projT, { SHIPGUARD_DEBUG: '1' }).err.includes('at writeFileSync'),
   'SHIPGUARD_DEBUG=1 restores the stack');
 
 // sync path: a regular file where visual-tests/ must be a directory makes
