@@ -93,6 +93,12 @@ assert(validateConfig({ base_url: 'http://x', profiles: { p: { checks: ['nope'] 
   .some(e => e.includes('unknown check')), 'config: unknown check rejected');
 assert(validateConfig({ base_url: 'http://x', app: { start: 42 } })
   .some(e => e.includes('app.start')), 'config: non-string app.start rejected');
+assert(validateConfig({ base_url: '127.0.0.1:4711' }).some(e => e.includes('base_url')), 'config: scheme-less base_url rejected');
+assert(validateConfig({ base_url: 'localhost:3000' }).some(e => e.includes('base_url')), 'config: non-http base_url rejected');
+assert(validateConfig({ base_url: 8080 }).some(e => e.includes('base_url')), 'config: non-string base_url rejected');
+assert(validateConfig({ base_url: 'https://staging.example.com:8443/app' }).length === 0, 'config: absolute https base_url valid');
+assert(validateConfig({ base_url: 'http://127.0.0.1:{port}', app: { start: 'python3 -m http.server {port}' } }).length === 0,
+  'config: {port} placeholder in base_url still valid');
 
 // ── resolveProfile ──
 const cfg2 = { base_url: 'http://x', profiles: { acc: { scope: 'site-accessible', checks: ['page-load'] } } };
@@ -121,6 +127,24 @@ let code3 = 0;
 try { execFileSync('node', [CLI, 'crawl'], { cwd: mkdtempSync(join(tmpdir(), 'sg-noconf-')), encoding: 'utf8', stdio: 'pipe' }); }
 catch (e) { code3 = e.status; }
 assert(code3 === EXIT.CONFIG, 'crawl without config -> exit 3');
+
+// ── unusable base_url -> exit 3 (config), not an uncaught throw in startApp ──
+const projBad = mkdtempSync(join(tmpdir(), 'sg-badurl-'));
+mkdirSync(join(projBad, 'visual-tests'), { recursive: true });
+wf(join(projBad, 'visual-tests', '_config.yaml'), 'base_url: "127.0.0.1:4711"\napp:\n  start: "python3 -m http.server 4711"\n');
+let code4 = 0;
+try { execFileSync('node', [CLI, 'run', '--no-crawl'], { cwd: projBad, encoding: 'utf8', stdio: 'pipe' }); }
+catch (e) { code4 = e.status; }
+assert(code4 === EXIT.CONFIG, 'run: unusable base_url -> exit 3');
+
+// ── valueless --scope -> exit 3, never a silent empty selection ──
+const projScope = mkdtempSync(join(tmpdir(), 'sg-scope-'));
+mkdirSync(join(projScope, 'visual-tests'), { recursive: true });
+wf(join(projScope, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:1"\n');
+let code5 = 0;
+try { execFileSync('node', [CLI, 'run', '--scope', '--no-crawl'], { cwd: projScope, encoding: 'utf8', stdio: 'pipe' }); }
+catch (e) { code5 = e.status; }
+assert(code5 === EXIT.CONFIG, 'run: valueless --scope -> exit 3');
 
 // ── tolerantJson ──
 assert(deepEq(tolerantJson('{"a":1}'), { a: 1 }), 'tolerantJson: plain object');
