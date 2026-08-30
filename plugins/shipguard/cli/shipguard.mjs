@@ -12,12 +12,24 @@
  *   cp "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" visual-tests/
  *   node visual-tests/shipguard.mjs <subcommand>
  *
- * Exit codes (stable contract):
- *   0  ran clean, no findings
- *   1  ran, findings present
- *   2  infrastructure error (app won't start, healthcheck timeout,
- *      agent-browser missing or crashed)
- *   3  invalid configuration (missing/bad config, unknown profile/check)
+ * Exit codes (stable contract). Each code is an instruction, and the axis
+ * between 2 and 3 is whether re-running unchanged could ever help:
+ *   0  ran clean, no findings — nothing to look at
+ *   1  ran, findings present — look at your product
+ *   2  infrastructure error — retry; the tooling failed and this run's
+ *      evidence cannot be trusted (app won't start, healthcheck timeout,
+ *      agent-browser missing or crashed, dashboard build crashed)
+ *   3  the run could not be assembled or completed as declared — fix a
+ *      declared file; retrying unchanged changes nothing (missing/bad config,
+ *      unknown profile/check, a manifest that does not parse or names an
+ *      unknown action, a scope that selects nothing, coverage bounded below
+ *      the site, a run in which no lane evaluated anything)
+ *
+ * Precedence when several are true at once: 2 > 3 > 1 > 0. Untrustworthy
+ * evidence outranks a wrong declaration, because a human who fixes only the
+ * declaration gets another untrustworthy run; and an incomplete recette
+ * outranks its own findings, because a partial finding list must not read as
+ * a complete one. Incomplete is never clean.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync } from 'fs';
@@ -528,6 +540,26 @@ export function browser(cmdArgs, opts = {}) {
 // ── run.json (lane manifest — declared work, never silent skips) ─────────────
 const LANE_STATUSES = ['ran', 'skipped', 'not-applicable', 'error', 'needs-agent'];
 
+// A lane's status says WHAT happened; `remedy` says WHO can fix it, which is
+// the only thing the exit code needs and the one thing a status word cannot
+// carry (the five above are a closed set, and build-review.mjs coerces any
+// unrecognised TEST status to STALE — inventing words is not an option here).
+// Additive and present only when a lane needs one, the same asymmetry
+// buildRunJson already enforces on `reason`.
+export const LANE_REMEDIES = {
+  // the machine failed; this run's evidence cannot be trusted, a retry may work
+  INFRA: 'infrastructure',
+  // a declared file is wrong or too narrow; retrying it unchanged is a no-op
+  DECLARATION: 'declaration',
+};
+
+// The lanes that can produce a verdict about the product. audit/process are
+// always not-applicable in this CLI, llm_checks is a declared handoff to the
+// agent layer, and review only renders what the others found — so none of them
+// can make a run "evaluated". A future evaluation lane left out of this list
+// fails closed (more 3s, never a false 0).
+const EVALUATION_LANES = ['crawl', 'visual'];
+
 export function buildRunJson({ scope, lanes }) {
   const ts = new Date();
   for (const [name, lane] of Object.entries(lanes || {})) {
@@ -574,7 +606,19 @@ Subcommands:
   review  [--serve] [--port=N]  Build (and optionally serve) the review dashboard
   status                     Show app/review server state
 
-exit codes: 0 clean | 1 findings | 2 infrastructure error | 3 invalid configuration
+exit codes — each one is an instruction, not a severity:
+  0  clean            nothing to look at: every declared lane ran and found nothing
+  1  findings         look at your product (failed assertion, UI drift, broken asset)
+  2  infrastructure   retry: the tooling failed, so this run's evidence cannot be
+                      trusted (app won't start, agent-browser missing or crashed,
+                      dashboard build crashed)
+  3  declaration      fix a declared file: the run could not be assembled or
+                      completed as declared, and retrying it unchanged changes
+                      nothing (bad config, unknown profile/check, valueless
+                      --scope, a manifest that does not parse or names an unknown
+                      action, a scope that selects nothing, a crawl bounded below
+                      the site, a run in which no lane evaluated anything)
+  precedence when several apply: 2 > 3 > 1 > 0. Incomplete is never clean.
 `;
 
 export function main(argv) {
@@ -665,6 +709,12 @@ async function cmdCrawl(args) {
   console.log(`crawl: ${result.pages} pages, ${result.assets_checked} assets checked, ${result.broken.length} broken`);
   if (result.truncated) console.log(`crawl: INCOMPLETE — ${result.truncated.reason}; raise crawl.max_pages in _config.yaml or pass --max-pages=N`);
   for (const b of result.broken) console.log(`  BROKEN [${b.tag}] ${b.url} (HTTP ${b.status}) on ${b.found_on}`);
+  // Same aggregation rule as cmdRun, so the two entry points cannot disagree
+  // about the same crawl: a bound below the site is a declaration a human must
+  // widen (3) — never "clean", and never INFRA, whose sentence is "retry".
+  // It outranks the findings it may itself have truncated away, so a partial
+  // finding list is never read as a complete one.
+  if (result.truncated) return EXIT.CONFIG;
   return result.broken.length ? EXIT.FINDINGS : EXIT.CLEAN;
 }
 // ── Manifest loading + mechanical execution ──────────────────────────────────
@@ -820,6 +870,10 @@ export async function executeManifest(entry, ctx) {
     llm_steps_pending: 0,
   };
   browser(['console', '--clear']);
+  // Counted, never inspected for a verdict: this only records whether THIS
+  // layer evaluated anything at all, which is what separates PASS from SKIPPED
+  // below. No classification here depends on it.
+  let mechanicalSteps = 0;
   for (const step of entry.manifest.steps) {
     if (!step || !step.action) continue;
     if (step.action === 'llm-check' || step.action === 'llm-wait') { result.llm_steps_pending++; continue; }
@@ -839,6 +893,7 @@ export async function executeManifest(entry, ctx) {
       result.failure_reason = result.manifest_error;
       break;
     }
+    mechanicalSteps++;
     const r = await runStep(step, local);
     if (!r.ok) {
       result.status = r.kind === 'stale' ? 'STALE'
@@ -876,6 +931,13 @@ export async function executeManifest(entry, ctx) {
       if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = result.screenshot_error; }
     }
   }
+  // No mechanical step ran, and no check reached a verdict either: this layer
+  // observed nothing, so PASS would claim an evaluation it never made. SKIPPED
+  // is the declared status for exactly that (report-formats.md; build-review.mjs
+  // already counts it), and the work itself stays declared in llm_steps_pending
+  // and in the needs-agent lane. A manifest that mixes agent and mechanical
+  // steps keeps its mechanical verdict — only a wholly un-evaluated one flips.
+  if (result.status === 'PASS' && mechanicalSteps === 0) result.status = 'SKIPPED';
   result.duration_ms = Date.now() - t0;
   return result;
 }
@@ -1000,9 +1062,14 @@ async function cmdRun(args) {
         if (crawlResult.truncated) crawlArtifact.truncated = crawlResult.truncated;
         writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify(crawlArtifact, null, 2));
         lanes.crawl = { status: 'ran', results: 'crawl-results.json' };
-        // Declared coverage gap, not a lane error: the exit-code contract for a
-        // truncated-but-successful lane is decided by the exit aggregation.
-        if (crawlResult.truncated) lanes.crawl.truncated = crawlResult.truncated;
+        // Declared coverage gap, not a lane error. The remedy is a human raising
+        // crawl.max_pages / --max-pages, never a retry: re-running an unchanged
+        // truncated crawl stops at exactly the same page. That is a declaration
+        // fault (3), and never EXIT.INFRA, whose whole sentence is "retry".
+        if (crawlResult.truncated) {
+          lanes.crawl.truncated = crawlResult.truncated;
+          lanes.crawl.remedy = LANE_REMEDIES.DECLARATION;
+        }
         findings += crawlResult.broken.length;
         console.log(`crawl: ${crawlResult.pages} pages, ${crawlResult.broken.length} broken assets${crawlResult.truncated ? ` — INCOMPLETE: ${crawlResult.truncated.reason}` : ''}`);
       }
@@ -1013,9 +1080,16 @@ async function cmdRun(args) {
       // Nothing ran. If manifests were lost on the way in, that is a coverage
       // loss, not an empty suite — run.json is the artifact that must carry it,
       // since no visual-results.json is written on this path.
+      // A suite that EXISTS but matched nothing is a scope the human mistyped
+      // (a declaration fault); a project with no visual suite at all is not at
+      // fault here, and is judged only by whether any lane evaluated anything.
+      const onDisk = loadManifests(root, 'all');
+      const suiteExists = onDisk.entries.length + onDisk.unloadable.length > 0;
       lanes.visual = unloadable.length
-        ? { status: 'error', reason: `${unloadable.length} manifest(s) could not be loaded and none remained to run: ${unloadable.map((u) => u.path).join(', ')}` }
-        : { status: 'skipped', reason: `no manifests match scope "${scope}" — run /sg-visual-discover` };
+        ? { status: 'error', reason: `${unloadable.length} manifest(s) could not be loaded and none remained to run: ${unloadable.map((u) => u.path).join(', ')}`, remedy: LANE_REMEDIES.DECLARATION }
+        : suiteExists
+          ? { status: 'skipped', reason: `no manifests match scope "${scope}" — ${onDisk.entries.length} manifest(s) on disk match neither that path fragment nor an open url; fix the scope or run /sg-visual-discover`, remedy: LANE_REMEDIES.DECLARATION }
+          : { status: 'skipped', reason: 'no visual manifests in visual-tests/ — run /sg-visual-discover' };
     } else {
       const ctx = { baseUrl, config, checks, screenshotsDir };
       const tests = [];
@@ -1033,7 +1107,11 @@ async function cmdRun(args) {
         fail: tests.filter((t) => t.status === 'FAIL').length,
         error: tests.filter((t) => t.status === 'ERROR').length,
         stale: tests.filter((t) => t.status === 'STALE').length,
-        skipped: 0,
+        // Armed: a test in which no mechanical step ran is SKIPPED, so this
+        // count is the number of manifests this layer did not evaluate. It does
+        // NOT include `deprecated: true` manifests — those are retired on
+        // purpose and never enter the suite (see loadManifests).
+        skipped: tests.filter((t) => t.status === 'SKIPPED').length,
         duration_ms: tests.reduce((s, t) => s + t.duration_ms, 0),
       };
       // full_suite_total must count the manifests that were MEANT to run, or
@@ -1073,9 +1151,21 @@ async function cmdRun(args) {
         invalidTests > 0 && `${invalidTests} test(s) stopped on an invalid manifest`,
         unloadable.length > 0 && `${unloadable.length} manifest(s) could not be loaded: ${unloadable.map((u) => u.path).join(', ')}`,
       ].filter(Boolean);
-      lanes.visual = incomplete.length
-        ? { status: 'error', reason: incomplete.join('; '), results: 'visual-results.json' }
-        : { status: 'ran', results: 'visual-results.json' };
+      if (incomplete.length) {
+        // Both remedies can be true at once. Infrastructure wins: a human who
+        // fixes only the manifest still gets a run whose evidence is untrusted.
+        lanes.visual = {
+          status: 'error', reason: incomplete.join('; '), results: 'visual-results.json',
+          remedy: toolingErrors > 0 ? LANE_REMEDIES.INFRA : LANE_REMEDIES.DECLARATION,
+        };
+      } else if (summary.skipped === summary.total) {
+        // Every selected manifest is a handoff to the agent layer, so this lane
+        // produced no verdict. Calling that "ran" would let a run that
+        // evaluated nothing satisfy the aggregation's evaluation test.
+        lanes.visual = { status: 'skipped', reason: `${summary.total} manifest(s) selected, none with a step this deterministic layer can evaluate — the agent lane owns them (/sg-visual-run)`, results: 'visual-results.json' };
+      } else {
+        lanes.visual = { status: 'ran', results: 'visual-results.json' };
+      }
       if (llmPending > 0) lanes.llm_checks = { status: 'needs-agent', reason: `${llmPending} step(s) need the agent lane — llm-check/llm-wait/include (/sg-visual-run)`, count: llmPending };
       writeReportMd(resultsDir, summary, tests, crawlResult);
     }
@@ -1085,8 +1175,16 @@ async function cmdRun(args) {
     // 4. dashboard
     const builder = resolveBuildReview(root);
     if (builder) {
-      try { execFileSync('node', [builder], { cwd: root, stdio: 'inherit' }); }
-      catch { console.error('run: dashboard build failed (continuing — artifacts are written)'); }
+      // logic-016: a dashboard that never built was silently logged and left
+      // out of every lane, so a run whose review artifact does not exist could
+      // still exit 0. cmdReview already maps a build-review crash to
+      // EXIT.INFRA; declaring it as a lane is what makes the two entry points
+      // agree, at no cost to the aggregation.
+      try { execFileSync('node', [builder], { cwd: root, stdio: 'inherit' }); lanes.review = { status: 'ran', results: 'review.html' }; }
+      catch (e) {
+        lanes.review = { status: 'error', reason: `dashboard build failed: ${(e && e.message ? String(e.message) : 'build-review.mjs exited non-zero').split('\n')[0]}`, remedy: LANE_REMEDIES.INFRA };
+        console.error('run: dashboard build failed (the other artifacts are written; the dashboard is not)');
+      }
       if (args.flags.serve) {
         // A fixed port collides silently on busy hosts (spawn is detached) —
         // allocate a free one, then confirm the server actually came up
@@ -1109,14 +1207,36 @@ async function cmdRun(args) {
         }
       }
     } else {
+      // Optional tooling that is deliberately absent — declared, no remedy, and
+      // no effect on the exit code.
+      lanes.review = { status: 'skipped', reason: 'build-review.mjs not found in visual-tests/ or the plugin — dashboard not built' };
       console.log('note: build-review.mjs not found — dashboard skipped (copy it from the plugin: cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/)');
     }
 
-    // An errored lane means the recette is incomplete — that is an infra
-    // outcome (2), never "clean". Findings and lane details stay in run.json.
-    const laneError = Object.values(lanes).some((l) => l && l.status === 'error');
-    const exitCode = laneError ? EXIT.INFRA : (findings ? EXIT.FINDINGS : EXIT.CLEAN);
-    console.log(`run: ${findings} finding(s)${laneError ? ', 1+ lane errored (infra)' : ''}. exit ${exitCode}`);
+    // ── exit aggregation ────────────────────────────────────────────────────
+    // An incomplete recette is never "clean", and a broken tool never
+    // masquerades as a product finding. Both halves of that rule need to know
+    // WHO can fix a lane, not only that it is unhappy — which is what `remedy`
+    // carries. Precedence 2 > 3 > 1 > 0, justified at the top of this file.
+    const hasRemedy = (want) => Object.values(lanes).some((l) => l && l.remedy === want);
+    // A run in which no lane evaluated anything asserts nothing about the
+    // product, so it cannot be clean — and no single lane is at fault, so the
+    // fact is run-level. Each lane's own skip may be perfectly legitimate; it
+    // is their conjunction that is empty.
+    const nothingEvaluated = !EVALUATION_LANES.some((n) => lanes[n] && lanes[n].status === 'ran');
+    const exitCode = hasRemedy(LANE_REMEDIES.INFRA) ? EXIT.INFRA
+      : (hasRemedy(LANE_REMEDIES.DECLARATION) || nothingEvaluated) ? EXIT.CONFIG
+        : findings ? EXIT.FINDINGS : EXIT.CLEAN;
+    const why = exitCode === EXIT.INFRA ? ', tooling failed — this run\'s evidence cannot be trusted (retry)'
+      : exitCode === EXIT.CONFIG
+        ? (nothingEvaluated && !hasRemedy(LANE_REMEDIES.DECLARATION)
+          ? ', and this run evaluated nothing — no lane produced a verdict (add manifests or enable a check)'
+          : ', and the run is incomplete as declared — fix the declaration named above (a retry changes nothing)')
+        : '';
+    console.log(`run: ${findings} finding(s)${why}. exit ${exitCode}`);
+    // The three infra early-returns already record the code they returned;
+    // recording it here too makes run.json self-describing on every path.
+    writeRun({ exit_code: exitCode });
     return exitCode;
   } finally {
     browser(['close']);
