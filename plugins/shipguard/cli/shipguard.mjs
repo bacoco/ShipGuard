@@ -670,28 +670,51 @@ async function cmdCrawl(args) {
 // ── Manifest loading + mechanical execution ──────────────────────────────────
 export const MECHANICAL_ACTIONS = ['open', 'click', 'fill', 'press', 'wait', 'assert_url', 'assert_text', 'screenshot', 'select', 'upload'];
 
+// Actions the declared grammar defines but this deterministic layer does not
+// execute — the agent lane (/sg-visual-run) owns them. Listed so a manifest
+// written in the declared grammar is never mistaken for an invalid one.
+export const AGENT_ACTIONS = ['llm-check', 'llm-wait', 'include'];
+
+// Returns {entries, unloadable} the way loadConfig returns {config, errors}: a
+// manifest that cannot be loaded is lost coverage, and lost coverage is
+// reported, never dropped. Three different situations used to leave by the
+// same silent door; they now leave by three:
+//   unreadable / parse threw   -> unloadable, reported as an uncovered route
+//   parsed but no `steps` list -> unloadable, reported as an uncovered route
+//   deprecated: true           -> excluded on purpose, and silently: a retired
+//                                 manifest is not missing coverage
+//                                 (cli-smoke-test.mjs pins the exclusion)
+// `unloadable` does not depend on `scope`: a manifest that never parsed has no
+// readable path-or-url pair to test a scope against, so the loss is declared in
+// every run rather than filtered out by a scope it cannot be compared to.
 export function loadManifests(projectRoot, scope) {
   const base = join(projectRoot, 'visual-tests');
-  const out = [];
+  const entries = [];
+  const unloadable = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.name.startsWith('_') || entry.name.startsWith('.')) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!/\.ya?ml$/.test(entry.name)) continue;
-      let manifest;
-      try { manifest = yamlParse(readFileSync(full, 'utf8')); } catch { continue; }
-      if (!manifest || manifest.deprecated === true || !Array.isArray(manifest.steps)) continue;
       const rel = relative(base, full).split(sep).join('/');
+      let manifest;
+      try { manifest = yamlParse(readFileSync(full, 'utf8')); }
+      catch (e) { unloadable.push({ path: rel, reason: 'manifest_unreadable', detail: String((e && e.message) || e) }); continue; }
+      if (manifest && manifest.deprecated === true) continue;
+      if (!manifest || !Array.isArray(manifest.steps)) {
+        unloadable.push({ path: rel, reason: 'manifest_not_parseable', detail: 'no "steps" list — the file did not parse into a manifest' });
+        continue;
+      }
       const id = rel.replace(/\.ya?ml$/, '');
       const openStep = manifest.steps.find((s) => s && s.action === 'open');
       const url = openStep && typeof openStep.url === 'string' ? openStep.url : '';
       if (scope && scope !== 'all' && !rel.includes(scope) && !url.includes(scope)) continue;
-      out.push({ id, path: full, manifest, url });
+      entries.push({ id, path: full, manifest, url });
     }
   };
   if (existsSync(base)) walk(base);
-  return out;
+  return { entries, unloadable };
 }
 
 function interpolate(value, ctx) {
@@ -701,12 +724,25 @@ function interpolate(value, ctx) {
     .replace(/\{data\.(\w+)\}/g, (_, k) => (ctx.data && ctx.data[k] != null ? String(ctx.data[k]) : ''));
 }
 
+// Per-step cap: a manifest may not park the recette for longer than this.
+const WAIT_CAP_MS = 30000;
+
+// A failed step reports WHY it failed, not only that it failed. Every
+// {ok:false} return carries the marker `kind`, and executeManifest maps it to
+// one of the declared statuses:
+//   kind: 'tool'   the browser tooling itself failed (crash, non-zero exit,
+//                  unreadable capture) — no evidence was collected  -> ERROR
+//   kind: 'stale'  the browser answered, but a declared selector no longer
+//                  resolves in the accessibility tree (UI drift)    -> STALE
+//   (absent)       the browser answered and the product did not satisfy what
+//                  the step declared                        -> FAIL / ERROR
+// Absence of evidence is never reported as evidence of absence.
 async function runStep(step, ctx) {
   const action = step.action;
   switch (action) {
     case 'open': {
       const r = browser(['open', interpolate(step.url, ctx)]);
-      if (!r.ok) return { ok: false, reason: `open failed: ${r.stderr || r.stdout}`.trim() };
+      if (!r.ok) return { ok: false, kind: 'tool', reason: `open failed: ${r.stderr || r.stdout}`.trim() };
       return { ok: true };
     }
     case 'click':
@@ -714,42 +750,51 @@ async function runStep(step, ctx) {
     case 'select':
     case 'upload': {
       const snap = browser(['snapshot', '-i']);
-      if (!snap.ok) return { ok: false, reason: `snapshot failed: ${snap.stderr}` };
+      if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr}` };
       const ref = matchSnapshotRef(snap.stdout, interpolate(step.target, ctx));
-      if (!ref) return { ok: false, reason: `target not found in accessibility tree: "${step.target}"` };
+      if (!ref) return { ok: false, kind: 'stale', reason: `target not found in accessibility tree: "${step.target}"` };
       const extra = action === 'fill' ? [interpolate(step.value ?? step.text ?? '', ctx)]
         : action === 'select' ? [interpolate(step.option ?? step.value ?? '', ctx)]
         : action === 'upload' ? [interpolate(step.file ?? '', ctx)]
         : [];
       const r = browser([action, ref, ...extra]);
-      return r.ok ? { ok: true } : { ok: false, reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
+      return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
     }
     case 'press': {
       const r = browser(['press', step.key || interpolate(step.target ?? '', ctx)]);
-      return r.ok ? { ok: true } : { ok: false, reason: `press failed: ${r.stderr}` };
+      return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `press failed: ${r.stderr}` };
     }
     case 'wait': {
-      const ms = /^\d+s$/.test(String(step.duration)) ? parseInt(step.duration) * 1000 : Number(step.duration) || 1000;
-      await new Promise((r) => setTimeout(r, Math.min(ms, 30000)));
+      // A declared duration is honoured or reported — never silently replaced
+      // by a default or clipped to the cap. An absent one keeps the 1s default.
+      const raw = step.duration ?? step.value;
+      if (raw == null) { await new Promise((r) => setTimeout(r, 1000)); return { ok: true }; }
+      const m = /^(\d+)\s*(ms|s)?$/.exec(String(raw).trim());
+      if (!m) return { ok: false, reason: `unsupported duration ${JSON.stringify(String(raw))} (use "1500ms", "2s", or a number of ms)` };
+      const ms = m[2] === 's' ? Number(m[1]) * 1000 : Number(m[1]);
+      if (ms > WAIT_CAP_MS) return { ok: false, reason: `duration ${raw} exceeds the ${WAIT_CAP_MS / 1000}s per-step cap` };
+      await new Promise((r) => setTimeout(r, ms));
       return { ok: true };
     }
     case 'assert_url': {
       const r = browser(['get', 'url']);
+      if (!r.ok) return { ok: false, kind: 'tool', reason: `get url failed: ${r.stderr || r.stdout}`.trim() };
       const expected = interpolate(step.url ?? step.value ?? '', ctx);
-      return r.ok && r.stdout.trim().includes(expected.replace(/\/$/, ''))
+      return r.stdout.trim().includes(expected.replace(/\/$/, ''))
         ? { ok: true } : { ok: false, reason: `url is "${r.stdout.trim()}", expected to include "${expected}"` };
     }
     case 'assert_text': {
       const snap = browser(['snapshot']);
+      if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr || snap.stdout}`.trim() };
       const expected = interpolate(step.text ?? step.value ?? '', ctx);
-      return snap.ok && snap.stdout.toLowerCase().includes(expected.toLowerCase())
+      return snap.stdout.toLowerCase().includes(expected.toLowerCase())
         ? { ok: true } : { ok: false, reason: `text not found on page: "${expected}"` };
     }
     case 'screenshot': {
       const file = join(ctx.screenshotsDir, step.screenshot || step.file || `${ctx.slug}-step.png`);
       const r = browser(['screenshot', file]);
       const v = validateScreenshot(file);
-      if (!r.ok || !v.ok) return { ok: false, reason: `screenshot invalid (${v.reason || r.stderr})` };
+      if (!r.ok || !v.ok) return { ok: false, kind: 'tool', reason: `screenshot invalid (${v.reason || r.stderr})` };
       ctx.lastScreenshot = file;
       return { ok: true };
     }
@@ -778,10 +823,26 @@ export async function executeManifest(entry, ctx) {
   for (const step of entry.manifest.steps) {
     if (!step || !step.action) continue;
     if (step.action === 'llm-check' || step.action === 'llm-wait') { result.llm_steps_pending++; continue; }
-    if (!MECHANICAL_ACTIONS.includes(step.action)) continue;
+    if (!MECHANICAL_ACTIONS.includes(step.action)) {
+      // Declared but agent-owned (llm-check/llm-wait are short-circuited above,
+      // `include` reaches here): pending agent work, already declared as the
+      // needs-agent lane — not a defect.
+      if (AGENT_ACTIONS.includes(step.action)) { result.llm_steps_pending++; continue; }
+      // Anything else never ran, so nothing about it was observed and the test
+      // cannot be PASS. Set here, in the mirror of the branch above, and never
+      // through runStep: its `kind` marker describes a step that ran, and an
+      // unknown action never runs. ERROR is the only declared status that means
+      // "no verdict was produced"; `manifest_error` tells the aggregator this
+      // ERROR is an invalid manifest, not a browser crash.
+      result.status = 'ERROR';
+      result.manifest_error = `unknown action "${step.action}"`;
+      result.failure_reason = result.manifest_error;
+      break;
+    }
     const r = await runStep(step, local);
     if (!r.ok) {
-      result.status = step.action.startsWith('assert') ? 'FAIL' : 'ERROR';
+      result.status = r.kind === 'stale' ? 'STALE'
+        : (r.kind === 'tool' || !step.action.startsWith('assert')) ? 'ERROR' : 'FAIL';
       result.failure_reason = `${step.action}: ${r.reason}`;
       break;
     }
@@ -793,7 +854,12 @@ export async function executeManifest(entry, ctx) {
       ...normalizeConsole(errs.ok ? errs.stdout : ''),
       ...normalizeConsole(cons.ok ? cons.stdout : ''),
     ];
-    if (result.status === 'PASS' && result.browser_errors.some((e) => e.level === 'error')) {
+    if (!errs.ok || !cons.ok) {
+      // The bridge collected nothing: "no errors" was never observed, so it
+      // must not be concluded. Additive field, so an existing verdict stands.
+      result.console_capture_error = `browser error capture failed: ${((errs.ok ? cons : errs).stderr || '').trim()}`;
+      if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = result.console_capture_error; }
+    } else if (result.status === 'PASS' && result.browser_errors.some((e) => e.level === 'error')) {
       result.status = 'FAIL';
       result.failure_reason = `browser errors: ${result.browser_errors.filter((e) => e.level === 'error').length}`;
     }
@@ -803,7 +869,12 @@ export async function executeManifest(entry, ctx) {
     if (!local.lastScreenshot) browser(['screenshot', file, '--full']);
     const v = validateScreenshot(file);
     if (v.ok) result.screenshot = `screenshots/${file.split(sep).pop()}`;
-    else if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = `screenshot ${v.reason}`; }
+    else {
+      // Record the tooling failure even when a verdict was already reached —
+      // additive, so a product FAIL keeps its own reason and its own status.
+      result.screenshot_error = `screenshot ${v.reason}`;
+      if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = result.screenshot_error; }
+    }
   }
   result.duration_ms = Date.now() - t0;
   return result;
@@ -835,7 +906,7 @@ function writeReportMd(resultsDir, summary, tests, crawlResult) {
   const lines = [
     `# Visual Report — ${new Date().toISOString().replace('T', ' ').slice(0, 16)}`,
     '',
-    `Tests: ${summary.total} run, ${summary.pass} pass, ${summary.fail} fail`,
+    `Tests: ${summary.total} run, ${summary.pass} pass, ${summary.fail} fail, ${summary.stale} stale, ${summary.error} error, ${summary.skipped} skipped`,
     '',
     '| test | status |',
     '|---|---|',
@@ -880,7 +951,7 @@ async function cmdRun(args) {
   let findings = 0;
   try {
     // 0. tool preconditions — a missing tool is infra, diagnosed before any network gate
-    const manifests = loadManifests(root, scope);
+    const { entries: manifests, unloadable } = loadManifests(root, scope);
     if (manifests.length > 0) {
       const probe = browser(['--version']);
       if (!probe.ok && probe.code === -1) {
@@ -939,7 +1010,12 @@ async function cmdRun(args) {
 
     // 3. visual lane (mechanical)
     if (manifests.length === 0) {
-      lanes.visual = { status: 'skipped', reason: `no manifests match scope "${scope}" — run /sg-visual-discover` };
+      // Nothing ran. If manifests were lost on the way in, that is a coverage
+      // loss, not an empty suite — run.json is the artifact that must carry it,
+      // since no visual-results.json is written on this path.
+      lanes.visual = unloadable.length
+        ? { status: 'error', reason: `${unloadable.length} manifest(s) could not be loaded and none remained to run: ${unloadable.map((u) => u.path).join(', ')}` }
+        : { status: 'skipped', reason: `no manifests match scope "${scope}" — run /sg-visual-discover` };
     } else {
       const ctx = { baseUrl, config, checks, screenshotsDir };
       const tests = [];
@@ -948,29 +1024,59 @@ async function cmdRun(args) {
         const t = await executeManifest(entry, ctx);
         tests.push(t);
         llmPending += t.llm_steps_pending;
-        findings += (t.status === 'FAIL' || t.status === 'ERROR') ? 1 : 0;
-        console.log(`[shipguard run] ${i + 1}/${manifests.length} ${t.id} — ${t.status}${t.llm_steps_pending ? ` (${t.llm_steps_pending} llm steps pending)` : ''}`);
+        findings += (t.status === 'FAIL' || t.status === 'STALE') ? 1 : 0;
+        console.log(`[shipguard run] ${i + 1}/${manifests.length} ${t.id} — ${t.status}${t.llm_steps_pending ? ` (${t.llm_steps_pending} agent steps pending)` : ''}`);
       }
       const summary = {
         total: tests.length,
         pass: tests.filter((t) => t.status === 'PASS').length,
         fail: tests.filter((t) => t.status === 'FAIL').length,
         error: tests.filter((t) => t.status === 'ERROR').length,
-        stale: 0,
+        stale: tests.filter((t) => t.status === 'STALE').length,
         skipped: 0,
         duration_ms: tests.reduce((s, t) => s + t.duration_ms, 0),
       };
+      // full_suite_total must count the manifests that were MEANT to run, or
+      // the field whose job is to reveal missing coverage inherits the loss it
+      // is supposed to expose. Deprecated ones are retired on purpose and stay
+      // out of both counts.
+      const fullSuite = loadManifests(root, 'all');
       writeFileSync(join(resultsDir, 'visual-results.json'), JSON.stringify({
         schema_version: '1.0',
         run_id: `visual-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}`,
         timestamp: new Date().toISOString(),
         base_url: baseUrl,
-        scope: { ...scopeDesc, selected_total: tests.length, full_suite_total: loadManifests(root, 'all').length },
+        scope: {
+          ...scopeDesc,
+          // Declared work that could not be executed stays in the machine
+          // contract instead of disappearing from it (report-formats.md).
+          uncovered_routes: unloadable.map((u) => ({
+            route: `visual-tests/${u.path}`, status: 'uncovered', reason: u.reason, detail: u.detail,
+          })),
+          selected_total: tests.length,
+          full_suite_total: fullSuite.entries.length + fullSuite.unloadable.length,
+        },
         summary,
         tests,
       }, null, 2));
-      lanes.visual = { status: 'ran', results: 'visual-results.json' };
-      if (llmPending > 0) lanes.llm_checks = { status: 'needs-agent', reason: `${llmPending} llm-check/llm-wait steps require an agent lane (/sg-visual-run)`, count: llmPending };
+      // A test that errored collected no evidence — the recette is incomplete,
+      // which is an infra outcome, never a product finding. A manifest lost on
+      // the way in is the same incompleteness one step earlier. The reason
+      // keeps the two apart, and `manifest_error` marks the invalid-manifest
+      // tests, so a later aggregation can give them their own exit code (an
+      // invalid manifest is closer to a bad config than to a broken machine)
+      // without re-deriving anything here.
+      const invalidTests = tests.filter((t) => t.manifest_error).length;
+      const toolingErrors = summary.error - invalidTests;
+      const incomplete = [
+        toolingErrors > 0 && `${toolingErrors} test(s) errored (tooling)`,
+        invalidTests > 0 && `${invalidTests} test(s) stopped on an invalid manifest`,
+        unloadable.length > 0 && `${unloadable.length} manifest(s) could not be loaded: ${unloadable.map((u) => u.path).join(', ')}`,
+      ].filter(Boolean);
+      lanes.visual = incomplete.length
+        ? { status: 'error', reason: incomplete.join('; '), results: 'visual-results.json' }
+        : { status: 'ran', results: 'visual-results.json' };
+      if (llmPending > 0) lanes.llm_checks = { status: 'needs-agent', reason: `${llmPending} step(s) need the agent lane — llm-check/llm-wait/include (/sg-visual-run)`, count: llmPending };
       writeReportMd(resultsDir, summary, tests, crawlResult);
     }
 

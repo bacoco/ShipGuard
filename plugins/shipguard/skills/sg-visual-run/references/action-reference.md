@@ -272,5 +272,5 @@ For each test: `PASS` / `FAIL` / `STALE` / `ERROR` / `SKIPPED`
 | **PASS** | All steps completed, all assertions passed, all screenshots clean |
 | **FAIL** | A `severity: critical` assertion failed or screenshot showed an error |
 | **STALE** | An element selector could not be resolved (UI changed) |
-| **ERROR** | agent-browser crashed, unrecoverable error, or the manifest's top-level `timeout` was exceeded |
+| **ERROR** | agent-browser crashed, unrecoverable error, the manifest's top-level `timeout` was exceeded, or a step named an action that is in neither the mechanical set nor the agent-owned set (`llm-check`, `llm-wait`, `include`) — the step never ran, so the test carries no verdict. That last case also sets `manifest_error` (see [report-formats.md](report-formats.md)), so a consumer can tell an invalid manifest from a broken browser. |
 | **SKIPPED** | Manifest is `deprecated: true` |
