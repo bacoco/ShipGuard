@@ -341,6 +341,23 @@ const thrownSync = cliRun('init', projS, {});
 assert(thrownSync.code === EXIT.INFRA, 'sync throw -> exit 2 (infra), not 1 (findings)');
 assert(/^shipguard: /m.test(thrownSync.err), 'sync throw -> one-line "shipguard:" diagnostic');
 
+// ── review: the exit code is read from build-review.mjs, not assumed (u-03) ──
+// Every non-zero code used to become EXIT.INFRA on the untested assumption that
+// the builder can only fail as a tool. A missing visual-tests/_config.yaml is a
+// config fault; the builder says so with code 3 and `review` must pass it on
+// instead of reporting a broken machine.
+const projRv = mkdtempSync(join(tmpdir(), 'sg-review-'));
+mkdirSync(join(projRv, 'visual-tests'), { recursive: true });
+const reviewNoConfig = cliRun('review', projRv, {});
+assert(reviewNoConfig.code === EXIT.CONFIG, `review: missing _config.yaml -> exit 3 (got ${reviewNoConfig.code})`);
+// The builder's other failures stay infra, and the observed code is named
+// rather than swallowed.
+wf(join(projRv, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:4711"\n');
+wf(join(projRv, 'visual-tests', 'build-review.mjs'), 'console.error("builder blew up"); process.exit(7);\n');
+const reviewBroken = cliRun('review', projRv, {});
+assert(reviewBroken.code === EXIT.INFRA, `review: an unknown builder code stays infra (got ${reviewBroken.code})`);
+assert(/exited 7/.test(reviewBroken.err), `review: the observed exit code is not reported (stderr: ${JSON.stringify(reviewBroken.err)})`);
+
 // ── entry guard: a symlinked invocation path must still run the CLI ──
 // process.argv[1] keeps the path the caller typed; import.meta.url carries the
 // one the ESM loader resolved. A symlink anywhere in the path makes the two

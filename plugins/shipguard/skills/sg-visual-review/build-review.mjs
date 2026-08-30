@@ -179,14 +179,45 @@ const CATEGORIES = readdirSync(ROOT, { withFileTypes: true })
 // ── 1. Parse config ──
 if (!existsSync(CONFIG_PATH)) {
   console.error('Error: visual-tests/_config.yaml missing — run /sg-visual-discover first.');
-  process.exit(1);
+  // u-03: a missing config is a config fault, not a broken tool. Exit 3 so the
+  // `shipguard review` mapping can read the distinction instead of assuming
+  // every non-zero code here is infra. Every other exit stays 1.
+  process.exit(3);
 }
 const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
 
-function normalizeStatus(value) {
-  const status = String(value || '').trim().toUpperCase();
-  if (['PASS', 'FAIL', 'ERROR', 'STALE', 'SKIPPED'].includes(status)) return status;
-  return 'STALE';
+const KNOWN_STATUSES = ['PASS', 'FAIL', 'ERROR', 'STALE', 'SKIPPED'];
+
+// An unrecognized status word is a contract fault, not an observation about the
+// product. Filing it under STALE asserted selector drift no run ever measured,
+// and did it silently — so a producer emitting a sixth word saw it disappear
+// into the one bucket humans read as benign. Rendering still needs a bucket for
+// what it cannot name, and that bucket is the one that means "no usable verdict,
+// look at this": ERROR, announced on stderr. The canonical artifact is not
+// rendering, so it keeps the producer's literal value untouched (see
+// buildVisualResultsContract).
+const unknownStatusSeen = new Map();
+
+function knownStatus(value) {
+  const status = String(value ?? '').trim().toUpperCase();
+  return KNOWN_STATUSES.includes(status) ? status : null;
+}
+
+function displayStatus(value, testId) {
+  const known = knownStatus(value);
+  if (known) return known;
+  const raw = String(value ?? '').trim() || '(empty)';
+  if (!unknownStatusSeen.has(raw)) unknownStatusSeen.set(raw, new Set());
+  if (testId) unknownStatusSeen.get(raw).add(normalizeTestId(testId) || String(testId));
+  return 'ERROR';
+}
+
+function reportUnknownStatuses() {
+  for (const [raw, ids] of unknownStatusSeen) {
+    const where = ids.size ? ` on ${[...ids].sort().join(', ')}` : '';
+    console.warn(`  WARN: status "${raw}"${where} is not one of ${KNOWN_STATUSES.join('/')} `
+      + '— shown as ERROR; visual-results.json keeps it as written.');
+  }
 }
 
 function normalizeTestId(value) {
@@ -208,11 +239,16 @@ function parseVisualResults() {
 
     const statusMap = {};
     const durationMap = {};
+    const reasonMap = {};
     const slugOwners = {}; // slug -> Set of full ids, to detect ambiguous slug-only matches (B19)
     for (const test of raw.tests || []) {
       if (!test || typeof test !== 'object') continue;
-      const status = normalizeStatus(test.status);
+      const status = displayStatus(test.status, test.id || test.manifest);
       const duration = Number.isFinite(test.duration_ms) ? test.duration_ms : null;
+      // The reason the run measured belongs on the page a human reads. Before,
+      // only _regressions.yaml could supply one, so every reason produced by
+      // this run was shown as "none".
+      const reason = typeof test.failure_reason === 'string' && test.failure_reason ? test.failure_reason : null;
       const keys = [
         normalizeTestId(test.id),
         normalizeTestId(test.manifest),
@@ -220,11 +256,13 @@ function parseVisualResults() {
       for (const key of keys) {
         statusMap[key] = status;
         if (duration != null) durationMap[key] = duration;
+        if (reason) reasonMap[key] = reason;
         const slug = key.split('/').pop();
         if (slug) {
           if (slug !== key) (slugOwners[slug] = slugOwners[slug] || new Set()).add(key);
           statusMap[slug] = status;
           if (duration != null) durationMap[slug] = duration;
+          if (reason) reasonMap[slug] = reason;
         }
       }
     }
@@ -235,6 +273,7 @@ function parseVisualResults() {
       source: 'json',
       statusMap,
       durationMap,
+      reasonMap,
       ambiguousSlugs,
       runTimestamp: raw.timestamp || null,
       run_id: raw.run_id || null,
@@ -265,10 +304,10 @@ function parseReport() {
   for (const line of md.split('\n')) {
     // Format 1: | test-slug | PASS | or | category/test-slug | PASS |
     let m = line.match(/^\|\s*([a-z0-9_/-]+)\s*\|\s*(?:\*\*)?(PASS|FAIL|ERROR|STALE|SKIPPED)(?:\*\*)?\s*\|/i);
-    if (m) { statusMap[m[1]] = normalizeStatus(m[2]); continue; }
+    if (m) { statusMap[m[1]] = displayStatus(m[2], m[1]); continue; }
     // Format 2: - category/test-slug: PASS
     m = line.match(/^-\s+([a-z0-9_/-]+):\s*(PASS|FAIL|ERROR|STALE|SKIPPED)/i);
-    if (m) { statusMap[m[1]] = normalizeStatus(m[2]); continue; }
+    if (m) { statusMap[m[1]] = displayStatus(m[2], m[1]); continue; }
   }
   const summaryMatch = md.match(/Tests:\s*(\d+)\s*run,\s*(\d+)\s*pass,\s*(\d+)\s*fail/);
   const dateMatch = md.match(/# Visual Report — (\S+ \S+)/);
@@ -415,22 +454,27 @@ function findScreenshot(id, slug, steps) {
 function mergeStatus(tests, report, regressions) {
   const ambiguous = new Set(report.ambiguousSlugs || []);
   const durationMap = report.durationMap || {};
+  const reasonMap = report.reasonMap || {};
   for (const t of tests) {
     const slug = t.id.split('/').pop();
     // Match by full category/slug id first, then fall back to slug only (B19)
     if (report.statusMap[t.id]) {
-      t.status = normalizeStatus(report.statusMap[t.id]);
+      t.status = report.statusMap[t.id];
       if (Number.isFinite(durationMap[t.id])) t.durationMs = durationMap[t.id];
     } else if (report.statusMap[slug]) {
       if (ambiguous.has(slug)) {
         console.warn(`  WARN: test slug "${slug}" matches several results across categories; using the last status seen. Prefer full category/slug ids in visual-results.json.`);
       }
-      t.status = normalizeStatus(report.statusMap[slug]);
+      t.status = report.statusMap[slug];
       if (Number.isFinite(durationMap[slug])) t.durationMs = durationMap[slug];
     }
+    // This run's measured reason describes this run; _regressions.yaml only
+    // remembers the last one recorded, so it fills in when the run said nothing.
+    const measuredReason = reasonMap[t.id] || reasonMap[slug] || null;
+    if (measuredReason) t.failureReason = String(measuredReason);
     const reg = regressions[t.id] || regressions[slug];
     if (reg) {
-      t.failureReason = String(reg.failure_reason || '');
+      if (!t.failureReason) t.failureReason = String(reg.failure_reason || '');
       if (t.status === 'STALE') t.status = 'FAIL';
       // consecutive_passes === 0 means currently broken = at least 1 fix cycle attempted
       if (typeof reg.consecutive_passes === 'number' && reg.consecutive_passes === 0) {
@@ -440,36 +484,44 @@ function mergeStatus(tests, report, regressions) {
   }
 }
 
-function buildVisualResultsContract(data, statusSource, rawTestsById = {}) {
-  const scope = statusSource.scope && typeof statusSource.scope === 'object' ? { ...statusSource.scope } : null;
-  const selectedIds = new Set(
-    (scope?.selected_manifests || [])
-      .map(normalizeTestId)
-      .filter(Boolean)
-  );
-  const contractTests = selectedIds.size
-    ? data.tests.filter(test => selectedIds.has(normalizeTestId(test.id)) || selectedIds.has(normalizeTestId(`${test.id}.yaml`)))
-    : data.tests;
-  const summary = selectedIds.size && contractTests.length
-    ? {
-      total: contractTests.length,
-      pass: contractTests.filter(test => test.status === 'PASS').length,
-      fail: contractTests.filter(test => test.status === 'FAIL').length,
-      error: contractTests.filter(test => test.status === 'ERROR').length,
-      stale: contractTests.filter(test => test.status === 'STALE').length,
-      skipped: contractTests.filter(test => test.status === 'SKIPPED').length,
+// The producer of visual-results.json owns it: `shipguard run` for a mechanical
+// run, /sg-visual-run for an agent run. This build is a rendering layer, so it
+// ADDS what it discovered and replaces or deletes nothing the run measured.
+//
+//   preserve  — a parseable producer document exists. It is kept verbatim:
+//               statuses (including a word this build cannot name), every
+//               failure_reason, summary, scope, the tests whose manifest is no
+//               longer on disk, and every additive field this build has never
+//               heard of (screenshot_error, console_capture_error,
+//               manifest_error, and whatever a later producer adds). The only
+//               additions are `generated_at` and a screenshot found on disk for
+//               a test the producer left without one.
+//   bootstrap — no producer document at all: a legacy report.md project, or a
+//               suite that has never run. Here this build IS the producer of
+//               last resort and synthesizes the contract from the manifests and
+//               the resolved statuses, as it always has.
+//
+// An unparseable document is neither, and is not written at all (see the call
+// site): overwriting it would destroy the only evidence of the fault reported.
+function buildVisualResultsContract(data, statusSource, rawDoc) {
+  if (statusSource.source === 'json' && rawDoc && typeof rawDoc === 'object') {
+    const discovered = {};
+    for (const test of data.tests) {
+      if (test.screenshot) discovered[normalizeTestId(test.id)] = test.screenshot;
     }
-    : {
-      total: data.summary.total,
-      pass: data.summary.pass,
-      fail: data.summary.fail,
-      error: data.summary.error || 0,
-      stale: data.summary.stale,
-      skipped: data.summary.skipped || 0,
+    const enrich = (raw) => {
+      if (!raw || typeof raw !== 'object') return raw;
+      if (raw.screenshot) return { ...raw };
+      const found = discovered[normalizeTestId(raw.id)] || discovered[normalizeTestId(raw.manifest)];
+      return found ? { ...raw, screenshot: found } : { ...raw };
     };
-  if (scope) {
-    if (!Number.isFinite(scope.selected_total)) scope.selected_total = summary.total;
-    if (!Number.isFinite(scope.full_suite_total)) scope.full_suite_total = data.tests.length;
+    return {
+      ...rawDoc,
+      // Reassigning an existing key keeps its original position, so a producer
+      // that already writes generated_at keeps its field order.
+      generated_at: data.generated,
+      ...(Array.isArray(rawDoc.tests) ? { tests: rawDoc.tests.map(enrich) } : {}),
+    };
   }
   return {
     schema_version: '1.0',
@@ -478,34 +530,26 @@ function buildVisualResultsContract(data, statusSource, rawTestsById = {}) {
     timestamp: statusSource.runTimestamp || data.generated,
     generated_at: data.generated,
     base_url: config.base_url || statusSource.baseUrl || null,
-    ...(scope ? { scope } : {}),
     summary: {
-      total: summary.total,
-      pass: summary.pass,
-      fail: summary.fail,
-      error: summary.error,
-      stale: summary.stale,
-      skipped: summary.skipped,
+      total: data.summary.total,
+      pass: data.summary.pass,
+      fail: data.summary.fail,
+      error: data.summary.error || 0,
+      stale: data.summary.stale,
+      skipped: data.summary.skipped || 0,
       duration_ms: statusSource.durationMs ?? null,
     },
-    tests: contractTests.map(test => {
-      // Carry producer-only additive fields through the rewrite (they cannot
-      // be reconstructed from manifests): browser_errors, llm_steps_pending.
-      const raw = rawTestsById[normalizeTestId(test.id)] || {};
-      return {
-        id: test.id,
-        manifest: `${test.id}.yaml`,
-        name: test.name,
-        url: test.url || '',
-        status: test.status,
-        // Preserve the producer's per-test duration when available (B11)
-        duration_ms: Number.isFinite(test.durationMs) ? test.durationMs : null,
-        screenshot: test.screenshot,
-        failure_reason: test.failureReason || null,
-        ...(Array.isArray(raw.browser_errors) && raw.browser_errors.length ? { browser_errors: raw.browser_errors } : {}),
-        ...(Number.isFinite(raw.llm_steps_pending) && raw.llm_steps_pending > 0 ? { llm_steps_pending: raw.llm_steps_pending } : {}),
-      };
-    }),
+    tests: data.tests.map(test => ({
+      id: test.id,
+      manifest: `${test.id}.yaml`,
+      name: test.name,
+      url: test.url || '',
+      status: test.status,
+      // Preserve the producer's per-test duration when available (B11)
+      duration_ms: Number.isFinite(test.durationMs) ? test.durationMs : null,
+      screenshot: test.screenshot,
+      failure_reason: test.failureReason || null,
+    })),
   };
 }
 
@@ -1190,8 +1234,8 @@ const visualResults = parseVisualResults();
 if (visualResults.error) {
   console.warn(`  WARN: ${visualResults.error}`);
 }
-// Raw pre-rewrite copy for the findings projection — the rewrite below (from
-// resolved manifest statuses) drops producer-only fields like browser_errors.
+// The producer's document, read before anything is written: the source both
+// for the findings projection and for the preserve-mode rewrite below.
 const visualRawForFindings = readJsonSafe(VISUAL_RESULTS_PATH);
 const report = mergeStatusSources(visualResults, parseReport());
 const regressions = parseRegressions();
@@ -1228,15 +1272,19 @@ const data = {
     ? statSync(join(RESULTS_DIR, 'fix-manifest.json')).mtimeMs : 0,
 };
 
-const rawTestsById = {};
-for (const t of (visualRawForFindings && Array.isArray(visualRawForFindings.tests) ? visualRawForFindings.tests : [])) {
-  if (t && t.id) rawTestsById[normalizeTestId(t.id)] = t;
+reportUnknownStatuses();
+
+if (visualResults.source === 'invalid') {
+  // The artifact this build is reporting a fault in is the only evidence of
+  // that fault. Rewriting it would erase what the producer actually emitted.
+  console.warn(`  WARN: ${VISUAL_RESULTS_PATH} left untouched — fix or delete it, then re-run the producer.`);
+} else {
+  writeFileSync(VISUAL_RESULTS_PATH, JSON.stringify(buildVisualResultsContract(data, report, visualRawForFindings), null, 2), 'utf8');
 }
-writeFileSync(VISUAL_RESULTS_PATH, JSON.stringify(buildVisualResultsContract(data, report, rawTestsById), null, 2), 'utf8');
 
 console.log(`  Status: ${passCount} pass, ${failCount} fail, ${errorCount} error, ${staleCount} stale, ${skippedCount} skipped`);
 console.log(`  Screenshots matched: ${tests.filter(t => t.screenshot).length}/${tests.length}`);
-console.log(`  Visual results: ${VISUAL_RESULTS_PATH}`);
+if (visualResults.source !== 'invalid') console.log(`  Visual results: ${VISUAL_RESULTS_PATH}`);
 
 // ── Collect recorded manifests ──
 const MANIFESTS_DIR = join(ROOT, 'manifests');

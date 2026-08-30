@@ -446,7 +446,7 @@ Generates a self-contained HTML dashboard from test results, audit data, and scr
 
 **Inputs:**
 1. All YAML test manifests from `visual-tests/` (walks category directories, skips `_`-prefixed and `deprecated` manifests)
-2. `visual-tests/_results/visual-results.json` -- canonical machine-readable run output (PASS/FAIL per test); `report.md` is parsed as the human-readable summary fallback
+2. `visual-tests/_results/visual-results.json` -- canonical machine-readable run output (PASS/FAIL per test); `report.md` is parsed as the human-readable summary fallback. The builder is a rendering layer over it: a parseable document is preserved as the producer wrote it and only enriched (`generated_at`, a screenshot found on disk), an unparseable one is left untouched, and only a missing one is synthesized from the manifests
 3. `visual-tests/_regressions.yaml` -- failure reasons and regression tracking
 4. `visual-tests/_results/screenshots/` -- matched to tests by slug or manifest `screenshot` field
 5. `visual-tests/_results/audit-results.json` -- code audit data (optional, enables Code Audit tab)

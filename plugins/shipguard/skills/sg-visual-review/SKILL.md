@@ -42,7 +42,7 @@ This script:
 3. Falls back to legacy `visual-tests/_results/report.md` if the JSON contract is missing or invalid
 4. Reads `visual-tests/_regressions.yaml` for failure reasons
 5. Matches screenshots from `visual-tests/_results/screenshots/`
-6. Rewrites canonical `visual-tests/_results/visual-results.json` from the resolved statuses, preserving the producer's run `timestamp` and per-test `duration_ms` (build time is recorded separately as `generated_at`)
+6. Writes `visual-tests/_results/visual-results.json` **additively**: the producer owns that file, so a parseable document is kept as written — statuses (including a word this build does not know), `failure_reason`, `summary`, `scope`, results whose manifest is no longer on disk, and every additive per-test field of [report-formats.md](../sg-visual-run/references/report-formats.md). The build only adds `generated_at` and a screenshot it found on disk for a test the producer left without one. With **no** producer document at all (a legacy `report.md` project, or a suite that has never run) it synthesizes the contract from the manifests and the resolved statuses. An **unparseable** document is reported and left untouched
 7. Reads `visual-tests/_results/logic-results.json` (written by `/sg-logic-audit`) into the Logic tab, if present
 8. Reads `visual-tests/_results/process-results.json` (written by `/sg-process-check`) into the Process tab, if present
 9. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)

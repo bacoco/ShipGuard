@@ -1131,9 +1131,18 @@ function cmdReview(args) {
   if (args.flags.serve) extra.push('--serve');
   if (args.flags.port) extra.push(`--port=${args.flags.port}`);
   try { execFileSync('node', [builder, ...extra], { cwd: process.cwd(), stdio: 'inherit' }); return EXIT.CLEAN; }
-  catch {
-    // build-review.mjs exits 1 for its own config/PID/port errors — that is a
-    // tooling failure, never "findings present". Map to infra, not 1.
+  catch (e) {
+    // u-03: mapping every non-zero code to infra assumed build-review.mjs can
+    // only fail as a tool. It cannot: a missing visual-tests/_config.yaml is a
+    // config fault and says so with code 3. Read the code the builder reported
+    // instead of assuming one, and name any other code on stderr so the next
+    // one added there is not swallowed the same way. Its exit 1 (PID file,
+    // port) stays infra: a tooling failure is never "findings present".
+    const code = e && Number.isInteger(e.status) ? e.status : null;
+    if (code === EXIT.CONFIG) return EXIT.CONFIG;
+    console.error(`review: build-review.mjs ${code === null
+      ? `did not report an exit code (${(e && (e.signal || e.code)) || 'unknown'})`
+      : `exited ${code}`} — treated as infra`);
     return EXIT.INFRA;
   }
 }
