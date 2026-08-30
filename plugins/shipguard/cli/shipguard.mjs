@@ -959,5 +959,17 @@ function cmdReview(args) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  Promise.resolve(main(process.argv.slice(2))).then((code) => process.exit(code ?? 0));
+  // main() and 4 of the 7 subcommands are synchronous: calling main inside
+  // .then() turns a synchronous throw into a rejection .catch can see.
+  Promise.resolve()
+    .then(() => main(process.argv.slice(2)))
+    .then((code) => process.exit(code ?? 0))
+    // An uncaught throw is a tooling failure, never "findings present" — the same
+    // mapping cmdReview applies to a build-review.mjs crash. Without this catch an
+    // unhandled rejection exits 1, the code reserved for product findings.
+    .catch((e) => {
+      console.error(`shipguard: ${(e && e.message) || e}`);
+      if (process.env.SHIPGUARD_DEBUG) console.error(e && e.stack);
+      process.exit(EXIT.INFRA);
+    });
 }

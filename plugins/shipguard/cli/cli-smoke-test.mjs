@@ -200,5 +200,37 @@ assert(runJson.lanes.visual.status === 'error' && runJson.lanes.visual.reason.in
   'run: run.json declares visual lane error with reason');
 assert(runJson.lanes.audit.status === 'not-applicable', 'run: audit lane declared not-applicable by CLI recette');
 
+// ── uncaught throw -> exit 2 (infra), never 1 (findings) ──
+// Without a top-level catch, any throw becomes an unhandled rejection and Node
+// exits 1 — the code reserved for "ran, findings present". Both halves matter:
+// main() and 4 of the 7 subcommands are synchronous, so a sync throw escapes a
+// catch chained onto Promise.resolve(main(...)) evaluated eagerly.
+function cliRun(cmd, cwd, env) {
+  try { execFileSync('node', [CLI, cmd], { cwd, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...env } }); }
+  catch (e) { return { code: e.status, err: String(e.stderr || '') }; }
+  return { code: 0, err: '' };
+}
+
+// async path: a scheme-less base_url with a fixed-port app.start makes startApp
+// throw "Invalid URL" before it spawns anything.
+const projT = mkdtempSync(join(tmpdir(), 'sg-throw-'));
+mkdirSync(join(projT, 'visual-tests'), { recursive: true });
+wf(join(projT, 'visual-tests', '_config.yaml'),
+  'base_url: "127.0.0.1:4711"\napp:\n  start: "python3 -m http.server 4711 --bind 127.0.0.1"\n');
+const thrownAsync = cliRun('serve', projT, {});
+assert(thrownAsync.code === EXIT.INFRA, 'async throw -> exit 2 (infra), not 1 (findings)');
+assert(/^shipguard: /m.test(thrownAsync.err), 'async throw -> one-line "shipguard:" diagnostic');
+assert(!thrownAsync.err.includes('at new URL'), 'async throw -> no raw stack by default');
+assert(cliRun('serve', projT, { SHIPGUARD_DEBUG: '1' }).err.includes('at new URL'),
+  'SHIPGUARD_DEBUG=1 restores the stack');
+
+// sync path: a regular file where visual-tests/ must be a directory makes
+// cmdInit's mkdirSync throw ENOTDIR synchronously, before any promise exists.
+const projS = mkdtempSync(join(tmpdir(), 'sg-syncthrow-'));
+wf(join(projS, 'visual-tests'), 'not a directory\n');
+const thrownSync = cliRun('init', projS, {});
+assert(thrownSync.code === EXIT.INFRA, 'sync throw -> exit 2 (infra), not 1 (findings)');
+assert(/^shipguard: /m.test(thrownSync.err), 'sync throw -> one-line "shipguard:" diagnostic');
+
 console.log(fails === 0 ? 'cli-smoke-test: ALL PASS' : `cli-smoke-test: ${fails} FAILURES`);
 process.exit(fails > 0 ? 1 : 0);
