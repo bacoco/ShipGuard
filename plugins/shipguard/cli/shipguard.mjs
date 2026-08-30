@@ -162,6 +162,16 @@ export function validateConfig(cfg) {
       }
     }
   }
+  if (cfg.base_url != null) {
+    if (typeof cfg.base_url !== 'string') errors.push('base_url must be a string URL');
+    else {
+      // Every consumer (fetch, new URL(path, base), agent-browser) needs an absolute
+      // http(s) URL; app.start substitutes {port} first, so probe with a placeholder.
+      let protocol = null;
+      try { protocol = new URL(cfg.base_url.replaceAll('{port}', '1')).protocol; } catch { /* stays null */ }
+      if (protocol !== 'http:' && protocol !== 'https:') errors.push(`base_url must be an absolute http(s) URL — got "${cfg.base_url}"`);
+    }
+  }
   if (!cfg.base_url && !(cfg.app && typeof cfg.app === 'object' && cfg.app.start)) {
     errors.push('config needs base_url or app.start (so serve can derive the URL)');
   }
@@ -791,6 +801,7 @@ async function cmdRun(args) {
   if (!config || errors.length) { errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
   const profile = resolveProfile(config, args.flags.profile ?? null);
   if (profile.errors.length) { profile.errors.forEach((e) => console.error(`config: ${e}`)); return EXIT.CONFIG; }
+  if (args.flags.scope === true) { console.error('config: --scope needs a value (e.g. --scope=auth)'); return EXIT.CONFIG; }
   const scope = String(args.flags.scope || profile.scope || 'all');
   const checks = profile.checks;
   const resultsDir = join(root, 'visual-tests', '_results');
