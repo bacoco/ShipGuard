@@ -8,7 +8,7 @@ import {
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync } from 'fs';
+import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync, symlinkSync, copyFileSync } from 'fs';
 import { tmpdir } from 'os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -231,6 +231,36 @@ wf(join(projS, 'visual-tests'), 'not a directory\n');
 const thrownSync = cliRun('init', projS, {});
 assert(thrownSync.code === EXIT.INFRA, 'sync throw -> exit 2 (infra), not 1 (findings)');
 assert(/^shipguard: /m.test(thrownSync.err), 'sync throw -> one-line "shipguard:" diagnostic');
+
+// ── entry guard: a symlinked invocation path must still run the CLI ──
+// process.argv[1] keeps the path the caller typed; import.meta.url carries the
+// one the ESM loader resolved. A symlink anywhere in the path makes the two
+// strings differ for the same file (macOS /var -> /private/var, i.e. every
+// mktemp -d), and a string comparison then reads "imported as a library":
+// the CLI ran nothing, printed nothing and exited 0.
+const linkBase = mkdtempSync(join(tmpdir(), 'sg-guard-'));
+const realDir = join(linkBase, 'real');
+mkdirSync(realDir);
+copyFileSync(CLI, join(realDir, 'shipguard.mjs'));
+symlinkSync(realDir, join(linkBase, 'link'));
+const viaLink = join(linkBase, 'link', 'shipguard.mjs');
+
+const helpL = execFileSync('node', [viaLink, '--help'], { encoding: 'utf8' });
+assert(helpL.includes('Subcommands:'), 'entry guard: symlinked path still runs the CLI');
+let codeL = -1;
+try { execFileSync('node', [viaLink, 'frobnicate'], { encoding: 'utf8', stdio: 'pipe' }); codeL = 0; }
+catch (e) { codeL = e.status; }
+assert(codeL === EXIT.CONFIG, 'entry guard: symlinked path still reports exit 3, not a silent 0');
+
+// non-regression, the reason the guard exists: importing the module must expose
+// its functions without executing the CLI. This very file imports it above.
+wf(join(realDir, 'consumer.mjs'),
+  "import { main, EXIT, loadManifests } from './shipguard.mjs';\n"
+  + "console.log('imported', typeof main, typeof loadManifests, EXIT.INFRA);\n");
+for (const [label, entry] of [['direct', join(realDir, 'consumer.mjs')], ['through symlink', join(linkBase, 'link', 'consumer.mjs')]]) {
+  const libOut = execFileSync('node', [entry], { encoding: 'utf8' });
+  assert(libOut.trim() === 'imported function function 2', `entry guard: library import (${label}) does not run the CLI`);
+}
 
 console.log(fails === 0 ? 'cli-smoke-test: ALL PASS' : `cli-smoke-test: ${fails} FAILURES`);
 process.exit(fails > 0 ? 1 : 0);

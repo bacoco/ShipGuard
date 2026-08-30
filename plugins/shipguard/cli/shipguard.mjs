@@ -20,9 +20,9 @@
  *   3  invalid configuration (missing/bad config, unknown profile/check)
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync } from 'fs';
 import { join, dirname, relative, sep } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
 import { spawn, execFileSync } from 'child_process';
 import net from 'net';
 
@@ -958,7 +958,19 @@ function cmdReview(args) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Direct invocation vs library import. process.argv[1] keeps the path the caller
+// typed while import.meta.url carries the one the ESM loader resolved, so the two
+// name the same file through different strings whenever a symlink is in the path
+// (macOS /var -> /private/var, i.e. every mktemp -d). Comparing them as strings
+// made the CLI a silent no-op there: exit 0, no output, no command run. Compare
+// resolved real paths instead; on any error, assume library import and stay quiet.
+function invokedAsCli() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch { return false; }
+}
+
+if (invokedAsCli()) {
   // main() and 4 of the 7 subcommands are synchronous: calling main inside
   // .then() turns a synchronous throw into a rejection .catch can see.
   Promise.resolve()
