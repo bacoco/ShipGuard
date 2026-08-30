@@ -117,7 +117,13 @@ writeFileSync(join(projT, 'visual-tests', '_config.yaml'), `base_url: "${base}"\
 const codeT = await runCli([CLI, 'crawl'], projT);
 const artT = JSON.parse(readFileSync(join(projT, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
 assert(!!artT.truncated && artT.truncated.max_pages === 1, 'cmdCrawl: truncation written to crawl-results.json');
-assert(codeT === EXIT.CLEAN, 'cmdCrawl: truncation is declared, not a failure (exit unchanged)');
+// The crawler declares the gap; the exit aggregation decides what it costs.
+// A crawl bounded below the site never covered the site, and "incomplete is
+// never clean" — so not 0. Not 2 either: re-running an unchanged truncated
+// crawl stops at exactly the same page, and 2's whole sentence is "retry".
+// 3 is the code whose sentence is "fix a declared file", which is the only
+// thing that can actually widen the coverage.
+assert(codeT === EXIT.CONFIG, 'cmdCrawl: a crawl bounded below the site -> exit 3, never a clean 0');
 const codeT2 = await runCli([CLI, 'crawl', '--max-pages=10'], projT);
 const artT2 = JSON.parse(readFileSync(join(projT, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
 assert(artT2.truncated === undefined, 'cmdCrawl: raising the cap clears the truncation (no permanent red)');

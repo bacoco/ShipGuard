@@ -306,6 +306,113 @@ assert(runJson.lanes.visual.status === 'error' && runJson.lanes.visual.reason.in
   'run: run.json declares visual lane error with reason');
 assert(runJson.lanes.audit.status === 'not-applicable', 'run: audit lane declared not-applicable by CLI recette');
 
+// ── exit-code aggregation: each code is an instruction, not a severity ──────
+// 0 "nothing to see" | 1 "look at your product" | 2 "retry, the tooling broke"
+// | 3 "fix your declaration". The axis between 2 and 3 is whether re-running
+// unchanged could ever help. Precedence 2 > 3 > 1 > 0.
+// Each fixture is a full `run` over a real app and a stand-in browser, because
+// the aggregation reads lanes that only a real run produces.
+const FAKE_F = join(mkdtempSync(join(tmpdir(), 'sg-fbin-')), 'fake-agent-browser');
+wf(FAKE_F, '#!/bin/sh\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n'
+  + '  screenshot) if [ "$SG_EMPTY_SHOT" = 1 ]; then : > "$2"; else printf \'PNGFAKE\' > "$2"; fi ;;\n'
+  + '  get) [ "$2" = url ] && printf \'%s\\n\' \'http://127.0.0.1/ok.html\' ;;\nesac\nexit 0\n');
+chmodSync(FAKE_F, 0o755);
+const OK_MANIFEST = 'name: "Ok"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n  - action: assert_text\n    text: "Ok"\n';
+
+function runFixture({ files = {}, flags = [], env = {}, builder = 'process.exit(0);\n' }) {
+  const root = mkdtempSync(join(tmpdir(), 'sg-exit-'));
+  mkdirSync(join(root, 'visual-tests'), { recursive: true });
+  wf(join(root, 'visual-tests', '_config.yaml'),
+    `version: 2\napp:\n  start: "${APP_U.replace(/"/g, '\\"')}"\n  healthcheck: "/"\n  startup_timeout_ms: 15000\n`);
+  // A project-local no-op builder keeps the dashboard out of every case that is
+  // not about the dashboard (it is also the only way to control its failure).
+  if (builder !== null) wf(join(root, 'visual-tests', 'build-review.mjs'), builder);
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, 'visual-tests', rel)), { recursive: true });
+    wf(join(root, 'visual-tests', rel), body);
+  }
+  let code = 0;
+  try {
+    execFileSync('node', [CLI, 'run', ...flags], { cwd: root, encoding: 'utf8', stdio: 'pipe',
+      env: { ...process.env, SHIPGUARD_AGENT_BROWSER: FAKE_F, ...env } });
+  } catch (e) { code = e.status; }
+  const rd = join(root, 'visual-tests', '_results');
+  const load = (f) => (ex(join(rd, f)) ? JSON.parse(rf(join(rd, f), 'utf8')) : null);
+  return { code, run: load('run.json'), visual: load('visual-results.json') };
+}
+
+// a scope that selects nothing while the suite exists: the run asserted nothing
+// and the fix is the scope string, not a retry
+const fScope = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl', '--scope=pagez'] });
+assert(fScope.code === EXIT.CONFIG, 'exit: a scope that selects nothing -> 3, never a clean 0');
+assert(fScope.run?.lanes?.visual?.status === 'skipped' && fScope.run?.lanes?.visual?.remedy === 'declaration',
+  'exit: the skipped visual lane names a declaration remedy');
+
+// a manifest this deterministic layer cannot evaluate is not a PASS, and a run
+// made only of those evaluated nothing
+const fLlm = runFixture({ files: { 'pages/llm.yaml': 'name: "L"\nsteps:\n  - action: llm-check\n    prompt: "ok?"\n' }, flags: ['--no-crawl'] });
+assert(fLlm.visual?.tests?.[0]?.status === 'SKIPPED', 'exit: a manifest with no mechanically evaluable step is SKIPPED, not PASS');
+assert(fLlm.visual?.summary?.skipped === 1, 'exit: summary.skipped counts it (previously hardcoded 0)');
+assert(fLlm.run?.lanes?.llm_checks?.status === 'needs-agent', 'exit: the pending agent work stays declared');
+assert(fLlm.code === EXIT.CONFIG, 'exit: a run in which no lane evaluated anything -> 3, never a clean 0');
+
+// a pending handoff BESIDE real mechanical work is not a fault: needs-agent is
+// a declared handoff like not-applicable, not an incomplete recette
+const fMixed = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST, 'pages/llm.yaml': 'name: "L"\nsteps:\n  - action: llm-check\n    prompt: "ok?"\n' }, flags: ['--no-crawl'] });
+assert(fMixed.code === EXIT.CLEAN, 'exit: a pending agent lane beside evaluated work stays 0');
+assert(fMixed.run?.lanes?.visual?.status === 'ran', 'exit: the visual lane ran because something was evaluated');
+
+// no manifests and no crawl: every individual skip is legitimate, their
+// conjunction is a run that asserted nothing
+const fEmpty = runFixture({ flags: ['--no-crawl'] });
+assert(fEmpty.code === EXIT.CONFIG, 'exit: no lane evaluated anything -> 3');
+
+// an invalid manifest is closer to a bad config than to a broken machine
+const fInvalid = runFixture({ files: { 'pages/typo.yaml': 'name: "T"\nsteps:\n  - action: assert_txt\n    text: "Ok"\n' }, flags: ['--no-crawl'] });
+assert(fInvalid.code === EXIT.CONFIG, 'exit: an unknown action -> 3 (fix the manifest), not 2 (retry)');
+assert(fInvalid.run?.lanes?.visual?.remedy === 'declaration', 'exit: the errored visual lane names a declaration remedy');
+
+// a tooling failure keeps 2, and outranks a declaration fault in the same run:
+// a human who fixes only the manifest still gets untrusted evidence
+const fTool = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'], env: { SG_EMPTY_SHOT: '1' } });
+assert(fTool.code === EXIT.INFRA, 'exit: a per-test tooling ERROR -> 2 (unchanged)');
+assert(fTool.run?.lanes?.visual?.remedy === 'infrastructure', 'exit: the errored visual lane names an infrastructure remedy');
+const fBoth = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST, 'pages/typo.yaml': 'name: "T"\nsteps:\n  - action: assert_txt\n    text: "Ok"\n' },
+  flags: ['--no-crawl'], env: { SG_EMPTY_SHOT: '1' } });
+assert(fBoth.code === EXIT.INFRA, 'exit: tooling and declaration faults together -> 2 outranks 3');
+
+// logic-016: a dashboard that never built is a lane like any other, and
+// cmdReview already maps the same crash to EXIT.INFRA
+const fDash = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'], builder: 'process.exit(7);\n' });
+assert(fDash.code === EXIT.INFRA, 'exit: a dashboard that failed to build -> 2, never a clean 0');
+assert(fDash.run?.lanes?.review?.status === 'error' && fDash.run?.lanes?.review?.remedy === 'infrastructure',
+  'exit: the failed dashboard is declared as an errored review lane');
+
+// The reason an evidence gap on an ALREADY-FAILED test does not move the code:
+// telling a CI "retry, the tooling broke" when a real, reproducible product
+// failure is sitting in the artifact sends the human to the wrong place. It is
+// safe because a SYSTEMIC capture failure still reaches 2 on its own — every
+// test that would otherwise PASS is promoted to ERROR. Green both ways: this
+// guards the decision, it does not prove the change.
+const fGap = runFixture({ files: {
+  'pages/ok.yaml': OK_MANIFEST,
+  'pages/bad.yaml': 'name: "B"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n  - action: assert_text\n    text: "NEVER-ON-THIS-PAGE"\n',
+}, flags: ['--no-crawl'], env: { SG_EMPTY_SHOT: '1' } });
+assert(fGap.code === EXIT.INFRA, 'exit: a capture broken on every test still reaches 2 on its own');
+const fGapBad = (fGap.visual?.tests || []).find((t) => t.id === 'pages/bad') || {};
+assert(fGapBad.status === 'FAIL' && !!fGapBad.screenshot_error,
+  'exit: the observed product failure keeps FAIL and records the evidence gap beside it');
+
+// non-regression: the four documented codes on their own paths
+const fClean = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'] });
+assert(fClean.code === EXIT.CLEAN, 'exit: a healthy suite still exits 0');
+assert(Object.values(fClean.run?.lanes || {}).every((l) => !l.remedy), 'exit: a clean run declares no remedy anywhere');
+assert(fClean.run?.lanes?.review?.status === 'ran', 'exit: a built dashboard is declared as a ran review lane');
+assert(fClean.run?.exit_code === EXIT.CLEAN, 'exit: run.json records the code on the success path too');
+const fFail = runFixture({ files: { 'pages/bad.yaml': 'name: "B"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n  - action: assert_text\n    text: "NEVER-ON-THIS-PAGE"\n' }, flags: ['--no-crawl'] });
+assert(fFail.code === EXIT.FINDINGS, 'exit: a real product failure still exits 1');
+assert(fFail.run?.exit_code === EXIT.FINDINGS, 'exit: run.json records the findings code');
+
 // ── uncaught throw -> exit 2 (infra), never 1 (findings) ──
 // Without a top-level catch, any throw becomes an unhandled rejection and Node
 // exits 1 — the code reserved for "ran, findings present". Both halves matter:

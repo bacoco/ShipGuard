@@ -528,7 +528,10 @@ node visual-tests/shipguard.mjs init                          # config v2 + .git
 #   app:      root: docs, start: "python3 -m http.server {port} --bind 127.0.0.1", healthcheck: "/index.html"
 #   profiles: site-accessible: { scope: "site-accessible", checks: [page-load, local-assets, browser-errors, screenshots] }
 node visual-tests/shipguard.mjs run --profile=site-accessible --serve
-# exit 0 = clean, 1 = findings (see the review dashboard's Findings tab), 2 = infra error, 3 = config error
+# exit 0 = clean, 1 = findings (see the review dashboard's Findings tab),
+#      2 = infra: retry, the tooling failed and this run's evidence is untrusted,
+#      3 = declaration: fix a declared file (config, manifest, scope, page cap) — a retry is a no-op.
+#      Precedence 2 > 3 > 1 > 0; an incomplete run never exits 0.
 node visual-tests/shipguard.mjs stop --all
 ```
 
