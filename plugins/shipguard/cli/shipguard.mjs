@@ -482,15 +482,33 @@ export function validateScreenshot(path) {
   return { ok: true, size };
 }
 
+// agent-browser spells element refs two ways across versions: the bracketed
+// attribute emitted by 0.27+ (`- button "Buy now" [ref=e2]`) and the older bare
+// token (`- button "Buy now" @e2`). Both name the same element, and every
+// command that consumes one (`click`, `fill`, `select`, `upload`) wants `@eN`:
+// a bare `e2` is refused ("Unknown ref: e2") and `[ref=e2]` is read as a CSS
+// attribute selector and finds nothing. So accept both spellings, always emit
+// `@eN`. Quoted spans are accessible names, not attributes — a link named
+// `"Weird ref=e99 link"` must not shadow the real `[ref=e6]` on its own line —
+// and `ref=` is only an attribute when it opens or follows a bracketed field,
+// which keeps `[ref=e6, url=...?ref=e99]` (snapshot -u) reading as e6.
+function snapshotRefOf(line) {
+  const attrs = String(line).replace(/"[^"]*"/g, '""');
+  const bracketed = attrs.match(/[[,]\s*ref\s*=\s*(e\d+)\s*[,\]]/);
+  if (bracketed) return `@${bracketed[1]}`;
+  const bare = attrs.match(/@(e\d+)\b/);
+  return bare ? `@${bare[1]}` : null;
+}
+
 export function matchSnapshotRef(snapshotText, target) {
   const needle = String(target).toLowerCase();
   let substringHit = null;
   for (const line of String(snapshotText).split('\n')) {
-    const ref = line.match(/@e\d+/);
+    const ref = snapshotRefOf(line);
     if (!ref) continue;
     const quoted = line.match(/"([^"]+)"/);
-    if (quoted && quoted[1].toLowerCase() === needle) return ref[0];
-    if (!substringHit && line.toLowerCase().includes(needle)) substringHit = ref[0];
+    if (quoted && quoted[1].toLowerCase() === needle) return ref;
+    if (!substringHit && line.toLowerCase().includes(needle)) substringHit = ref;
   }
   return substringHit;
 }

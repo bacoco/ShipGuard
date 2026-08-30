@@ -171,12 +171,32 @@ assert(validateScreenshot(join(shotDir, 'empty.png')).ok === false, 'screenshot:
 assert(validateScreenshot(join(shotDir, 'ghost.png')).reason === 'missing', 'screenshot: missing rejected');
 
 // ── matchSnapshotRef ──
-const snap = `- button "Nouvelle conversation" @e3
-- link "Accueil" @e7
-- textbox "Nom d'utilisateur" @e9`;
+// Line shape copied from real `agent-browser 0.27.0 snapshot -i` output (element
+// names kept from the original fixture). The previous fixture invented an `@eN`
+// snapshot shape the binary never emits, so these assertions only ever proved
+// the parser agreed with whoever wrote the fixture. The live probe at the end of
+// this file is what actually pins the shape to the installed binary.
+const snap = `- heading "Espace client" [level=1, ref=e1]
+- button "Nouvelle conversation" [ref=e3]
+- combobox [expanded=false, ref=e5]: Alpha
+- link "Accueil" [ref=e7]
+- textbox "Nom d'utilisateur" [ref=e9]`;
 assert(matchSnapshotRef(snap, 'Nouvelle conversation') === '@e3', 'snapshot: match by text');
 assert(matchSnapshotRef(snap, 'accueil') === '@e7', 'snapshot: case-insensitive');
 assert(matchSnapshotRef(snap, 'Inexistant') === null, 'snapshot: no match -> null');
+// The ref is returned as `@eN` because that is the only spelling the consuming
+// commands accept: `agent-browser click e9` answers "Unknown ref", and
+// `click "[ref=e9]"` is parsed as a CSS attribute selector and finds nothing.
+assert(/^@e\d+$/.test(matchSnapshotRef(snap, 'Alpha') || ''), 'snapshot: ref returned in @eN command form');
+// Older agent-browser emitted the bare token; keep reading it.
+const legacySnap = `- button "Nouvelle conversation" @e3
+- link "Accueil" @e7`;
+assert(matchSnapshotRef(legacySnap, 'Nouvelle conversation') === '@e3', 'snapshot: legacy @eN still matched');
+assert(matchSnapshotRef(legacySnap, 'Introuvable') === null, 'snapshot: legacy no match -> null');
+// An accessible name (or a `-u` url) that itself contains `ref=eN` must not
+// shadow the line's real ref.
+const trapSnap = '- link "Weird ref=e99 link" [ref=e6, url=file:///deep/link?ref=e99]';
+assert(matchSnapshotRef(trapSnap, 'Weird ref=e99 link') === '@e6', 'snapshot: quoted/url ref decoy ignored');
 
 // ── buildRunJson ──
 const run = buildRunJson({
@@ -285,6 +305,37 @@ for (const [label, entry] of [['direct', join(realDir, 'consumer.mjs')], ['throu
   const libOut = execFileSync('node', [entry], { encoding: 'utf8' });
   assert(libOut.trim() === 'imported function function 2', `entry guard: library import (${label}) does not run the CLI`);
 }
+// ── matchSnapshotRef vs the real binary (fixture-vs-binary guard) ──
+// The fixtures above are captured, not invented — but a captured fixture still
+// freezes. This probe re-derives the contract from whatever agent-browser is
+// installed: snapshot shape in, `@eN` out, and the ref actually accepted by a
+// consuming command. A future format change fails here instead of silently
+// breaking every click/fill/select/upload in the field. Skipped (never failed)
+// when no browser is available, so this stays a smoke test, not an e2e suite.
+const abBin = process.env.SHIPGUARD_AGENT_BROWSER || 'agent-browser';
+const abSession = 'sg-cli-smoke';
+const ab = (...a) => execFileSync(abBin, ['--session', abSession, ...a], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+const liveDir = mkdtempSync(join(tmpdir(), 'sg-live-'));
+const livePage = join(liveDir, 'probe.html');
+wf(livePage, '<!doctype html><meta charset="utf-8"><title>sg probe</title>'
+  + '<button onclick="document.getElementById(\'o\').textContent=\'HIT\'">Nouvelle conversation</button>'
+  + '<p id="o">MISS</p>');
+let liveSkip = null;
+try {
+  ab('open', `file://${livePage}`);
+  const liveSnap = ab('snapshot', '-i');
+  const liveRef = matchSnapshotRef(liveSnap, 'Nouvelle conversation');
+  assert(liveRef !== null, `live: ${abBin} snapshot parsed (got: ${JSON.stringify(liveSnap.trim().split('\n')[0])})`);
+  if (liveRef) {
+    ab('click', liveRef);
+    assert(ab('get', 'text', '#o').trim() === 'HIT', 'live: ref returned by matchSnapshotRef is clickable');
+  }
+} catch (e) {
+  liveSkip = e.code === 'ENOENT' ? `${abBin} not installed` : String(e.stderr || e.message).trim().split('\n')[0];
+} finally {
+  try { ab('close'); } catch { /* browser already gone */ }
+}
+if (liveSkip) console.log(`  SKIP live agent-browser format check (${liveSkip})`);
 
 console.log(fails === 0 ? 'cli-smoke-test: ALL PASS' : `cli-smoke-test: ${fails} FAILURES`);
 process.exit(fails > 0 ? 1 : 0);
