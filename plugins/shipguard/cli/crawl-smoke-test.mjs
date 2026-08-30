@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // crawl-smoke-test.mjs — extractAssets pure tests + end-to-end crawl on a fixture site
-import { extractAssets, crawl, isFollowablePage, EXIT } from './shipguard.mjs';
+import { extractAssets, crawl, isFollowablePage, resolveMaxPages, DEFAULT_MAX_PAGES, EXIT } from './shipguard.mjs';
 import { spawn } from 'child_process';
 
 // async subprocess runner — execFileSync would block the event loop and
@@ -90,6 +90,68 @@ mkdirSync(join(proj2, 'visual-tests'), { recursive: true });
 writeFileSync(join(proj2, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:1"\n');
 const code2 = await runCli([CLI, 'crawl'], proj2);
 assert(code2 === EXIT.INFRA, 'cmdCrawl: unreachable base_url -> exit 2');
+
+// ── logic-007: reaching the page cap is DECLARED, never silent ──
+// A site larger than the cap is not defective, so truncation is a fact in the
+// artifact (reason-carrying, like a non-"ran" lane in run.json) and not a
+// failure — but it must never be indistinguishable from a complete crawl.
+assert(resolveMaxPages({}, {}) === DEFAULT_MAX_PAGES && DEFAULT_MAX_PAGES === 200, 'maxPages: default 200 when unset');
+assert(resolveMaxPages({ crawl: { max_pages: 50 } }, {}) === 50, 'maxPages: crawl.max_pages honoured');
+assert(resolveMaxPages({ crawl: { max_pages: 50 } }, { 'max-pages': '7' }) === 7, 'maxPages: --max-pages overrides config');
+assert(resolveMaxPages({ crawl: { max_pages: 'nope' } }, {}) === DEFAULT_MAX_PAGES, 'maxPages: junk falls back to the default');
+assert(resolveMaxPages({}, { 'max-pages': true }) === DEFAULT_MAX_PAGES, 'maxPages: valueless --max-pages does not silently cap at 1');
+
+const bounded = await crawl(base, { maxPages: 1 });
+assert(!!bounded.truncated, 'crawl: cap reached -> truncated declared');
+assert(bounded.truncated && bounded.truncated.max_pages === 1 && bounded.truncated.queued_unvisited >= 1,
+  'crawl: truncation names the cap and the unvisited count');
+assert(bounded.truncated && typeof bounded.truncated.reason === 'string' && bounded.truncated.reason.length > 0,
+  'crawl: truncation carries a reason (run.json non-ran-lane motif)');
+assert(result.truncated === undefined, 'crawl: complete crawl carries NO truncated field');
+
+// cmdCrawl end to end: capped run declares truncation and stays exit 0 (nothing
+// broken was observed); raising the cap un-truncates it and finds the real bug.
+const projT = mkdtempSync(join(tmpdir(), 'sg-crawltrunc-'));
+mkdirSync(join(projT, 'visual-tests'), { recursive: true });
+writeFileSync(join(projT, 'visual-tests', '_config.yaml'), `base_url: "${base}"\ncrawl:\n  max_pages: 1\n`);
+const codeT = await runCli([CLI, 'crawl'], projT);
+const artT = JSON.parse(readFileSync(join(projT, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
+assert(!!artT.truncated && artT.truncated.max_pages === 1, 'cmdCrawl: truncation written to crawl-results.json');
+assert(codeT === EXIT.CLEAN, 'cmdCrawl: truncation is declared, not a failure (exit unchanged)');
+const codeT2 = await runCli([CLI, 'crawl', '--max-pages=10'], projT);
+const artT2 = JSON.parse(readFileSync(join(projT, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
+assert(artT2.truncated === undefined, 'cmdCrawl: raising the cap clears the truncation (no permanent red)');
+assert(codeT2 === EXIT.FINDINGS, 'cmdCrawl: the page beyond the old cap yields its real finding');
+
+// ── logic-008: a page that cannot be fetched is a finding, not a crawled page ──
+// The asset half of crawl() already treats status 0 as broken; the page half
+// discarded it. Fixture: HEAD answers 200, GET drops the connection.
+const siteD = mkdtempSync(join(tmpdir(), 'sg-deadsite-'));
+writeFileSync(join(siteD, 'index.html'), '<html><a href="dead.html">d</a></html>');
+const serverD = http.createServer((req, res) => {
+  if (req.url.startsWith('/dead')) {
+    if (req.method === 'HEAD') { res.setHeader('content-type', 'text/html'); return res.end(); }
+    return req.socket.destroy();
+  }
+  try {
+    const body = readFileSync(join(siteD, req.url === '/' ? 'index.html' : req.url.slice(1)));
+    res.setHeader('content-type', 'text/html');
+    res.end(body);
+  } catch { res.statusCode = 404; res.end('nope'); }
+});
+await new Promise((r) => serverD.listen(0, '127.0.0.1', r));
+const baseD = `http://127.0.0.1:${serverD.address().port}/`;
+const dead = await crawl(baseD);
+const deadEntry = dead.broken.find((b) => b.url.endsWith('/dead.html'));
+assert(!!deadEntry && deadEntry.status === 0 && deadEntry.tag === 'page', 'crawl: unfetchable page -> broken status 0, tag page');
+assert(dead.pages === 1, 'crawl: unfetchable page is not counted as crawled');
+
+const projD = mkdtempSync(join(tmpdir(), 'sg-deadproj-'));
+mkdirSync(join(projD, 'visual-tests'), { recursive: true });
+writeFileSync(join(projD, 'visual-tests', '_config.yaml'), `base_url: "${baseD}"\n`);
+const codeD = await runCli([CLI, 'crawl'], projD);
+assert(codeD === EXIT.FINDINGS, 'cmdCrawl: unfetchable page -> exit 1 (same rule as a status-0 asset)');
+serverD.close();
 
 server.close();
 console.log(fails === 0 ? 'crawl-smoke-test: ALL PASS' : `crawl-smoke-test: ${fails} FAILURES`);

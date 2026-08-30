@@ -226,6 +226,11 @@ build_command: null
 #   healthcheck: "/index.html"
 #   startup_timeout_ms: 30000
 
+# Crawler bound (used by: shipguard crawl / run). Reaching it is reported as
+# "truncated" in crawl-results.json — raise it for a site larger than the cap.
+# crawl:
+#   max_pages: 200
+
 # Named recette profiles (used by: shipguard run --profile=NAME).
 # scope matches manifest paths and step URLs; checks pick the deterministic lanes.
 # profiles:
@@ -374,13 +379,27 @@ async function checkUrl(url) {
   } catch { return 0; }
 }
 
+// The page cap bounds the RUN, not the site: a site larger than the cap is not
+// defective, so reaching it is declared (see `truncated` below), never a failure.
+// crawl.max_pages in _config.yaml / --max-pages=N raises it.
+export const DEFAULT_MAX_PAGES = 200;
+
+export function resolveMaxPages(config, flags = {}) {
+  const raw = flags['max-pages'] ?? (config && config.crawl ? config.crawl.max_pages : undefined);
+  // A valueless "--max-pages" (or "max_pages: true") parses as boolean true and
+  // Number(true) is 1 — that would silently cap the crawl at a single page.
+  const n = typeof raw === 'boolean' ? NaN : Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_MAX_PAGES;
+}
+
 export async function crawl(baseUrl, opts = {}) {
-  const maxPages = opts.maxPages ?? 200;
+  const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES;
   const start = new URL(baseUrl).href;
   const queue = [start];
   const visitedPages = new Set();
   const checkedAssets = new Map(); // url -> status
   const broken = [];
+  let unreachable = 0;
 
   let first = true;
   while (queue.length && visitedPages.size < maxPages) {
@@ -389,7 +408,15 @@ export async function crawl(baseUrl, opts = {}) {
     visitedPages.add(pageUrl);
     let res;
     try { res = await fetch(pageUrl, { signal: AbortSignal.timeout(8000) }); }
-    catch { if (first) return { pages: 0, assets_checked: 0, broken: [], infra_error: `base_url unreachable: ${pageUrl}` }; continue; }
+    catch {
+      if (first) return { pages: 0, assets_checked: 0, broken: [], infra_error: `base_url unreachable: ${pageUrl}` };
+      // Same rule the asset loop below already applies: a URL that cannot be
+      // fetched is status 0 and a finding. It was never crawled, so it is not
+      // a page either — counting it would inflate coverage with a dead page.
+      unreachable++;
+      broken.push({ url: pageUrl, status: 0, found_on: pageUrl, tag: 'page' });
+      continue;
+    }
     first = false;
     if (!res.ok) { broken.push({ url: pageUrl, status: res.status, found_on: pageUrl, tag: 'page' }); continue; }
     const type = res.headers.get('content-type') || '';
@@ -410,7 +437,14 @@ export async function crawl(baseUrl, opts = {}) {
       }
     }
   }
-  return { pages: visitedPages.size, assets_checked: checkedAssets.size, broken };
+  // Reason-carrying and present ONLY when there is a gap — the same asymmetry
+  // buildRunJson enforces on lanes (a "ran" lane carries no reason). A non-empty
+  // leftover queue is exactly "stopped early with known work left".
+  const queuedUnvisited = new Set(queue.filter((u) => !visitedPages.has(u))).size;
+  const pages = visitedPages.size - unreachable;
+  const out = { pages, assets_checked: checkedAssets.size, broken };
+  if (queuedUnvisited) out.truncated = { reason: `page cap ${maxPages} reached: crawled ${pages} page(s), at least ${queuedUnvisited} known URL(s) left unvisited (plus whatever they link to) — coverage is partial`, max_pages: maxPages, queued_unvisited: queuedUnvisited };
+  return out;
 }
 
 // ── Browser output robustness layer ──────────────────────────────────────────
@@ -512,8 +546,11 @@ Subcommands:
   init                       Scaffold visual-tests/_config.yaml, _results/, .gitignore guard-rails
   serve   [--port=N]         Start the app under test (config app.start), wait for healthcheck
   stop    [--all]            Stop the app server started by serve (--all: also the review server)
-  crawl   [--base-url=URL]   Check local links/assets over HTTP -> _results/crawl-results.json
-  run     [--profile=NAME] [--scope=STR] [--serve] [--no-crawl]
+  crawl   [--base-url=URL] [--max-pages=N]
+                             Check local links/assets over HTTP -> _results/crawl-results.json
+                             (page cap: --max-pages, else crawl.max_pages, else 200; reaching it
+                             is declared as "truncated" in the artifact, not a failure)
+  run     [--profile=NAME] [--scope=STR] [--serve] [--no-crawl] [--max-pages=N]
                              Full mechanical recette: serve if needed, execute manifests
                              (mechanical steps), checks, artifacts, dashboard
   review  [--serve] [--port=N]  Build (and optionally serve) the review dashboard
@@ -593,19 +630,22 @@ async function cmdCrawl(args) {
   const baseUrl = String(args.flags['base-url'] || resolveBaseUrl(config, root) || '');
   if (!baseUrl) { console.error('config: no base_url and no running app server'); return EXIT.CONFIG; }
   console.log(`crawling ${baseUrl} ...`);
-  const result = await crawl(baseUrl);
+  const result = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags) });
   if (result.infra_error) { console.error(`crawl: ${result.infra_error}`); return EXIT.INFRA; }
   const resultsDir = join(root, 'visual-tests', '_results');
   mkdirSync(resultsDir, { recursive: true });
-  writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify({
+  const artifact = {
     schema_version: '1.0',
     timestamp: new Date().toISOString(),
     base_url: baseUrl,
     pages: result.pages,
     assets_checked: result.assets_checked,
     broken: result.broken,
-  }, null, 2));
+  };
+  if (result.truncated) artifact.truncated = result.truncated;
+  writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify(artifact, null, 2));
   console.log(`crawl: ${result.pages} pages, ${result.assets_checked} assets checked, ${result.broken.length} broken`);
+  if (result.truncated) console.log(`crawl: INCOMPLETE — ${result.truncated.reason}; raise crawl.max_pages in _config.yaml or pass --max-pages=N`);
   for (const b of result.broken) console.log(`  BROKEN [${b.tag}] ${b.url} (HTTP ${b.status}) on ${b.found_on}`);
   return result.broken.length ? EXIT.FINDINGS : EXIT.CLEAN;
 }
@@ -861,16 +901,21 @@ async function cmdRun(args) {
       lanes.crawl = { status: 'skipped', reason: 'local-assets check disabled by --no-crawl' };
     }
     if (checks.includes('local-assets') && !args.flags['no-crawl']) {
-      crawlResult = await crawl(baseUrl);
+      crawlResult = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags) });
       if (crawlResult.infra_error) { lanes.crawl = { status: 'error', reason: crawlResult.infra_error }; }
       else {
-        writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify({
+        const crawlArtifact = {
           schema_version: '1.0', timestamp: new Date().toISOString(), base_url: baseUrl,
           pages: crawlResult.pages, assets_checked: crawlResult.assets_checked, broken: crawlResult.broken,
-        }, null, 2));
+        };
+        if (crawlResult.truncated) crawlArtifact.truncated = crawlResult.truncated;
+        writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify(crawlArtifact, null, 2));
         lanes.crawl = { status: 'ran', results: 'crawl-results.json' };
+        // Declared coverage gap, not a lane error: the exit-code contract for a
+        // truncated-but-successful lane is decided by the exit aggregation.
+        if (crawlResult.truncated) lanes.crawl.truncated = crawlResult.truncated;
         findings += crawlResult.broken.length;
-        console.log(`crawl: ${crawlResult.pages} pages, ${crawlResult.broken.length} broken assets`);
+        console.log(`crawl: ${crawlResult.pages} pages, ${crawlResult.broken.length} broken assets${crawlResult.truncated ? ` — INCOMPLETE: ${crawlResult.truncated.reason}` : ''}`);
       }
     }
 
