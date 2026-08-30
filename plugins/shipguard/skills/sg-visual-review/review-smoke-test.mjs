@@ -13,7 +13,7 @@ import { request as httpRequest } from 'http';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_BUILD = join(SCRIPT_DIR, 'build-review.mjs');
@@ -144,6 +144,14 @@ function createFixture() {
     '    screenshot: root-index.png',
     '',
   ].join('\n'), 'utf8');
+  writeFileSync(join(root, 'pages', 'quarantined.yaml'), [
+    'name: Quarantined',
+    'description: Carries a status word this build does not know',
+    'steps:',
+    '  - action: open',
+    '    url: /quarantined',
+    '',
+  ].join('\n'), 'utf8');
   writeFileSync(join(root, 'manifests', 'recorded-login.yaml'), [
     'name: Recorded Login',
     'description: Smoke recorded manifest',
@@ -171,10 +179,15 @@ function createFixture() {
       selected_total: 1,
       full_suite_total: 99,
     },
-    summary: { total: 2, pass: 1, fail: 1, error: 0, stale: 0, skipped: 0, duration_ms: 1200 },
+    // `quarantined` is a bucket this build has never heard of, and it must
+    // survive alongside the five it knows.
+    summary: { total: 3, pass: 1, fail: 1, error: 0, stale: 0, skipped: 0, quarantined: 1, duration_ms: 1200 },
     tests: [
-      { id: 'pages/root-index', manifest: 'visual-tests/pages/root-index.yaml', name: 'Home', url: '/', status: 'PASS', duration_ms: 1200, screenshot: null, failure_reason: null },
-      { id: 'pages/broken', manifest: 'visual-tests/pages/broken.yaml', name: 'Broken', url: '/broken.html', status: 'FAIL', duration_ms: 900, screenshot: null, failure_reason: 'assert_text: not found', browser_errors: [{ level: 'error', text: 'Uncaught TypeError: x is not a function' }] },
+      { id: 'pages/root-index', manifest: 'visual-tests/pages/root-index.yaml', name: 'Home', url: '/', status: 'PASS', duration_ms: 1200, screenshot: null, failure_reason: null, browser_errors: [], llm_steps_pending: 0 },
+      // No pages/broken.yaml on disk: a producer result whose manifest is gone
+      // is still a result, and carries every additive field of report-formats.md.
+      { id: 'pages/broken', manifest: 'visual-tests/pages/broken.yaml', name: 'Broken', url: '/broken.html', status: 'FAIL', duration_ms: 900, screenshot: null, failure_reason: 'assert_text: not found', browser_errors: [{ level: 'error', text: 'Uncaught TypeError: x is not a function' }], screenshot_error: 'screenshot empty file', console_capture_error: 'agent-browser: console bridge crashed', manifest_error: 'unknown action "clik"' },
+      { id: 'pages/quarantined', manifest: 'visual-tests/pages/quarantined.yaml', name: 'Quarantined', url: '/quarantined', status: 'QUARANTINED', duration_ms: 10, screenshot: null, failure_reason: 'held for triage' },
     ],
   });
   writeJson(join(root, '_results', 'audit-results.json'), {
@@ -262,7 +275,9 @@ async function main() {
   let passed = false;
   try {
     root = createFixture();
-    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
+    const firstBuild = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+    assert(firstBuild.status === 0, `build-review.mjs exited ${firstBuild.status}: ${firstBuild.stderr}`);
     assert(existsSync(join(root, '_results', 'review.html')), 'review.html was not generated');
     assert(existsSync(join(root, '_results', 'visual-results.json')), 'visual-results.json was not generated');
     const rebuiltVisualResults = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
@@ -271,6 +286,52 @@ async function main() {
     assert(rebuiltVisualResults.scope?.full_suite_total === 99, 'visual-results full_suite_total was not preserved');
     assert(rebuiltVisualResults.scope?.uncovered_routes?.[0]?.reason === 'no_visual_manifest', 'visual-results uncovered routes were not preserved');
     assert(existsSync(join(root, '_results', 'persona-reports', 'demo', 'index.html')), 'persona report was not generated');
+
+    // ── The dashboard is a rendering layer: it adds, it does not destroy ──
+    // Everything below describes what the producer wrote and what must still be
+    // there once the page a human reads has been built on top of it.
+    const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const testById = (doc, id) => (doc.tests || []).find(t => t && t.id === id);
+    assert(rebuiltVisualResults.tests.length === producerDoc.tests.length,
+      `producer results were dropped: ${producerDoc.tests.length} in, ${rebuiltVisualResults.tests.length} out`);
+    assert(testById(rebuiltVisualResults, 'pages/broken'),
+      'a producer result whose manifest is no longer on disk was deleted');
+    const broken = testById(rebuiltVisualResults, 'pages/broken');
+    assert(broken.failure_reason === 'assert_text: not found',
+      `producer failure_reason was dropped (got ${JSON.stringify(broken.failure_reason)})`);
+    for (const field of ['screenshot_error', 'console_capture_error', 'manifest_error']) {
+      assert(eq(broken[field], testById(producerDoc, 'pages/broken')[field]),
+        `additive producer field ${field} was dropped`);
+    }
+    assert(eq(broken.browser_errors, testById(producerDoc, 'pages/broken').browser_errors),
+      'browser_errors was not preserved');
+    const home = testById(rebuiltVisualResults, 'pages/root-index');
+    assert(Array.isArray(home.browser_errors) && home.browser_errors.length === 0,
+      'an observed-empty browser_errors was dropped, turning "no errors seen" into "nothing said"');
+    assert(home.llm_steps_pending === 0, 'llm_steps_pending: 0 was dropped');
+    assert(home.manifest === 'visual-tests/pages/root-index.yaml',
+      `the producer's manifest path was rewritten (got ${JSON.stringify(home.manifest)})`);
+    assert(home.url === '/', `the producer's recorded url was rewritten (got ${JSON.stringify(home.url)})`);
+    // summary and scope describe the same run: recomputing one and preserving
+    // the other made them contradict each other.
+    assert(eq(rebuiltVisualResults.summary, producerDoc.summary),
+      `summary was recomputed instead of preserved (got ${JSON.stringify(rebuiltVisualResults.summary)})`);
+    assert(eq(rebuiltVisualResults.scope, producerDoc.scope), 'scope was rewritten instead of preserved');
+    assert(rebuiltVisualResults.generated_at, 'generated_at (the one additive field) is missing');
+
+    // ── An unknown status word is a contract fault, not selector drift ──
+    const quarantined = testById(rebuiltVisualResults, 'pages/quarantined');
+    assert(quarantined.status === 'QUARANTINED',
+      `an unknown status was coerced instead of preserved (got ${JSON.stringify(quarantined.status)})`);
+    assert(/WARN: status "QUARANTINED"/.test(firstBuild.stderr),
+      `the unknown status was accepted silently (stderr: ${JSON.stringify(firstBuild.stderr)})`);
+    assert(!/"status": "STALE"/.test(JSON.stringify(quarantined)), 'unknown status was filed as STALE');
+    const firstHtml = readFileSync(join(root, '_results', 'review.html'), 'utf8');
+    assert(/"name":\s*"Quarantined"[\s\S]{0,600}"status":\s*"ERROR"/.test(firstHtml),
+      'the unknown-status test is not rendered in a bucket a human will look at');
+    // The producer's measured reason must reach the page, not only the file.
+    assert(firstHtml.includes('assert_text: not found') || firstHtml.includes('held for triage'),
+      'no producer failure_reason reached review.html');
 
     // ── Unified findings (evidence-first) ──
     assert(existsSync(join(root, '_results', 'findings.json')), 'findings.json was not generated');
@@ -322,6 +383,48 @@ async function main() {
     ].join('\n'), 'utf8');
     execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
     assert(existsSync(join(root, '_results', 'review.html')), 'config v2: builder failed on app+profiles blocks');
+
+    // ── A scoped run: summary.total and scope.selected_total count the same
+    // thing, so the build must not move one of them. It used to recompute the
+    // summary over every manifest on disk and leave the scope alone. ──
+    const scopedDoc = {
+      schema_version: '1.0',
+      run_id: 'visual-scoped-1',
+      timestamp: '2026-06-29T13:30:00Z',
+      base_url: 'http://127.0.0.1:8001',
+      scope: { type: 'scope', value: 'pages/root-index', selected_total: 1, full_suite_total: 2 },
+      summary: { total: 1, pass: 1, fail: 0, error: 0, stale: 0, skipped: 0, duration_ms: 5 },
+      tests: [{ id: 'pages/root-index', manifest: 'visual-tests/pages/root-index.yaml', name: 'Home', url: '/', status: 'PASS', duration_ms: 5, screenshot: null, failure_reason: null }],
+    };
+    writeJson(join(root, '_results', 'visual-results.json'), scopedDoc);
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    const scoped = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
+    assert(scoped.summary.total === scoped.scope.selected_total,
+      `scoped run: summary.total ${scoped.summary.total} contradicts scope.selected_total ${scoped.scope.selected_total}`);
+    assert(scoped.tests.length === 1,
+      `scoped run: ${scoped.tests.length} tests written for a 1-test run — manifests that never ran were invented into it`);
+    assert(scoped.summary.stale === 0, 'scoped run: unrun manifests were counted as STALE results of this run');
+
+    // ── An unparseable producer document is the only evidence of its own
+    // fault. Report it, do not overwrite it. ──
+    writeFileSync(join(root, '_results', 'visual-results.json'), '{ this is not json', 'utf8');
+    const onInvalid = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+    assert(onInvalid.status === 0, 'builder did not survive an invalid visual-results.json');
+    assert(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8') === '{ this is not json',
+      'an unparseable visual-results.json was overwritten — the evidence of the fault is gone');
+    assert(/left untouched/.test(onInvalid.stderr), 'the untouched file was not reported');
+    assert(existsSync(join(root, '_results', 'review.html')), 'review.html was not built from the fallback');
+
+    // ── Bootstrap (anti-over-correction): with no producer document at all,
+    // the build is the producer of last resort and must still write one. ──
+    rmSync(join(root, '_results', 'visual-results.json'));
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    assert(existsSync(join(root, '_results', 'visual-results.json')),
+      'bootstrap: no canonical contract was written for a suite that has never run');
+    const bootstrapped = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
+    assert(bootstrapped.tests.length === 2 && bootstrapped.tests.every(t => t.status === 'STALE'),
+      'bootstrap: manifests on disk were not written as STALE');
+    assert(bootstrapped.summary.total === 2 && bootstrapped.summary.stale === 2, 'bootstrap: summary not derived');
 
     port = options.port || DEFAULT_PORT_BASE + Math.floor(Math.random() * 10000);
     console.error(`review smoke test: fixture=${root} port=${port}`);

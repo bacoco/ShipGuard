@@ -76,11 +76,11 @@ It owns everything that does NOT need a model:
 
 - **`init`** — scaffolds `visual-tests/_config.yaml` (config v2) and `.gitignore` guard-rails (`visual-tests/_results/`, `.DS_Store`; `_regressions.yaml` stays committed by default as cross-run regression memory).
 - **`serve` / `stop [--all]` / `status`** — app-under-test lifecycle: free-port allocation, `app.start` with `{port}` substitution, healthcheck polling, pidfile `_results/.app.pid`, clean teardown (`--all` also stops the review server).
-- **`crawl`** — static link/asset checker: BFS over same-origin pages, HTTP-checks every `src`/`href`/`srcset`/`poster`, writes `crawl-results.json`. Pure **measured** evidence.
+- **`crawl [--max-pages=N]`** — static link/asset checker: BFS over same-origin pages, HTTP-checks every `src`/`href`/`srcset`/`poster`, writes `crawl-results.json`. Pure **measured** evidence. A page that cannot be fetched is a finding (`status: 0`, `tag: "page"`), the same rule the asset half already applies. The BFS is bounded (`--max-pages`, else `crawl.max_pages` in `_config.yaml`, else 200); reaching the bound is **declared**, never a failure — the artifact and the `run.json` crawl lane gain an optional `truncated: {reason, max_pages, queued_unvisited}` record, absent when the crawl reached its natural end.
 - **`run [--profile=NAME] [--scope=STR] [--serve] [--no-crawl]`** — the mechanical recette: serve if needed, execute manifests' mechanical steps via agent-browser (`open`/`click`/`fill`/`assert_*`/`screenshot` with byte validation), per-profile checks (`page-load`, `local-assets`, `browser-errors`, `screenshots`), all artifacts in one pass, then the dashboard. `llm-check`/`llm-wait` steps are **never faked** — they are counted per test (`llm_steps_pending`) and declared as a `needs-agent` lane in `run.json` for the agent lanes to complete.
 - **`review [--serve] [--port=N]`** — builds/serves the dashboard (delegates to `build-review.mjs`, auto-copying it from the plugin when missing).
 
-**Exit codes (stable contract):** `0` clean · `1` findings · `2` infrastructure error · `3` invalid configuration. An unreachable app or missing agent-browser is infra (2), never a product finding (1).
+**Exit codes (stable contract)** — each code is an instruction, and the axis between `2` and `3` is whether re-running unchanged could help: `0` clean (nothing to look at) · `1` findings (look at your product) · `2` infrastructure (retry — the tooling failed and this run's evidence cannot be trusted) · `3` declaration (fix a declared file — the run could not be assembled or completed as declared: bad config, unknown profile/check, an unparseable manifest or unknown action, a scope that selects nothing, a crawl bounded below the site, or a run in which no lane evaluated anything). Precedence `2` > `3` > `1` > `0`. An unreachable app or missing agent-browser is infra (2), never a product finding (1); *incomplete is never clean*.
 
 **Config v2** (`_config.yaml`, backward compatible — all new keys optional): `app: {type, root, start, healthcheck, startup_timeout_ms}` and `profiles: {<name>: {scope, checks}}`.
 
@@ -446,7 +446,7 @@ Generates a self-contained HTML dashboard from test results, audit data, and scr
 
 **Inputs:**
 1. All YAML test manifests from `visual-tests/` (walks category directories, skips `_`-prefixed and `deprecated` manifests)
-2. `visual-tests/_results/visual-results.json` -- canonical machine-readable run output (PASS/FAIL per test); `report.md` is parsed as the human-readable summary fallback
+2. `visual-tests/_results/visual-results.json` -- canonical machine-readable run output (PASS/FAIL per test); `report.md` is parsed as the human-readable summary fallback. The builder is a rendering layer over it: a parseable document is preserved as the producer wrote it and only enriched (`generated_at`, a screenshot found on disk), an unparseable one is left untouched, and only a missing one is synthesized from the manifests
 3. `visual-tests/_regressions.yaml` -- failure reasons and regression tracking
 4. `visual-tests/_results/screenshots/` -- matched to tests by slug or manifest `screenshot` field
 5. `visual-tests/_results/audit-results.json` -- code audit data (optional, enables Code Audit tab)
