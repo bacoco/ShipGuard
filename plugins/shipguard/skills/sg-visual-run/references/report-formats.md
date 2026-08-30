@@ -85,13 +85,16 @@ Allowed test statuses: `PASS`, `FAIL`, `ERROR`, `STALE`, `SKIPPED`.
 
 Additive optional per-test fields (producers may emit them; consumers must tolerate their absence):
 - `browser_errors`: `[{"level": "error"|"warn", "text": "..."}]` — normalized console/pageerror entries captured after the test's steps. **Measured** evidence; feeds `findings.json`.
-- `llm_steps_pending`: integer — number of `llm-check`/`llm-wait` steps a mechanical (`shipguard run`) execution could not evaluate. `0` or absent after a full agent run; non-zero values are declared as a `needs-agent` lane in `run.json`.
+- `llm_steps_pending`: integer — number of steps a mechanical (`shipguard run`) execution could not evaluate because the agent lane owns them: `llm-check`, `llm-wait`, and `include`. `0` or absent after a full agent run; non-zero values are declared as a `needs-agent` lane in `run.json`.
+- `manifest_error`: string — a step named an action that is in neither the mechanical set nor the agent-owned set (typically a typo, or an action from a newer grammar). The step never ran, so the test carries no verdict: its status is `ERROR` and this field says the fault is in the manifest, not in the browser and not in the product. Absent from every test whose actions are all declared.
 - `screenshot_error`: string — the capture for this test was missing or 0 bytes. Emitted whatever the test's status, so a tooling failure is never swallowed by a product verdict that was reached first. Absent when the capture was valid.
 - `console_capture_error`: string — the `agent-browser errors`/`console` bridge failed, so `browser_errors` is an empty *unobserved* list, not an observed absence of errors. Absent when the capture succeeded.
 
 For union runs (two or more bridge flags), `scope.type` is `"union"` and `scope.source` lists every consumed file (see invocation-modes.md, Union Mode).
 
 For scoped runs, `summary.total` is the selected run total. Preserve the global suite size in `scope.full_suite_total`, and preserve routes that were not executable as `scope.uncovered_routes` rather than dropping them from the machine contract.
+
+`scope.uncovered_routes` also carries manifests that were declared on disk and could not be loaded — a manifest that does not parse, or that parses without a `steps` list. Those entries name the manifest file in `route` (e.g. `visual-tests/pages/login.yaml`), use `reason: "manifest_not_parseable"` or `"manifest_unreadable"`, and may carry an additive `detail` string. They are independent of the run's scope: a manifest that never parsed has no readable path-or-url pair to compare a scope against, so the loss is declared in every run. `scope.full_suite_total` counts them, because a count that silently omitted them would inherit exactly the blindness it exists to expose. A `deprecated: true` manifest is **not** among them: it is retired on purpose, so it is excluded from both counts and reported nowhere.
 
 ---
 

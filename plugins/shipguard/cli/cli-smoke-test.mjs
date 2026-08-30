@@ -3,12 +3,12 @@
 import {
   yamlParse, EXIT, validateConfig, resolveProfile, KNOWN_CHECKS,
   tolerantJson, normalizeConsole, validateScreenshot, matchSnapshotRef, buildRunJson,
-  loadManifests, MECHANICAL_ACTIONS,
+  loadManifests, MECHANICAL_ACTIONS, AGENT_ACTIONS, executeManifest,
 } from './shipguard.mjs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync } from 'fs';
+import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync, chmodSync } from 'fs';
 import { tmpdir } from 'os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -181,10 +181,72 @@ wf(join(projR, 'visual-tests', 'site-inaccessible', 'index.yaml'),
 wf(join(projR, 'visual-tests', 'site-accessible', 'old.yaml'), 'name: "Old"\ndeprecated: true\nsteps:\n  - action: open\n    url: "{base_url}/x.html"\n');
 wf(join(projR, 'visual-tests', '_shared', 'login.yaml'), 'name: "login"\nsteps:\n  - action: open\n    url: "{base_url}/login"\n');
 
-assert(loadManifests(projR, 'all').length === 2, 'manifests: all excludes _shared and deprecated');
-const scoped = loadManifests(projR, 'site-accessible');
+assert(loadManifests(projR, 'all').entries.length === 2, 'manifests: all excludes _shared and deprecated');
+const scoped = loadManifests(projR, 'site-accessible').entries;
 assert(scoped.length === 1 && scoped[0].id === 'site-accessible/index', 'manifests: scope filter');
 assert(MECHANICAL_ACTIONS.includes('open') && !MECHANICAL_ACTIONS.includes('llm-check'), 'mechanical actions list');
+assert(AGENT_ACTIONS.includes('llm-check') && AGENT_ACTIONS.includes('include')
+  && !AGENT_ACTIONS.some((a) => MECHANICAL_ACTIONS.includes(a)), 'agent actions list: declared, and disjoint from mechanical');
+// A healthy suite reports no lost coverage — deprecated is excluded silently.
+assert(loadManifests(projR, 'all').unloadable.length === 0, 'manifests: a deprecated manifest is not reported as lost coverage');
+
+// ── loadManifests: a manifest that cannot be loaded is reported, not dropped ──
+const projU = mkdtempSync(join(tmpdir(), 'sg-unloadable-'));
+mkdirSync(join(projU, 'visual-tests', 'pages'), { recursive: true });
+wf(join(projU, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:1"\n');
+wf(join(projU, 'visual-tests', 'pages', 'ok.yaml'),
+  'name: "Ok"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n');
+// leading "---" (the idiomatic YAML document marker) — yamlParse returns {}
+wf(join(projU, 'visual-tests', 'pages', 'login.yaml'),
+  '---\nname: "Login"\nsteps:\n  - action: open\n    url: "{base_url}/login.html"\n');
+wf(join(projU, 'visual-tests', 'pages', 'old.yaml'), 'name: "Old"\ndeprecated: true\nsteps: []\n');
+const loadedU = loadManifests(projU, 'all');
+assert(loadedU.entries.length === 1 && loadedU.entries[0].id === 'pages/ok', 'manifests: unloadable stays out of the suite');
+assert(loadedU.unloadable.length === 1 && loadedU.unloadable[0].path === 'pages/login.yaml'
+  && loadedU.unloadable[0].reason === 'manifest_not_parseable', 'manifests: unloadable is reported with its path and reason');
+// The scope filter runs after the parse gate, so a lost manifest is declared
+// whatever the scope — it has no readable path/url pair to filter it on.
+assert(loadManifests(projU, 'pages/ok').unloadable.length === 1, 'manifests: unloadable is scope-independent');
+// End to end, through a live app and a stand-in browser, so the run reaches the
+// visual lane instead of short-circuiting on an infra precondition (an
+// unreachable base_url or a missing browser would make this pass for the wrong
+// reason). Same app.start idiom as appserver-smoke-test.mjs.
+const APP_U = `node -e "require('http').createServer((q,s)=>{s.end('<html>Ok</html>')}).listen({port},'127.0.0.1')"`;
+wf(join(projU, 'visual-tests', '_config.yaml'),
+  `version: 2\napp:\n  start: "${APP_U.replace(/"/g, '\\"')}"\n  healthcheck: "/"\n  startup_timeout_ms: 15000\n`);
+const FAKE_BIN = join(projU, 'fake-agent-browser');
+wf(FAKE_BIN, '#!/bin/sh\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n  screenshot) printf \'PNGFAKE\' > "$2" ;;\n  get) [ "$2" = url ] && printf \'%s\\n\' \'http://127.0.0.1/ok.html\' ;;\nesac\nexit 0\n');
+chmodSync(FAKE_BIN, 0o755);
+let codeU = 0;
+try {
+  execFileSync('node', [CLI, 'run', '--no-crawl'],
+    { cwd: projU, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, SHIPGUARD_AGENT_BROWSER: FAKE_BIN } });
+} catch (e) { codeU = e.status; }
+const runU = JSON.parse(rf(join(projU, 'visual-tests', '_results', 'run.json'), 'utf8'));
+const visU = JSON.parse(rf(join(projU, 'visual-tests', '_results', 'visual-results.json'), 'utf8'));
+assert(visU.summary.pass === 1 && visU.summary.error === 0,
+  'run: the loadable manifest really ran (the run did not stop on an infra precondition)');
+assert(codeU !== EXIT.CLEAN, 'run: a suite with an unloadable manifest never exits clean');
+assert(runU.lanes.visual.status === 'error' && /pages\/login\.yaml/.test(runU.lanes.visual.reason),
+  'run: an unloadable manifest makes the visual lane an errored lane that names it');
+assert(visU.scope.uncovered_routes.length === 1
+  && visU.scope.uncovered_routes[0].route === 'visual-tests/pages/login.yaml'
+  && visU.scope.uncovered_routes[0].status === 'uncovered',
+  'run: the lost manifest is preserved as an uncovered route');
+assert(visU.scope.full_suite_total === 2 && visU.scope.selected_total === 1,
+  'run: full_suite_total counts the manifest that was meant to run, not only the one that could');
+
+// ── executeManifest: an unknown action is an invalid manifest, never a PASS ──
+const invalid = await executeManifest(
+  { id: 'pages/typo', url: '', manifest: { name: 'Typo', steps: [{ action: 'assert_txt', text: 'Home' }] } },
+  { baseUrl: 'http://127.0.0.1:1', config: {}, checks: [], screenshotsDir: join(projU, 'visual-tests', '_results') });
+assert(invalid.status === 'ERROR' && /unknown action "assert_txt"/.test(invalid.manifest_error || ''),
+  'steps: an unknown action stops the test and names itself in manifest_error');
+const agentOnly = await executeManifest(
+  { id: 'pages/inc', url: '', manifest: { name: 'Inc', steps: [{ action: 'include', path: '_shared/login.yaml' }] } },
+  { baseUrl: 'http://127.0.0.1:1', config: {}, checks: [], screenshotsDir: join(projU, 'visual-tests', '_results') });
+assert(!agentOnly.manifest_error && agentOnly.llm_steps_pending === 1,
+  'steps: a declared agent-owned action is pending agent work, not an invalid manifest');
 
 // ── run without agent-browser -> exit 2 (infra), run.json declares it ──
 // SHIPGUARD_AGENT_BROWSER points at a nonexistent binary (agent-browser shares
