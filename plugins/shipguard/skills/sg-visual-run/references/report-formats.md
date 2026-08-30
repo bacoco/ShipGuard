@@ -86,6 +86,8 @@ Allowed test statuses: `PASS`, `FAIL`, `ERROR`, `STALE`, `SKIPPED`.
 Additive optional per-test fields (producers may emit them; consumers must tolerate their absence):
 - `browser_errors`: `[{"level": "error"|"warn", "text": "..."}]` — normalized console/pageerror entries captured after the test's steps. **Measured** evidence; feeds `findings.json`.
 - `llm_steps_pending`: integer — number of `llm-check`/`llm-wait` steps a mechanical (`shipguard run`) execution could not evaluate. `0` or absent after a full agent run; non-zero values are declared as a `needs-agent` lane in `run.json`.
+- `screenshot_error`: string — the capture for this test was missing or 0 bytes. Emitted whatever the test's status, so a tooling failure is never swallowed by a product verdict that was reached first. Absent when the capture was valid.
+- `console_capture_error`: string — the `agent-browser errors`/`console` bridge failed, so `browser_errors` is an empty *unobserved* list, not an observed absence of errors. Absent when the capture succeeded.
 
 For union runs (two or more bridge flags), `scope.type` is `"union"` and `scope.source` lists every consumed file (see invocation-modes.md, Union Mode).
 

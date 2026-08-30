@@ -633,12 +633,25 @@ function interpolate(value, ctx) {
     .replace(/\{data\.(\w+)\}/g, (_, k) => (ctx.data && ctx.data[k] != null ? String(ctx.data[k]) : ''));
 }
 
+// Per-step cap: a manifest may not park the recette for longer than this.
+const WAIT_CAP_MS = 30000;
+
+// A failed step reports WHY it failed, not only that it failed. Every
+// {ok:false} return carries the marker `kind`, and executeManifest maps it to
+// one of the declared statuses:
+//   kind: 'tool'   the browser tooling itself failed (crash, non-zero exit,
+//                  unreadable capture) — no evidence was collected  -> ERROR
+//   kind: 'stale'  the browser answered, but a declared selector no longer
+//                  resolves in the accessibility tree (UI drift)    -> STALE
+//   (absent)       the browser answered and the product did not satisfy what
+//                  the step declared                        -> FAIL / ERROR
+// Absence of evidence is never reported as evidence of absence.
 async function runStep(step, ctx) {
   const action = step.action;
   switch (action) {
     case 'open': {
       const r = browser(['open', interpolate(step.url, ctx)]);
-      if (!r.ok) return { ok: false, reason: `open failed: ${r.stderr || r.stdout}`.trim() };
+      if (!r.ok) return { ok: false, kind: 'tool', reason: `open failed: ${r.stderr || r.stdout}`.trim() };
       return { ok: true };
     }
     case 'click':
@@ -646,42 +659,51 @@ async function runStep(step, ctx) {
     case 'select':
     case 'upload': {
       const snap = browser(['snapshot', '-i']);
-      if (!snap.ok) return { ok: false, reason: `snapshot failed: ${snap.stderr}` };
+      if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr}` };
       const ref = matchSnapshotRef(snap.stdout, interpolate(step.target, ctx));
-      if (!ref) return { ok: false, reason: `target not found in accessibility tree: "${step.target}"` };
+      if (!ref) return { ok: false, kind: 'stale', reason: `target not found in accessibility tree: "${step.target}"` };
       const extra = action === 'fill' ? [interpolate(step.value ?? step.text ?? '', ctx)]
         : action === 'select' ? [interpolate(step.option ?? step.value ?? '', ctx)]
         : action === 'upload' ? [interpolate(step.file ?? '', ctx)]
         : [];
       const r = browser([action, ref, ...extra]);
-      return r.ok ? { ok: true } : { ok: false, reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
+      return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
     }
     case 'press': {
       const r = browser(['press', step.key || interpolate(step.target ?? '', ctx)]);
-      return r.ok ? { ok: true } : { ok: false, reason: `press failed: ${r.stderr}` };
+      return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `press failed: ${r.stderr}` };
     }
     case 'wait': {
-      const ms = /^\d+s$/.test(String(step.duration)) ? parseInt(step.duration) * 1000 : Number(step.duration) || 1000;
-      await new Promise((r) => setTimeout(r, Math.min(ms, 30000)));
+      // A declared duration is honoured or reported — never silently replaced
+      // by a default or clipped to the cap. An absent one keeps the 1s default.
+      const raw = step.duration ?? step.value;
+      if (raw == null) { await new Promise((r) => setTimeout(r, 1000)); return { ok: true }; }
+      const m = /^(\d+)\s*(ms|s)?$/.exec(String(raw).trim());
+      if (!m) return { ok: false, reason: `unsupported duration ${JSON.stringify(String(raw))} (use "1500ms", "2s", or a number of ms)` };
+      const ms = m[2] === 's' ? Number(m[1]) * 1000 : Number(m[1]);
+      if (ms > WAIT_CAP_MS) return { ok: false, reason: `duration ${raw} exceeds the ${WAIT_CAP_MS / 1000}s per-step cap` };
+      await new Promise((r) => setTimeout(r, ms));
       return { ok: true };
     }
     case 'assert_url': {
       const r = browser(['get', 'url']);
+      if (!r.ok) return { ok: false, kind: 'tool', reason: `get url failed: ${r.stderr || r.stdout}`.trim() };
       const expected = interpolate(step.url ?? step.value ?? '', ctx);
-      return r.ok && r.stdout.trim().includes(expected.replace(/\/$/, ''))
+      return r.stdout.trim().includes(expected.replace(/\/$/, ''))
         ? { ok: true } : { ok: false, reason: `url is "${r.stdout.trim()}", expected to include "${expected}"` };
     }
     case 'assert_text': {
       const snap = browser(['snapshot']);
+      if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr || snap.stdout}`.trim() };
       const expected = interpolate(step.text ?? step.value ?? '', ctx);
-      return snap.ok && snap.stdout.toLowerCase().includes(expected.toLowerCase())
+      return snap.stdout.toLowerCase().includes(expected.toLowerCase())
         ? { ok: true } : { ok: false, reason: `text not found on page: "${expected}"` };
     }
     case 'screenshot': {
       const file = join(ctx.screenshotsDir, step.screenshot || step.file || `${ctx.slug}-step.png`);
       const r = browser(['screenshot', file]);
       const v = validateScreenshot(file);
-      if (!r.ok || !v.ok) return { ok: false, reason: `screenshot invalid (${v.reason || r.stderr})` };
+      if (!r.ok || !v.ok) return { ok: false, kind: 'tool', reason: `screenshot invalid (${v.reason || r.stderr})` };
       ctx.lastScreenshot = file;
       return { ok: true };
     }
@@ -713,7 +735,8 @@ export async function executeManifest(entry, ctx) {
     if (!MECHANICAL_ACTIONS.includes(step.action)) continue;
     const r = await runStep(step, local);
     if (!r.ok) {
-      result.status = step.action.startsWith('assert') ? 'FAIL' : 'ERROR';
+      result.status = r.kind === 'stale' ? 'STALE'
+        : (r.kind === 'tool' || !step.action.startsWith('assert')) ? 'ERROR' : 'FAIL';
       result.failure_reason = `${step.action}: ${r.reason}`;
       break;
     }
@@ -725,7 +748,12 @@ export async function executeManifest(entry, ctx) {
       ...normalizeConsole(errs.ok ? errs.stdout : ''),
       ...normalizeConsole(cons.ok ? cons.stdout : ''),
     ];
-    if (result.status === 'PASS' && result.browser_errors.some((e) => e.level === 'error')) {
+    if (!errs.ok || !cons.ok) {
+      // The bridge collected nothing: "no errors" was never observed, so it
+      // must not be concluded. Additive field, so an existing verdict stands.
+      result.console_capture_error = `browser error capture failed: ${((errs.ok ? cons : errs).stderr || '').trim()}`;
+      if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = result.console_capture_error; }
+    } else if (result.status === 'PASS' && result.browser_errors.some((e) => e.level === 'error')) {
       result.status = 'FAIL';
       result.failure_reason = `browser errors: ${result.browser_errors.filter((e) => e.level === 'error').length}`;
     }
@@ -735,7 +763,12 @@ export async function executeManifest(entry, ctx) {
     if (!local.lastScreenshot) browser(['screenshot', file, '--full']);
     const v = validateScreenshot(file);
     if (v.ok) result.screenshot = `screenshots/${file.split(sep).pop()}`;
-    else if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = `screenshot ${v.reason}`; }
+    else {
+      // Record the tooling failure even when a verdict was already reached —
+      // additive, so a product FAIL keeps its own reason and its own status.
+      result.screenshot_error = `screenshot ${v.reason}`;
+      if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = result.screenshot_error; }
+    }
   }
   result.duration_ms = Date.now() - t0;
   return result;
@@ -767,7 +800,7 @@ function writeReportMd(resultsDir, summary, tests, crawlResult) {
   const lines = [
     `# Visual Report — ${new Date().toISOString().replace('T', ' ').slice(0, 16)}`,
     '',
-    `Tests: ${summary.total} run, ${summary.pass} pass, ${summary.fail} fail`,
+    `Tests: ${summary.total} run, ${summary.pass} pass, ${summary.fail} fail, ${summary.stale} stale, ${summary.error} error, ${summary.skipped} skipped`,
     '',
     '| test | status |',
     '|---|---|',
@@ -874,7 +907,7 @@ async function cmdRun(args) {
         const t = await executeManifest(entry, ctx);
         tests.push(t);
         llmPending += t.llm_steps_pending;
-        findings += (t.status === 'FAIL' || t.status === 'ERROR') ? 1 : 0;
+        findings += (t.status === 'FAIL' || t.status === 'STALE') ? 1 : 0;
         console.log(`[shipguard run] ${i + 1}/${manifests.length} ${t.id} — ${t.status}${t.llm_steps_pending ? ` (${t.llm_steps_pending} llm steps pending)` : ''}`);
       }
       const summary = {
@@ -882,7 +915,7 @@ async function cmdRun(args) {
         pass: tests.filter((t) => t.status === 'PASS').length,
         fail: tests.filter((t) => t.status === 'FAIL').length,
         error: tests.filter((t) => t.status === 'ERROR').length,
-        stale: 0,
+        stale: tests.filter((t) => t.status === 'STALE').length,
         skipped: 0,
         duration_ms: tests.reduce((s, t) => s + t.duration_ms, 0),
       };
@@ -895,7 +928,11 @@ async function cmdRun(args) {
         summary,
         tests,
       }, null, 2));
-      lanes.visual = { status: 'ran', results: 'visual-results.json' };
+      // A test that errored collected no evidence — the recette is incomplete,
+      // which is an infra outcome, never a product finding.
+      lanes.visual = summary.error
+        ? { status: 'error', reason: `${summary.error} test(s) errored (tooling)`, results: 'visual-results.json' }
+        : { status: 'ran', results: 'visual-results.json' };
       if (llmPending > 0) lanes.llm_checks = { status: 'needs-agent', reason: `${llmPending} llm-check/llm-wait steps require an agent lane (/sg-visual-run)`, count: llmPending };
       writeReportMd(resultsDir, summary, tests, crawlResult);
     }
