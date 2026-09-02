@@ -2316,7 +2316,7 @@ function renderAuditComplete(data) {
   topBugsTbody.textContent = '';
   var sevOrder = {critical:0, high:1, medium:2, low:3};
   var sortedBugs = (data.bugs || []).slice().sort(function(a, b) {
-    return (sevOrder[(a.severity||'low').toLowerCase()] || 3) - (sevOrder[(b.severity||'low').toLowerCase()] || 3);
+    return (sevOrder[(a.severity||'low').toLowerCase()] ?? 3) - (sevOrder[(b.severity||'low').toLowerCase()] ?? 3);
   });
   var top5 = sortedBugs.slice(0, 5);
   if (top5.length) {
@@ -2573,7 +2573,7 @@ function renderBugTable(data) {
   }
 
   bugs.slice().sort(function(a, b) {
-    return (sevOrder[(a.severity||'').toLowerCase()] || 9) - (sevOrder[(b.severity||'').toLowerCase()] || 9);
+    return (sevOrder[(a.severity||'').toLowerCase()] ?? 9) - (sevOrder[(b.severity||'').toLowerCase()] ?? 9);
   }).forEach(function(bug) {
     btb.appendChild(makeBugRow(bug));
   });
