@@ -55,6 +55,12 @@ function yamlParse(text) {
       }
       if (val === 'true') { result[key] = true; currentKey = key; continue; }
       if (val === 'false') { result[key] = false; currentKey = key; continue; }
+      // Without this, `base_url: null` became the 4-character string "null",
+      // which is truthy: `config.base_url || DEFAULT` then kept it and every
+      // test URL rendered as `null/login`. shipguard.mjs's own parser has
+      // always mapped null/~ to null, so two parsers read one config and
+      // disagreed about it.
+      if (val === 'null' || val === '~') { result[key] = null; currentKey = key; continue; }
       if (/^-?\d+(\.\d+)?$/.test(val)) { result[key] = parseFloat(val); currentKey = key; continue; }
       result[key] = val;
       currentKey = key;
@@ -713,6 +719,16 @@ function normalizeShot(value) {
   return null;
 }
 
+// `generated_at` comes from an artifact, and `new Date(x).toISOString()` throws
+// RangeError on anything unparseable. This ran two call frames outside the
+// try/catch that skips a malformed change report, so one bad timestamp aborted
+// the whole build AFTER review.html and the report index were already written,
+// leaving persona-reports/ half-built and the dashboard silently stale.
+function isoDay(value) {
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? 'unknown' : at.toISOString().slice(0, 10);
+}
+
 function collectChangeReports() {
   if (!existsSync(CHANGE_REPORTS_DIR)) return [];
   const reports = [];
@@ -821,7 +837,7 @@ function renderAudienceReport(report, audience) {
     <div class="metric"><strong>${report.changes.length}</strong><span>changes to review</span></div>
     <div class="metric"><strong>${escapeHtml(report.status)}</strong><span>report status</span></div>
     <div class="metric"><strong>${escapeHtml(report.route || 'n/a')}</strong><span>route / flow</span></div>
-    <div class="metric"><strong>${escapeHtml(new Date(report.generatedAt).toISOString().slice(0, 10))}</strong><span>generated</span></div>
+    <div class="metric"><strong>${escapeHtml(isoDay(report.generatedAt))}</strong><span>generated</span></div>
   </div>
 </header>
 <main>
@@ -1146,7 +1162,13 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
     const surprise = actions.some((a) => a && a.surprise);
     findings.push({
       title: `${unit.kind || 'unit'} ${unit.ref || unit.id || ''}: ${unit.verdict || 'changed'}`.trim(),
-      severity: unit.verdict === 'new-error' || surprise ? 'high' : 'medium',
+      // The producer already grades these. Deriving severity from the verdict
+      // instead discarded that: on a real run, 30 units declared
+      // ('behavior-changed', 'high') were emitted as 'medium' and buried in the
+      // middle band, where a reviewer triaging by severity skips them.
+      severity: unit.impacted_backend && unit.impacted_backend.severity
+        ? unit.impacted_backend.severity
+        : (unit.verdict === 'new-error' || surprise ? 'high' : 'medium'),
       evidence: measured ? 'measured' : 'reasoned',
       source: 'process',
       route: null,

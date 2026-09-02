@@ -225,7 +225,7 @@ function assertInstructionContract() {
   const codexManifest = JSON.parse(
     readFileSync(join(repoRoot, 'plugins', 'shipguard', '.codex-plugin', 'plugin.json'), 'utf8'),
   );
-  assert.equal(claudeManifest.version, '2.9.0');
+  assert.equal(claudeManifest.version, '2.9.1');
   assert.equal(codexManifest.version, claudeManifest.version);
 }
 
