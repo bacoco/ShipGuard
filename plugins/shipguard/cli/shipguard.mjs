@@ -61,9 +61,25 @@ export function yamlParse(text) {
     v = String(v).trim();
     if (v === '') return null;
     const q = v[0];
-    if ((q === '"' || q === "'") && v.endsWith(q) && v.length >= 2) {
-      const inner = v.slice(1, -1);
-      return q === '"' ? inner.replace(/\\(["\\])/g, '$1') : inner;
+    if (q === '"' || q === "'") {
+      // Find the CLOSING quote, then require only blank or a comment after it.
+      // Requiring the value to END with the quote missed `"http://x"  # note`,
+      // which then fell through to comment stripping and kept its quotes, so
+      // new URL() threw on a perfectly ordinary config line. Stripping comments
+      // first is the opposite error: it cuts inside the quotes, turning
+      // `password: "p #ss" # note` into `"p` and typing a wrong password.
+      let i = 1;
+      for (; i < v.length; i++) {
+        if (q === '"' && v[i] === '\\') { i++; continue; }
+        if (v[i] === q) break;
+      }
+      if (i < v.length) {
+        const tail = v.slice(i + 1).trim();
+        if (tail === '' || tail.startsWith('#')) {
+          const inner = v.slice(1, i);
+          return q === '"' ? inner.replace(/\\(["\\])/g, '$1') : inner;
+        }
+      }
     }
     const hash = v.search(/\s#/);
     if (hash !== -1) v = v.slice(0, hash).trim();
@@ -133,7 +149,15 @@ export function yamlParse(text) {
         }
         while (pos < lines.length && indentOf(lines[pos]) === itemIndent
                && !lines[pos].trim().startsWith('- ')) {
+          const before = pos;
           Object.assign(obj, parseMap(itemIndent));
+          // parseMap stops at a line it cannot read as `key: value` and leaves
+          // `pos` on it, so an outer parser can claim it. Here there is no outer
+          // parser, and the same line came back forever: one manifest line
+          // without a colon spun `shipguard run` at 100% CPU with no output and
+          // no timeout to end it. Skip the line the way parseMap already skips a
+          // stray deeper one, rather than re-offering it.
+          if (pos === before) { pos++; }
         }
         arr.push(obj);
       } else {
@@ -284,7 +308,15 @@ function readAppPid(root) {
   const f = APP_PID_FILE(root);
   if (!existsSync(f)) return null;
   const [pid, port, baseUrl] = readFileSync(f, 'utf8').trim().split('\n');
-  return { pid: Number(pid), port: Number(port), baseUrl: baseUrl || null, file: f };
+  // An empty or truncated pidfile — a crash between mkdir and write — makes
+  // Number('') === 0. pidAlive(0) is TRUE because process.kill(0, 0) probes the
+  // caller's own process group, and stopApp then runs process.kill(-0), which
+  // is process.kill(0): SIGTERM to every process in that group, the user's
+  // shell included, reported as a clean stop because both kills sit in bare
+  // catches. Only a positive integer is a PID.
+  const parsed = Number(pid);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return { pid: parsed, port: Number(port), baseUrl: baseUrl || null, file: f };
 }
 
 export async function startApp(config, projectRoot) {
@@ -323,7 +355,17 @@ export async function startApp(config, projectRoot) {
 
 export function stopApp(projectRoot) {
   const info = readAppPid(projectRoot);
-  if (!info) return { stopped: false, message: 'no app server pidfile — nothing to stop' };
+  if (!info) {
+    // A pidfile that exists but carries no usable PID is not the same as no
+    // pidfile: something wrote it and the process it named may still be running.
+    // Reporting both as "nothing to stop" would hide a leaked server.
+    const f = APP_PID_FILE(projectRoot);
+    if (existsSync(f)) {
+      try { unlinkSync(f); } catch { /* ignore */ }
+      return { stopped: false, message: `unreadable app server pidfile removed (${f}) — stop any leftover server by hand` };
+    }
+    return { stopped: false, message: 'no app server pidfile — nothing to stop' };
+  }
   if (pidAlive(info.pid)) {
     try { process.kill(-info.pid); } catch { try { process.kill(info.pid); } catch { /* gone */ } }
   }
