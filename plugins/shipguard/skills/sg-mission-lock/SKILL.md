@@ -212,4 +212,30 @@ reasoning effort and when a prompt explicitly names GPT-5.6 Sol or Sol Ultra. Th
 context; it does not modify files or maintain hidden state. Codex skips untrusted plugin hooks, so
 users must review and trust it after installation. Implicit invocation is fallback, not guarantee.
 
+### Which identifying fields each event actually carries
+
+The hook is declared on three events. What it can activate from differs per event
+and per runtime, so the smoke test builds its fixtures from these shapes rather
+than from a convenient one:
+
+| Event | `model` | `prompt` | What can activate |
+|---|---|---|---|
+| `SessionStart` | optional, may be absent | no | model slug, else the opt-in |
+| `UserPromptSubmit` | never | yes | prompt text, else the opt-in |
+| `SubagentStart` | never | no | the opt-in only |
+
+Only `SessionStart` can carry `model`, and it is not always supplied
+(<https://code.claude.com/docs/en/hooks>). Model-based activation is therefore
+Codex's documented mechanism; on Claude Code the prompt-text path and
+`SHIPGUARD_MISSION_LOCK_ALL_MODELS=1` are what remain. Claude Code's
+`UserPromptSubmit` keys, captured on 2.1.257 (macOS arm64): `session_id`,
+`transcript_path`, `cwd`, `scratchpad_dir`, `prompt_id`, `permission_mode`,
+`hook_event_name`, `prompt`.
+
+"Sol" is an ordinary French noun, so naming patterns require it to be introduced
+as an agent or a model: `sol ultra` needs a designation before it (`passe à`,
+`bascule vers`, `utilise`, `agent`, `ia`, `modèle`, `switch to`, `use`), and the
+model prefix is mandatory for `gpt-5.6 sol`. "Revêtement de sol ultra résistant"
+and "un agent sol du rapport géotechnique" do not activate it.
+
 Read `references/scenarios.md` only when maintaining or forward-testing this skill.

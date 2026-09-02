@@ -11,12 +11,29 @@ const CONTEXT = [
   "If Done is met, intent is ambiguous, or the next action raises authority, ask before mutation.",
 ].join(" ");
 
+// The skill activates when the user NAMES Sol as the agent. In French "sol" is
+// an ordinary noun -- sol d'un batiment, revetement de sol, etude de sol,
+// mecanique des sols, agent de traitement des sols -- so a bare occurrence of
+// the word is not a designation. Two earlier patterns matched one anyway:
+// `sol ultra` fired on "revetement de sol ultra resistant", where "ultra"
+// qualifies the adjective after it and not "sol"; and `agent sol` fired on
+// "un agent sol du rapport geotechnique". Both now require the word to be
+// introduced as an agent or a model.
+const SOL_DESIGNATION =
+  "(?:passe[rz]?|bascule[rz]?|utilise[rz]?|switch|use|agent|ia|mod[eè]les?)";
+const SOL_ULTRA_NAMED = new RegExp(
+  `\\b${SOL_DESIGNATION}\\s+(?:[àa]|vers|sur|to)?\\s*sol[\\s-]+ultra\\b`,
+  "i",
+);
+
 function promptNamesSol(prompt) {
   const value = String(prompt || "");
   return (
+    // `agent sol` / `ia sol` without the model prefix is gone on purpose: with
+    // the prefix made mandatory it says exactly what this first pattern already
+    // matches, wherever it appears.
     /\bgpt[\s-]*5[.\s-]*6[\s-]*sol\b/i.test(value) ||
-    /\bsol[\s-]+ultra\b/i.test(value) ||
-    /\b(?:agent|ia)\s+(?:gpt[\s-]*5[.\s-]*6[\s-]*)?sol\b/i.test(value) ||
+    SOL_ULTRA_NAMED.test(value) ||
     /\bsol\s+c['’]est\s+toi\b/i.test(value) ||
     /\b(?:you\s+are\s+sol|sol\s+is\s+you)\b/i.test(value)
   );
