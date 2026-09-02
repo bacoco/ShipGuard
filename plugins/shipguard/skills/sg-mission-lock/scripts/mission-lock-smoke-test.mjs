@@ -41,57 +41,87 @@ function assertActiveWithForce(input) {
   assert.equal(result.hookSpecificOutput.hookEventName, input.hook_event_name);
 }
 
+// Payload shapes, kept apart on purpose. The fixtures below used to put a
+// `model` field on UserPromptSubmit and SubagentStart, which no runtime sends:
+// per https://code.claude.com/docs/en/hooks only SessionStart can carry
+// `model`, and Claude Code does not always include it even there. The suite
+// therefore went green on paths the runtime cannot take, and could not have
+// caught a regression against the real contract.
+//
+// Claude Code UserPromptSubmit keys, captured on 2.1.257 / macOS arm64 by a
+// hook writing its raw stdin: session_id, transcript_path, cwd, scratchpad_dir,
+// prompt_id, permission_mode, hook_event_name, prompt.
+function claudeCode(hook_event_name, extra = {}) {
+  return {
+    session_id: "b7c1f0e2-4d3a-4f28-9c11-0a5e6d7b8c90",
+    transcript_path: "/Users/dev/.claude/projects/demo/transcript.jsonl",
+    cwd: "/Users/dev/demo",
+    scratchpad_dir: "/tmp/claude/demo/scratchpad",
+    prompt_id: "0f2b9a44-8e15-4c73-b6d2-1e7a3c9f5b08",
+    permission_mode: "default",
+    hook_event_name,
+    ...extra,
+  };
+}
+
+// Codex is where model-based activation is the documented mechanism, and Codex
+// is what supplies `model` on the prompt event. Anything asserting activation
+// from a model name on UserPromptSubmit belongs here, not in claudeCode().
+function codex(hook_event_name, extra = {}) {
+  return { hook_event_name, ...extra };
+}
+
+// --- Codex: model-based activation, on the runtime that supplies `model`. ---
 for (const effort of ["standard", "ultra"]) {
-  assertActive({
-    hook_event_name: "UserPromptSubmit",
+  assertActive(codex("UserPromptSubmit", {
     model: "gpt-5.6-sol",
     model_reasoning_effort: effort,
     prompt: "continue",
-  });
+  }));
 }
+assertActive(codex("UserPromptSubmit", { model: "gpt-5.6-sol" }));
 
-assertActive({ hook_event_name: "SessionStart", model: "gpt-5.6" });
-assertActive({ hook_event_name: "SessionStart", model: "gpt-5.6-sol-2026-07-01" });
+// --- Claude Code: SessionStart is the one event that can carry `model`. ---
+assertActive(claudeCode("SessionStart", { model: "gpt-5.6" }));
+assertActive(claudeCode("SessionStart", { model: "gpt-5.6-sol" }));
+assertActive(claudeCode("SessionStart", { model: "gpt-5.6-sol-2026-07-01" }));
+assertInactive(claudeCode("SessionStart", { model: "gpt-5.6-solar" }));
+assertInactive(claudeCode("SessionStart", { model: "gpt-5.5" }));
+// `model` is optional even on SessionStart, so its absence must not activate.
+assertInactive(claudeCode("SessionStart"));
 
-for (const hook_event_name of ["SessionStart", "SubagentStart"]) {
-  assertActive({ hook_event_name, model: "gpt-5.6-sol" });
-}
+// --- Claude Code: the two events that never carry `model`. ---
+// Real shape, no model. Activation here can only come from the prompt text,
+// which is exactly what the README promises and what the old fixtures skipped.
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Use GPT 5.6 Sol for this review." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Passe à Sol Ultra." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Sol c'est toi, relis la mission." }));
 
-assertActive({
-  hook_event_name: "UserPromptSubmit",
-  model: "gpt-5.5",
-  prompt: "Use GPT 5.6 Sol for this review.",
-});
-assertActive({
-  hook_event_name: "UserPromptSubmit",
-  model: "gpt-5.5",
-  prompt: "Passe à Sol Ultra.",
-});
-assertActive({
-  hook_event_name: "UserPromptSubmit",
-  model: "gpt-5.5",
-  prompt: "Sol c'est toi, relis la mission.",
-});
-
-assertInactive({
-  hook_event_name: "UserPromptSubmit",
-  model: "gpt-5.5",
-  prompt: "Analyse le sol du bâtiment.",
-});
-assertInactive({
-  hook_event_name: "UserPromptSubmit",
-  model: "gpt-5.5",
-  prompt: "Sol is a musical note.",
-});
-assertInactive({
-  hook_event_name: "UserPromptSubmit",
-  model: "gpt-5.5",
+assertInactive(claudeCode("UserPromptSubmit", { prompt: "Analyse le sol du bâtiment." }));
+assertInactive(claudeCode("UserPromptSubmit", { prompt: "Sol is a musical note." }));
+assertInactive(claudeCode("UserPromptSubmit", {
   prompt: "Construis un modèle sol pour cette étude géotechnique.",
-});
-assertInactive({ hook_event_name: "SessionStart", model: "gpt-5.6-solar" });
-assertInactive({ hook_event_name: "SessionStart", model: "gpt-5.5" });
-assertActiveWithForce({ hook_event_name: "SessionStart", model: "claude-opus-4-6" });
-assertActiveWithForce({ hook_event_name: "UserPromptSubmit", model: "claude-sonnet-4-5" });
+}));
+// Ordinary French where "ultra" qualifies the adjective after "sol", and where
+// "agent sol" is a soil-treatment agent — neither designates an agent.
+assertInactive(claudeCode("UserPromptSubmit", {
+  prompt: "Revêtement de sol ultra résistant pour le hall.",
+}));
+assertInactive(claudeCode("UserPromptSubmit", {
+  prompt: "Le carrelage sol ultra plat est posé.",
+}));
+assertInactive(claudeCode("UserPromptSubmit", {
+  prompt: "Un agent sol du rapport géotechnique est erroné.",
+}));
+
+// SubagentStart carries neither `model` nor `prompt`, so nothing can activate
+// it on Claude Code except the documented opt-in below.
+assertInactive(claudeCode("SubagentStart", { agent_type: "general-purpose" }));
+
+// --- The SHIPGUARD_MISSION_LOCK_ALL_MODELS opt-in, on real payloads. ---
+assertActiveWithForce(claudeCode("SessionStart", { model: "claude-opus-4-6" }));
+assertActiveWithForce(claudeCode("UserPromptSubmit", { prompt: "continue" }));
+assertActiveWithForce(claudeCode("SubagentStart", { agent_type: "general-purpose" }));
 assert.equal(run("not-json"), null);
 
 const skillText = readFileSync(skill, "utf8");
