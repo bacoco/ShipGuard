@@ -826,6 +826,8 @@ const WAIT_CAP_MS = 30000;
 //                  unreadable capture) — no evidence was collected  -> ERROR
 //   kind: 'stale'  the browser answered, but a declared selector no longer
 //                  resolves in the accessibility tree (UI drift)    -> STALE
+//   kind: 'declaration' an assertion has no usable expectation; fix the
+//                  manifest instead of retrying the browser         -> ERROR
 //   (absent)       the browser answered and the product did not satisfy what
 //                  the step declared                        -> FAIL / ERROR
 // Absence of evidence is never reported as evidence of absence.
@@ -869,16 +871,18 @@ async function runStep(step, ctx) {
       return { ok: true };
     }
     case 'assert_url': {
+      const expected = interpolate(step.expected ?? step.url ?? step.value ?? '', ctx);
+      if (!expected.trim()) return { ok: false, kind: 'declaration', reason: 'expected must resolve to a non-empty URL or path' };
       const r = browser(['get', 'url']);
       if (!r.ok) return { ok: false, kind: 'tool', reason: `get url failed: ${r.stderr || r.stdout}`.trim() };
-      const expected = interpolate(step.url ?? step.value ?? '', ctx);
-      return r.stdout.trim().includes(expected.replace(/\/$/, ''))
+      return r.stdout.trim().includes(expected === '/' ? expected : expected.replace(/\/$/, ''))
         ? { ok: true } : { ok: false, reason: `url is "${r.stdout.trim()}", expected to include "${expected}"` };
     }
     case 'assert_text': {
+      const expected = interpolate(step.expected ?? step.text ?? step.value ?? '', ctx);
+      if (!expected.trim()) return { ok: false, kind: 'declaration', reason: 'expected must resolve to non-empty text' };
       const snap = browser(['snapshot']);
       if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr || snap.stdout}`.trim() };
-      const expected = interpolate(step.text ?? step.value ?? '', ctx);
       return snap.stdout.toLowerCase().includes(expected.toLowerCase())
         ? { ok: true } : { ok: false, reason: `text not found on page: "${expected}"` };
     }
@@ -939,8 +943,9 @@ export async function executeManifest(entry, ctx) {
     const r = await runStep(step, local);
     if (!r.ok) {
       result.status = r.kind === 'stale' ? 'STALE'
-        : (r.kind === 'tool' || !step.action.startsWith('assert')) ? 'ERROR' : 'FAIL';
+        : (r.kind === 'tool' || r.kind === 'declaration' || !step.action.startsWith('assert')) ? 'ERROR' : 'FAIL';
       result.failure_reason = `${step.action}: ${r.reason}`;
+      if (r.kind === 'declaration') result.manifest_error = result.failure_reason;
       break;
     }
   }

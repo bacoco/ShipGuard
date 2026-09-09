@@ -292,6 +292,42 @@ const agentOnly = await executeManifest(
 assert(!agentOnly.manifest_error && agentOnly.llm_steps_pending === 1,
   'steps: a declared agent-owned action is pending agent work, not an invalid manifest');
 
+// The documented expected field must drive the verdict. This stand-in browser
+// supplies deterministic captures; these are contract tests, not UI evidence.
+const savedBrowser = process.env.SHIPGUARD_AGENT_BROWSER;
+process.env.SHIPGUARD_AGENT_BROWSER = FAKE_BIN;
+try {
+  for (const action of ['assert_text', 'assert_url']) {
+    const matching = action === 'assert_text' ? 'Ok' : '/ok.html';
+    const alias = action === 'assert_text' ? 'text' : 'url';
+    const cases = [
+      [{ expected: matching }, 'PASS', 'documented expected matches'],
+      [{ expected: 'absent-value' }, 'FAIL', 'documented expected mismatch'],
+      [{ expected: 'absent-value', [alias]: matching }, 'FAIL', 'expected takes precedence over aliases'],
+      [{ [alias]: matching }, 'PASS', 'legacy named alias'],
+      [{ value: matching }, 'PASS', 'legacy value alias'],
+      [{}, 'ERROR', 'missing expectation'],
+      [{ expected: '' }, 'ERROR', 'empty expectation'],
+      [{ expected: '  ' }, 'ERROR', 'blank expectation'],
+      [{ expected: '', [alias]: matching }, 'ERROR', 'empty expected cannot fall through to an alias'],
+      [{ expected: '{data.absent}' }, 'ERROR', 'unresolved data expectation'],
+      [{ expected: '{credentials.absent}' }, 'ERROR', 'unresolved credential expectation'],
+      [{ expected: '{data.match}' }, 'PASS', 'resolved data expectation'],
+    ];
+    for (const [fields, status, label] of cases) {
+      const result = await executeManifest(
+        { id: `pages/${action}`, url: '', manifest: { data: { match: matching }, steps: [{ action, ...fields }] } },
+        { baseUrl: 'http://127.0.0.1', config: {}, checks: [], screenshotsDir: join(projU, 'visual-tests', '_results') });
+      assert(result.status === status, `${action}: ${label} -> ${status}`);
+      if (status === 'ERROR') assert(result.manifest_error?.includes('expected must resolve'),
+        `${action}: ${label} is a declaration error`);
+    }
+  }
+} finally {
+  if (savedBrowser === undefined) delete process.env.SHIPGUARD_AGENT_BROWSER;
+  else process.env.SHIPGUARD_AGENT_BROWSER = savedBrowser;
+}
+
 // ── run without agent-browser -> exit 2 (infra), run.json declares it ──
 // SHIPGUARD_AGENT_BROWSER points at a nonexistent binary (agent-browser shares
 // nvm's bin dir with node, so PATH restriction cannot hide one without the other).
@@ -371,6 +407,17 @@ assert(fEmpty.code === EXIT.CONFIG, 'exit: no lane evaluated anything -> 3');
 const fInvalid = runFixture({ files: { 'pages/typo.yaml': 'name: "T"\nsteps:\n  - action: assert_txt\n    text: "Ok"\n' }, flags: ['--no-crawl'] });
 assert(fInvalid.code === EXIT.CONFIG, 'exit: an unknown action -> 3 (fix the manifest), not 2 (retry)');
 assert(fInvalid.run?.lanes?.visual?.remedy === 'declaration', 'exit: the errored visual lane names a declaration remedy');
+
+const fMissingExpected = runFixture({ files: { 'pages/missing.yaml':
+  'name: "Missing expectation"\nsteps:\n  - action: assert_text\n' }, flags: ['--no-crawl'] });
+assert(fMissingExpected.code === EXIT.CONFIG && fMissingExpected.visual?.tests?.[0]?.status === 'ERROR',
+  'exit: missing assertion expectation -> 3 and ERROR, never a clean PASS');
+assert(fMissingExpected.run?.lanes?.visual?.remedy === 'declaration',
+  'exit: missing assertion expectation tells the human to fix the manifest');
+const fExpectedMismatch = runFixture({ files: { 'pages/mismatch.yaml':
+  'name: "Expected mismatch"\nsteps:\n  - action: assert_url\n    expected: "/absent-page"\n' }, flags: ['--no-crawl'] });
+assert(fExpectedMismatch.code === EXIT.FINDINGS && fExpectedMismatch.visual?.tests?.[0]?.status === 'FAIL',
+  'exit: documented expected mismatch -> 1 and FAIL');
 
 // a tooling failure keeps 2, and outranks a declaration fault in the same run:
 // a human who fixes only the manifest still gets untrusted evidence
