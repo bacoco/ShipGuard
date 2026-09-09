@@ -19,7 +19,8 @@ plugins/shipguard/                   # The plugin itself
 ├── hooks/hooks.json                 # Codex model-aware mission-lock injection
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 15 canonical skills + 1 deprecated alias
+└── skills/                          # 16 canonical skills + 1 deprecated alias
+    ├── grill-goal/                  # Human interview → confirmed synthesis → standalone Markdown goal
     ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
     ├── sg-beat-reference/           # Paste-ready compare/improve loop against a named reference
     ├── sg-gauntlet/                 # Deprecated alias for sg-beat-reference
@@ -48,6 +49,8 @@ Each skill directory contains:
 - `SKILL.md` — YAML frontmatter (at minimum `name` and `description`; older Claude-focused skills may also use `context` and `argument-hint`) followed by the prompt/instructions. This is the source of truth for behavior.
 - `agents/openai.yaml` — Codex CLI adapter for that skill.
 - Optional `references/`, `fixtures/`, `examples/`, and Node scripts.
+
+Exception: `grill-goal` contains only `SKILL.md`, with all behavioral instructions embedded. It must remain usable without an adapter, scripts, supporting files, global `CLAUDE.md`/`AGENTS.md`, or development reports. It writes a goal after human confirmation and does not execute that goal.
 
 ## Tests
 

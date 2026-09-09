@@ -122,6 +122,10 @@ and checks in one sentence, then asks once if anything is ambiguous.
 </tr>
 </table>
 
+[`grill-goal`](plugins/shipguard/skills/grill-goal/SKILL.md) helps define the work before execution: interview the user, research relevant past failures, confirm a synthesis, then deliver a standalone Markdown goal for another AI. The skill consists of a single self-contained `SKILL.md`. Instructions and generated goals are in English; the dialogue and confirmation synthesis adapt to the user's language when needed. Delivery includes a usable instruction whether or not the receiving AI supports `/goal`.
+
+The [dialogue-hook design proposal](docs/specs/2026-09-08-grill-goal-dialogue-hooks.md) records the research, failure cases, and acceptance criteria for optional ambiguity checks. These additional hooks are not implemented or enabled.
+
 ### Install
 
 ```bash

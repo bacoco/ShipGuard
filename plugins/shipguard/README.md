@@ -20,10 +20,11 @@ must memorize.
 One orchestrator ties them together: `sg-ship` runs code audit → applicable logic audit → process
 check → visual → review. Logic candidates are detected automatically during the scope conversation.
 
-### All skills (15 canonical + 1 deprecated alias)
+### All skills (16 canonical + 1 deprecated alias)
 
 | Skill | Purpose |
 |-------|---------|
+| [`/grill-goal`](skills/grill-goal/SKILL.md) | Clarify intent and confirm a synthesis in the user's language when needed, then write a standalone English Markdown goal for another AI, with or without `/goal`; does not execute the goal |
 | `/sg-mission-lock` | Lock the literal mission and authority before work; model-aware Codex activation for GPT-5.6 Sol |
 | `/sg-beat-reference` | Build a paste-ready comparison loop that improves work until it beats a named, fetchable reference |
 | `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
