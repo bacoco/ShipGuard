@@ -604,3 +604,11 @@ Its optional additive artifact is specified in
 The existing review builder displays it in Pre-Review without a visual run. Partial and malformed
 reports remain visible; this adds no CLI evaluator, automatic hook, or mandatory interview.
 Root Logic contract conflicts also enter Findings as unresolved, reasoned concerns.
+
+### Optional dialogue hook layer
+
+Four command handlers in `hooks/hooks.json` invoke the independent stateless dialogue adapter.
+They are no-ops without `SHIPGUARD_DIALOGUE_HOOKS=1`; per-tool hooks additionally require
+`SHIPGUARD_DIALOGUE_TOOL_CHECKS=1`. The mission-lock handler remains unchanged. Optional controller
+feedback is grounded to exact supplied passages, with one Stop correction at most. No raw tool
+result or argument is replaced. See the canonical [dialogue hook contract and engine coverage](../plugins/shipguard/docs/dialogue-hooks.md).

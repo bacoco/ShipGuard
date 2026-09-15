@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
-  "version": "2.10.0",
-  "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
+  "version": "2.11.0",
+  "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, mission guardrails, and optional dialogue checks.",
   "author": {
     "name": "bacoco",
     "url": "https://github.com/bacoco"
@@ -17,13 +17,14 @@
     "regression-testing",
     "agent-guardrails",
     "mission-lock",
-    "pre-review"
+    "pre-review",
+    "dialogue-hooks"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "ShipGuard",
     "shortDescription": "Review existing interfaces, audit changes, simulate behavior, guard scope",
-    "longDescription": "ShipGuard bundles explicit interfaces-first pre-review, static code audit, contract and invariant checking, process simulation, browser-based visual checks, mission and authority guardrails, and unified evidence dashboards. Reports expose uncertainty and keep implementation and delivery decisions with the human.",
+    "longDescription": "ShipGuard bundles explicit interfaces-first pre-review, static code audit, contract and invariant checking, process simulation, browser-based visual checks, mission and authority guardrails, and unified evidence dashboards. Reports expose uncertainty and keep implementation and delivery decisions with the human. Optional dialogue hooks preserve original sources, expose unavailable checks, and bound targeted corrections without granting authority.",
     "developerName": "bacoco",
     "category": "Developer Tools",
     "capabilities": [

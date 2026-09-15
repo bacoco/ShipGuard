@@ -562,3 +562,10 @@ build_command: "docker compose up -d --build frontend"  # optional
 ## License
 
 MIT
+
+## Optional dialogue checks
+
+ShipGuard 2.11.0 adds opt-in input/end-of-turn checks and separately enabled per-tool guidance.
+GrillGoal remains standalone. Checks preserve raw results and existing authority; missing evidence
+or controller failures stay explicitly non-verified. See [activation, controller and coverage](docs/dialogue-hooks.md)
+for configuration and limits. Hooks are disabled by default and require a new host session.

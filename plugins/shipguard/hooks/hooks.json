@@ -21,6 +21,15 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dialogue-check.mjs\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -30,6 +39,39 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/sg-mission-lock/scripts/inject-mission-lock.mjs\"",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dialogue-check.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dialogue-check.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dialogue-check.mjs\"",
+            "timeout": 10
           }
         ]
       }

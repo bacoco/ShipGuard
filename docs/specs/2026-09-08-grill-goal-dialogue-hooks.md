@@ -1,5 +1,11 @@
 # GrillGoal and ambiguity checks through hooks
 
+Implementation update (15 September 2026): the optional hook adapters are delivered in 2.11.0.
+This historical design and its initial pilot remain unchanged below. Current activation, controller
+contract and actual technical coverage are documented in
+[dialogue-hooks.md](../../plugins/shipguard/docs/dialogue-hooks.md). Model evaluations were cancelled
+by the maintainer; they are not claimed as delivered evidence.
+
 Status: design proposal, September 8, 2026. This branch adds the standalone skill; the additional hooks are neither implemented nor enabled. This document preserves the analysis for maintainers and is not a dependency of `grill-goal/SKILL.md`.
 
 ## Problem and expected outcome

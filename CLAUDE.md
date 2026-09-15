@@ -16,7 +16,7 @@ Pipeline: static **find** (`sg-code-audit`) → applicable semantic **check** (`
 plugins/shipguard/                   # The plugin itself
 ├── .claude-plugin/plugin.json       # Plugin manifest (name and release version)
 ├── .codex-plugin/plugin.json        # Codex plugin manifest
-├── hooks/hooks.json                 # Codex model-aware mission-lock injection
+├── hooks/hooks.json                 # Mission-lock + opt-in dialogue checks
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
 └── skills/                          # 17 canonical skills + 1 deprecated alias
@@ -58,6 +58,8 @@ Exception: `grill-goal` contains only `SKILL.md`, with all behavioral instructio
 Smoke tests are standalone Node scripts (no test framework, no package.json):
 
 ```bash
+node plugins/shipguard/hooks/dialogue-check-smoke-test.mjs
+node plugins/shipguard/hooks/model-controller-smoke-test.mjs
 node plugins/shipguard/skills/sg-pre-review/pre-review-smoke-test.mjs
 node plugins/shipguard/skills/sg-pre-review/evidence-guard-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-review/review-smoke-test.mjs
@@ -81,3 +83,5 @@ Run the relevant smoke test after touching a skill's scripts or templates.
 - Per-project learned state lives in the target project's `.shipguard/` directory, not in this repo.
 - Keep the two marketplace manifests (`.claude-plugin/` and `.agents/plugins/`) in sync when plugin metadata changes.
 - `sg-mission-lock` is cross-skill governance. Its hook injects context only for `gpt-5.6` / `gpt-5.6-sol` or explicit Sol-model prompts; it must not mutate, persist state, or block unrelated prompts.
+
+- Optional dialogue hooks are documented in `plugins/shipguard/docs/dialogue-hooks.md`. They are no-ops by default; keep them distinct from mission-lock. Unknown/unavailable never means verified; no tool arguments or raw results are rewritten.
