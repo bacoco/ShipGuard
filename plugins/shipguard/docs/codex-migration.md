@@ -96,3 +96,10 @@ node visual-tests/monitor-smoke-test.mjs --port=23102
 ```
 
 If local ports are blocked, rerun with another `--port` or grant loopback bind permission in the sandbox.
+
+## Optional dialogue hooks (2.11.0)
+
+After updating, review the new command definitions in `/hooks` and start a new thread. They remain
+no-ops until explicitly enabled; the new hook definitions can need fresh trust even though the
+mission-lock handler is unchanged. Read [dialogue-hooks.md](dialogue-hooks.md) for enable/disable
+options and the distinction between installed, trusted, executed and semantically checked.

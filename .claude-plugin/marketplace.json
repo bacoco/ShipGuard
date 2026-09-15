@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "shipguard",
-      "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
+      "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, mission guardrails, and optional dialogue checks.",
       "source": "./plugins/shipguard",
       "category": "testing",
       "homepage": "https://github.com/bacoco/shipguard"

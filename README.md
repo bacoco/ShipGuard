@@ -126,7 +126,7 @@ and checks in one sentence, then asks once if anything is ambiguous.
 
 [`sg-pre-review`](plugins/shipguard/skills/sg-pre-review/SKILL.md) explicitly reviews a proposed change before coding: find existing interfaces and their actual uses, then recommend reuse or the smallest change. It returns a report in chat by default, implements nothing, and is not automatically invoked. On explicit request it writes `visual-tests/_results/prereview-results.json`, consumed by the Pre-Review dashboard tab. Partial reports remain visible; completed analysis does not mean PASS.
 
-The [dialogue-hook design proposal](docs/specs/2026-09-08-grill-goal-dialogue-hooks.md) records the research, failure cases, and acceptance criteria for optional ambiguity checks. These additional hooks are not implemented or enabled.
+The [dialogue-hook design proposal](docs/specs/2026-09-08-grill-goal-dialogue-hooks.md) records the research, failure cases, and acceptance criteria for optional ambiguity checks. The optional adapters are implemented in 2.11.0 and remain disabled by default; see [activation and coverage](plugins/shipguard/docs/dialogue-hooks.md).
 
 ### Install
 
@@ -567,3 +567,10 @@ See [`examples/`](examples/) for canonical manifest examples (config, shared log
 ## License
 
 MIT
+
+## Optional dialogue checks
+
+ShipGuard 2.11.0 adds opt-in input/end-of-turn checks and separately enabled per-tool guidance.
+GrillGoal remains standalone. Checks preserve raw results and existing authority; missing evidence
+or controller failures stay explicitly non-verified. See [activation, controller and coverage](plugins/shipguard/docs/dialogue-hooks.md)
+for configuration and limits. Hooks are disabled by default and require a new host session.
