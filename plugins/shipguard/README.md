@@ -20,7 +20,7 @@ must memorize.
 One orchestrator ties them together: `sg-ship` runs code audit → applicable logic audit → process
 check → visual → review. Logic candidates are detected automatically during the scope conversation.
 
-### All skills (16 canonical + 1 deprecated alias)
+### All skills (17 canonical + 1 deprecated alias)
 
 | Skill | Purpose |
 |-------|---------|
@@ -30,11 +30,12 @@ check → visual → review. Logic candidates are detected automatically during 
 | `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
 | `/sg-ship` | Conversational pipeline: propose scope once, then code → applicable logic → process → visual → review |
 | `/sg-code-audit` | Audit changed or scoped code; report-only by default, tier-gated fixes by opt-in |
+| [`/sg-pre-review`](skills/sg-pre-review/SKILL.md) | Explicitly find reusable interfaces and actual uses before coding; chat report or requested Pre-Review dashboard export, report-only |
 | `/sg-logic-audit` | Check workflows, state machines, retries, transactions, and algorithms against declared contracts and invariants |
 | `/sg-process-check` | Simulate before/after process behavior from a diff (observe-not-fix) |
 | `/sg-visual-discover` | Scan the codebase and generate YAML visual test manifests per route |
 | `/sg-visual-run` | Execute visual test manifests with agent-browser |
-| `/sg-visual-review` | Interactive review dashboard — Visual Tests, Code Audit, Logic, Process, and Recorded Tests tabs |
+| `/sg-visual-review` | Interactive review dashboard — Findings, Pre-Review, Visual Tests, Code Audit, Logic, Process, and Recorded Tests tabs |
 | `/sg-visual-fix` | Trace human annotations on screenshots to source code and fix them |
 | `/sg-visual-review-stop` | Stop the review HTTP server |
 | `/sg-change-report` | Save before/after UI evidence as durable PR/client change reports |

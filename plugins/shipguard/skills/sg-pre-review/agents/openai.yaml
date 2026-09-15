@@ -1,0 +1,7 @@
+interface:
+  display_name: "ShipGuard Pre-Review"
+  short_description: "Find reusable interfaces before designing changes"
+  default_prompt: "Use $sg-pre-review to assess this proposed change without implementing it. Cite the decisive current path for each outcome or mark it undetermined. When dashboard output is explicitly requested, follow references/output-schema.md. When a local-model endpoint is explicitly requested, use the read-only runner; citation validation remains distinct from semantic correctness."
+
+policy:
+  allow_implicit_invocation: false

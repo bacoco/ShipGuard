@@ -109,8 +109,8 @@ assert(bounded.truncated && typeof bounded.truncated.reason === 'string' && boun
   'crawl: truncation carries a reason (run.json non-ran-lane motif)');
 assert(result.truncated === undefined, 'crawl: complete crawl carries NO truncated field');
 
-// cmdCrawl end to end: capped run declares truncation and stays exit 0 (nothing
-// broken was observed); raising the cap un-truncates it and finds the real bug.
+// cmdCrawl end to end: capped run declares truncation and returns exit 3 (incomplete
+// evidence); raising the cap un-truncates it and finds the real bug.
 const projT = mkdtempSync(join(tmpdir(), 'sg-crawltrunc-'));
 mkdirSync(join(projT, 'visual-tests'), { recursive: true });
 writeFileSync(join(projT, 'visual-tests', '_config.yaml'), `base_url: "${base}"\ncrawl:\n  max_pages: 1\n`);

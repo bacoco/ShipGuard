@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
-  "version": "2.9.1",
-  "description": "AI-assisted code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
+  "version": "2.10.0",
+  "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
   "author": {
     "name": "bacoco",
     "url": "https://github.com/bacoco"
@@ -16,13 +16,14 @@
     "process-check",
     "regression-testing",
     "agent-guardrails",
-    "mission-lock"
+    "mission-lock",
+    "pre-review"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "ShipGuard",
-    "shortDescription": "Audit code and logic, simulate behavior, review visuals, guard scope",
-    "longDescription": "ShipGuard bundles focused skills for static code audit, contract and invariant checking, diff-scoped process behavior simulation, browser-based visual checks, mission and authority guardrails, and unified review dashboards. It exposes what changed and how it was verified while leaving scope, fix, and ship decisions to the human.",
+    "shortDescription": "Review existing interfaces, audit changes, simulate behavior, guard scope",
+    "longDescription": "ShipGuard bundles explicit interfaces-first pre-review, static code audit, contract and invariant checking, process simulation, browser-based visual checks, mission and authority guardrails, and unified evidence dashboards. Reports expose uncertainty and keep implementation and delivery decisions with the human.",
     "developerName": "bacoco",
     "category": "Developer Tools",
     "capabilities": [
@@ -33,6 +34,7 @@
     "privacyPolicyURL": "https://github.com/bacoco/shipguard",
     "termsOfServiceURL": "https://github.com/bacoco/shipguard",
     "defaultPrompt": [
+      "Find existing interfaces and actual consumers before designing this change.",
       "Check whether my recent changes are ready and propose the verification scope in plain language.",
       "Audit this workflow or algorithm against its contracts and invariants.",
       "Simulate the process behavior for this change.",

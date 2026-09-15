@@ -124,6 +124,8 @@ and checks in one sentence, then asks once if anything is ambiguous.
 
 [`grill-goal`](plugins/shipguard/skills/grill-goal/SKILL.md) helps define the work before execution: interview the user, research relevant past failures, confirm a synthesis, then deliver a standalone Markdown goal for another AI. The skill consists of a single self-contained `SKILL.md`. Instructions and generated goals are in English; the dialogue and confirmation synthesis adapt to the user's language when needed. Delivery includes a usable instruction whether or not the receiving AI supports `/goal`.
 
+[`sg-pre-review`](plugins/shipguard/skills/sg-pre-review/SKILL.md) explicitly reviews a proposed change before coding: find existing interfaces and their actual uses, then recommend reuse or the smallest change. It returns a report in chat by default, implements nothing, and is not automatically invoked. On explicit request it writes `visual-tests/_results/prereview-results.json`, consumed by the Pre-Review dashboard tab. Partial reports remain visible; completed analysis does not mean PASS.
+
 The [dialogue-hook design proposal](docs/specs/2026-09-08-grill-goal-dialogue-hooks.md) records the research, failure cases, and acceptance criteria for optional ambiguity checks. These additional hooks are not implemented or enabled.
 
 ### Install

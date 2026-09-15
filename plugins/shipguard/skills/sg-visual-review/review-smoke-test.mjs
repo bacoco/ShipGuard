@@ -14,6 +14,7 @@ import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawn, spawnSync } from 'child_process';
+import { runInNewContext } from 'vm';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_BUILD = join(SCRIPT_DIR, 'build-review.mjs');
@@ -214,7 +215,7 @@ function createFixture() {
     status: 'completed',
     summary: {
       candidates_checked: 1, obligations_checked: 1, confirmed_violations: 1,
-      risks: 0, contract_conflicts: 0, questions: 0, uncovered: 0,
+      risks: 0, contract_conflicts: 1, questions: 1, uncovered: 1,
       evidence_mix: { reasoned: 1, measured: 0 },
     },
     candidates: [{
@@ -226,7 +227,10 @@ function createFixture() {
         counterexample: 'late retry callback', file: 'worker.py', line: 41,
       }],
     }],
-    contract_conflicts: [], questions: [], uncovered: [], skipped: [],
+    contract_conflicts: [{ candidate_id: 'p01', description: 'Contract requires cents; consumer expects euros', source: 'docs/currency.md', sources: [{ file: 'client.py', line: 12 }] }],
+    questions: [{ candidate_id: 'p01', description: 'Who decides the session versus global scope?', source: 'docs/scope.md' }],
+    uncovered: [{ candidate_id: 'p01', description: 'Worker recovery path could not be traced', file: 'worker.py' }],
+    skipped: [],
     impacted_backend: [], impacted_ui_routes: [],
   });
   writeJson(join(root, '_results', 'crawl-results.json'), {
@@ -337,7 +341,7 @@ async function main() {
     assert(existsSync(join(root, '_results', 'findings.json')), 'findings.json was not generated');
     const findings = JSON.parse(readFileSync(join(root, '_results', 'findings.json'), 'utf8'));
     assert(findings.schema_version === '1.0', 'findings: schema_version missing');
-    assert(findings.findings.length === 7, `findings: expected 7, got ${findings.findings.length}`);
+    assert(findings.findings.length === 8, `findings: expected 8, got ${findings.findings.length}`);
     assert(findings.findings[0].id === 'SG-001' && findings.findings[0].severity === 'critical', 'findings: not severity-sorted with SG ids');
     const f = findings.findings;
     assert(f.some(x => x.source === 'audit' && x.evidence === 'reasoned' && x.file === 'app.py'), 'findings: audit -> reasoned');
@@ -357,6 +361,62 @@ async function main() {
     assert(builtHtml.includes('id="main-tab-findings"'), 'template: Findings tab button missing');
     assert(builtHtml.includes('id="main-tab-logic"'), 'template: Logic tab button missing');
     assert(builtHtml.includes('renderLogicTab'), 'template: logic renderer missing');
+    // Execute the installed renderer, not a reimplementation or an embedded-text check.
+    // Minimal DOM seam proves row construction; browser visibility is checked separately.
+    const nodes = new Map();
+    const htmlIds = new Set([...builtHtml.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
+    function element() {
+      return { children: [], style: {}, className: '', classList: { add() {} },
+        _text: '', set textContent(value) { this._text = String(value); this.children = []; },
+        get textContent() { return this._text + this.children.map(x => x.textContent).join(''); },
+        appendChild(child) { this.children.push(child); } };
+    }
+    const document = {
+      createElement: element,
+      getElementById(id) { if (!htmlIds.has(id)) return null; if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); },
+    };
+    const start = builtHtml.indexOf('function logicEntries(');
+    const end = builtHtml.indexOf('function procAsText(', start);
+    assert(start >= 0 && end > start, 'logic renderer boundaries missing');
+    const data = JSON.parse(readFileSync(join(root, '_results', 'logic-results.json'), 'utf8'));
+    runInNewContext(builtHtml.slice(start, end) + '\nrenderLogicTab();', {
+      document, __LOGIC_DATA__: data, laneReason: () => '', procSeverityCell: value => {
+        const cell = element(); cell.textContent = value; return cell;
+      },
+    });
+    const rows = nodes.get('logic-concerns-tbody').children;
+    assert(rows.length === 3, 'logic concerns: expected three rendered rows');
+    ['contract_conflicts', 'questions', 'uncovered'].forEach((key, index) => {
+      assert(rows[index].children[0].textContent === key.replace(/_/g, '-'), `logic concerns: ${key} type missing`);
+      assert(rows[index].children[2].textContent === data[key][0].description, `logic concerns: ${key} description missing`);
+      assert(rows[index].children[3].textContent === (data[key][0].source || data[key][0].file), `logic concerns: ${key} source missing`);
+    });
+    assert(nodes.get('logic-concerns-section').style.display === 'block', 'logic concerns section hidden');
+
+    const preReview = { schema_version: '1.0', request: 'Reuse existing interface', status: 'partial',
+      candidates: [{ reference: 'worker.py', decision: 'undetermined', justification: 'Consumer not traced' }],
+      interfaces: [], usages: [], contract_conflicts: [], questions: [], uncovered: [{ description: 'Missing consumer evidence' }], search_scope: [{ roots: ['plugins/shipguard'], query: 'worker', exclusions: [] }], context: { selected_references: [], transmission: "not observable" } };
+    writeJson(join(root, '_results', 'prereview-results.json'), preReview);
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    const preHtml = readFileSync(join(root, '_results', 'review.html'), 'utf8');
+    const preStart = preHtml.indexOf('function renderPreReviewTab(');
+    const preEnd = preHtml.indexOf('function logicEntries(', preStart);
+    runInNewContext(preHtml.slice(preStart, preEnd) + '\nrenderPreReviewTab();', { document, __PREREVIEW_DATA__: preReview });
+    assert(nodes.get('prereview-summary').textContent.startsWith('partial'), 'partial review appears completed');
+    assert(nodes.get('prereview-tbody').children.length === 3, 'pre-review candidates/uncovered/search scope not rendered');
+    assert(!preHtml.includes('__PLACEHOLDER_PREREVIEW_DATA__'), 'pre-review data not embedded');
+    writeJson(join(root, '_results', 'prereview-results.json'), { ...preReview, status: 'completed' });
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    assert(readFileSync(join(root, '_results', 'review.html'), 'utf8').includes('"status":"partial"'), 'undetermined completion not downgraded');
+    writeJson(join(root, '_results', 'prereview-results.json'), { ...preReview, questions: [{}] });
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    assert(readFileSync(join(root, '_results', 'review.html'), 'utf8').includes('Pre-review result could not be read'), 'malformed concern accepted');
+    writeFileSync(join(root, '_results', 'prereview-results.json'), '{invalid');
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    assert(readFileSync(join(root, '_results', 'review.html'), 'utf8').includes('Pre-review result could not be read'), 'invalid pre-review not reported');
+    assert(f.some(x => x.kind === 'contract-conflict' && x.status === 'unresolved' && x.title.includes('cents')), 'unresolved conflict missing from Findings');
+    assert(f.some(x => x.kind === 'contract-conflict' && x.file === 'client.py' && x.detail.includes('docs/currency.md') && x.detail.includes('client.py')), 'conflict sources lost in Findings');
+
     assert(builtHtml.includes('renderFindingsTab'), 'template: findings renderer missing');
     assert(builtHtml.includes('DEFAULT_TAB_ORDER'), 'template: dynamic default tab logic missing');
     assert(builtHtml.includes('id="lane-chips"'), 'template: lane chips container missing');

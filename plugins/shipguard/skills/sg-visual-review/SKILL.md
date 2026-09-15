@@ -1,6 +1,6 @@
 ---
 name: sg-visual-review
-description: Use after visual runs, code audits, logic audits, or process checks when results need human review — builds and serves the interactive ShipGuard dashboard.
+description: Use after pre-reviews, visual runs, code audits, logic audits, or process checks when results need human review — builds and serves the interactive ShipGuard dashboard.
 context: conversation
 argument-hint: "[--port=N]"
 ---
@@ -20,8 +20,9 @@ Generate and serve the ShipGuard dashboard to review visual test screenshots, co
 
 ## Prerequisites
 
-- `/sg-visual-discover` has been run (manifests exist in `visual-tests/`)
-- `/sg-visual-run` has been run at least once (screenshots + `visual-results.json` or legacy `report.md` exist in `visual-tests/_results/`)
+- `visual-tests/_config.yaml` exists (initialize with the existing CLI or visual discovery).
+- At least one supplied result in `visual-tests/_results/`; a pre-review or audit can be reviewed without a visual run.
+- Visual screenshots require discovery and a visual run, but are optional for other tabs.
 - No external npm dependencies — the build script uses a built-in YAML parser
 
 Sandbox note: `--serve`, `POST /save-manifest`, and monitor smoke tests need loopback port access. See [../../docs/sandbox.md](../../docs/sandbox.md).
@@ -45,7 +46,7 @@ This script:
 6. Writes `visual-tests/_results/visual-results.json` **additively**: the producer owns that file, so a parseable document is kept as written — statuses (including a word this build does not know), `failure_reason`, `summary`, `scope`, results whose manifest is no longer on disk, and every additive per-test field of [report-formats.md](../sg-visual-run/references/report-formats.md). The build only adds `generated_at` and a screenshot it found on disk for a test the producer left without one. With **no** producer document at all (a legacy `report.md` project, or a suite that has never run) it synthesizes the contract from the manifests and the resolved statuses. An **unparseable** document is reported and left untouched
 7. Reads `visual-tests/_results/logic-results.json` (written by `/sg-logic-audit`) into the Logic tab, if present
 8. Reads `visual-tests/_results/process-results.json` (written by `/sg-process-check`) into the Process tab, if present
-9. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
+9. Reads optional `visual-tests/_results/prereview-results.json` into Pre-Review using [output-schema.md](../sg-pre-review/references/output-schema.md); invalid input is displayed as error, not clean. Generates a self-contained `visual-tests/_results/review.html` (inline CSS + JS, no dependencies)
 10. While `/sg-code-audit` is running (or `audit-monitor.json` exists in `_results/`), live agent progress renders **inside the Code Audit tab** — a progress bar in Overview and per-agent pods in the Agents sub-tab. There is no separate Monitor tab.
 11. If change-report specs exist, generates persona-aware HTML reports under `visual-tests/_results/persona-reports/`
 

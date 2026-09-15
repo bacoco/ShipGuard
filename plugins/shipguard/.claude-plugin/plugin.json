@@ -1,7 +1,7 @@
 {
   "name": "shipguard",
-  "description": "ShipGuard — AI-assisted code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
-  "version": "2.9.1",
+  "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, and agent mission guardrails.",
+  "version": "2.10.0",
   "author": {
     "name": "bacoco"
   },
@@ -15,6 +15,7 @@
     "process-check",
     "regression-testing",
     "agent-guardrails",
-    "mission-lock"
+    "mission-lock",
+    "pre-review"
   ]
 }
