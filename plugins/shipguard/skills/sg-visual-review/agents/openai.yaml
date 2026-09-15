@@ -1,6 +1,6 @@
 interface:
   display_name: "ShipGuard Visual Review"
-  short_description: "Review visual, code, logic, and process evidence"
+  short_description: "Review pre-review, visual, code, logic, and process evidence"
   default_prompt: "Use $sg-visual-review to open the unified ShipGuard evidence dashboard."
 
 policy:

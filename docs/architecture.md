@@ -6,10 +6,12 @@ Code audit narrows the field. Logic Audit checks declared contracts and invarian
 
 ## Skills Overview
 
-ShipGuard is composed of 15 canonical skills plus one deprecated alias: a cross-skill mission guard, independent verification lanes, self-improvement, macro recording, durable change reports, and a bounded reference-comparison prompt. `sg-ship` orchestrates the applicable verification lanes end to end.
+ShipGuard is composed of 17 canonical skills plus one deprecated alias: a cross-skill mission guard, independent verification lanes, self-improvement, macro recording, durable change reports, and a bounded reference-comparison prompt. `sg-ship` orchestrates the applicable verification lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
+| `grill-goal` | Human dialogue and confirmed synthesis; does not execute the goal | User request | Standalone Markdown goal |
+| `sg-pre-review` | Explicit interfaces-first review before design, report-only | Original request + repository + optional supplied plan | Chat report; optional `prereview-results.json` for Pre-Review tab |
 | `sg-mission-lock` | Lock literal objective, mode, authority, scope, and Done before work; Codex hook activates it for GPT-5.6 Sol | User mission + active model metadata | Developer-context guard; no project files or runtime state |
 | `sg-beat-reference` | Build a bounded prompt that compares an artifact against a named, fetchable reference | Quality goal + reference + ceiling | Paste-ready comparison-loop prompt |
 | `sg-gauntlet` | Deprecated compatibility alias for `sg-beat-reference` | Former command | Delegates to canonical skill |
@@ -592,3 +594,13 @@ Stops the review HTTP server by reading the PID file (`_results/.server.pid`) an
 ```bash
 node visual-tests/build-review.mjs --stop
 ```
+
+### Advisory pre-review results
+
+`sg-pre-review` runs explicitly before implementation. It searches interfaces and usages separately
+and recommends the smallest justified change, including no change or an undetermined conclusion.
+Its optional additive artifact is specified in
+[output-schema.md](../plugins/shipguard/skills/sg-pre-review/references/output-schema.md).
+The existing review builder displays it in Pre-Review without a visual run. Partial and malformed
+reports remain visible; this adds no CLI evaluator, automatic hook, or mandatory interview.
+Root Logic contract conflicts also enter Findings as unresolved, reasoned concerns.

@@ -1155,6 +1155,16 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
       });
     }
   }
+  for (const conflict of (logicResults && Array.isArray(logicResults.contract_conflicts) ? logicResults.contract_conflicts : [])) {
+    if (!conflict || typeof conflict !== 'object') continue;
+    const refs = [conflict.source, ...(Array.isArray(conflict.sources) ? conflict.sources : [])].filter(Boolean);
+    const refText = ref => typeof ref === 'string' ? ref : JSON.stringify(ref);
+    const firstFile = refs.find(ref => ref && typeof ref === 'object' && typeof ref.file === 'string');
+    findings.push({ title: 'Contract conflict: ' + (conflict.description || 'Unresolved sources'),
+      severity: 'medium', evidence: 'reasoned', source: 'logic', kind: 'contract-conflict',
+      status: 'unresolved', route: null, file: conflict.file || (firstFile && firstFile.file) || null, line: null,
+      detail: refs.map(refText).join(' — '), origin: { lane: 'logic', id: conflict.candidate_id || null } });
+  }
   for (const unit of (processResults && Array.isArray(processResults.units) ? processResults.units : [])) {
     if (!unit || typeof unit !== 'object' || unit.verdict === 'unchanged') continue;
     const actions = Array.isArray(unit.actions) ? unit.actions : [];
@@ -1379,6 +1389,39 @@ if (existsSync(LOGIC_RESULTS_PATH)) {
   }
 }
 
+// Optional advisory pre-review artifact: malformed input remains visibly incomplete.
+let preReviewResults = null;
+const preReviewPath = join(RESULTS_DIR, 'prereview-results.json');
+if (existsSync(preReviewPath)) {
+  try {
+    const parsed = JSON.parse(readFileSync(preReviewPath, 'utf8'));
+    if (!parsed || parsed.schema_version !== '1.0' || typeof parsed.request !== 'string' ||
+        !['completed', 'partial', 'error'].includes(parsed.status) ||
+        !Array.isArray(parsed.candidates) || parsed.candidates.some(c => !c || typeof c !== 'object' ||
+          typeof c.reference !== 'string' || typeof c.justification !== 'string' ||
+          !['use', 'configure', 'extend', 'create', 'none', 'undetermined'].includes(c.decision)) ||
+        ['interfaces', 'usages', 'contract_conflicts', 'questions', 'uncovered', 'search_scope'].some(k =>
+          !Array.isArray(parsed[k]) || parsed[k].some(v => !v || typeof v !== 'object' || Array.isArray(v))) ||
+        ['interfaces', 'usages'].some(k => parsed[k].some(v => typeof v.reference !== 'string' || !v.reference ||
+          typeof v.description !== 'string' || !v.description || typeof v.applicability !== 'string' ||
+          !['declared', 'observed-expectation', 'observed', 'assumed'].includes(v.source_kind) ||
+          !['reasoned', 'measured'].includes(v.evidence))) ||
+        ['contract_conflicts', 'questions', 'uncovered'].some(k => parsed[k].some(v =>
+          typeof v.description !== 'string' || !v.description)) ||
+        parsed.search_scope.some(v => v.state !== undefined && !['not-found', 'absent-in-scope', 'inaccessible', 'not-active', 'unsuitable'].includes(v.state)) ||
+        !parsed.context || !Array.isArray(parsed.context.selected_references) || parsed.context.transmission !== 'not observable') {
+      throw new Error('unsupported or incomplete pre-review schema');
+    }
+    preReviewResults = parsed;
+    if (parsed.status === 'completed' && (parsed.candidates.some(c => c.decision === 'undetermined') || parsed.uncovered.length)) {
+      preReviewResults = { ...parsed, status: 'partial' };
+    }
+  } catch (e) {
+    preReviewResults = { status: 'error', request: 'Pre-review result could not be read', candidates: [], uncovered: [{ description: e.message }] };
+    console.warn('  WARN: prereview-results.json: ' + e.message);
+  }
+}
+
 // ── Build the unified findings projection + lane availability ──
 const auditForFindings = readJsonSafe(AUDIT_RESULTS_PATH);
 const crawlResults = readJsonSafe(CRAWL_RESULTS_PATH);
@@ -1400,6 +1443,7 @@ data.laneAvailability = {
   findings: findingsData.summary.total,
   audit: !!auditForFindings,
   logic: !!logicResults,
+  prereview: !!preReviewResults,
   process: !!processResults,
   visual: tests.some((t) => t.status && t.status !== 'STALE'),
   recorded: recordedTests.length,
@@ -1418,6 +1462,7 @@ const template = getHtmlTemplate();
 const html = template
   .replace('"__PLACEHOLDER_VISUAL_DATA__"', () => embedJson(data))
   .replace('"__PLACEHOLDER_RECORDED_DATA__"', () => embedJson(recordedTests))
+  .replace('"__PLACEHOLDER_PREREVIEW_DATA__"', () => embedJson(preReviewResults))
   .replace('"__PLACEHOLDER_LOGIC_DATA__"', () => embedJson(logicResults))
   .replace('"__PLACEHOLDER_PROCESS_DATA__"', () => embedJson(processResults))
   .replace('"__PLACEHOLDER_FINDINGS_DATA__"', () => embedJson(findingsData))

@@ -19,8 +19,9 @@ plugins/shipguard/                   # The plugin itself
 ├── hooks/hooks.json                 # Codex model-aware mission-lock injection
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 16 canonical skills + 1 deprecated alias
+└── skills/                          # 17 canonical skills + 1 deprecated alias
     ├── grill-goal/                  # Human interview → confirmed synthesis → standalone Markdown goal
+    ├── sg-pre-review/               # Explicit interfaces-first review before coding
     ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
     ├── sg-beat-reference/           # Paste-ready compare/improve loop against a named reference
     ├── sg-gauntlet/                 # Deprecated alias for sg-beat-reference
@@ -57,6 +58,8 @@ Exception: `grill-goal` contains only `SKILL.md`, with all behavioral instructio
 Smoke tests are standalone Node scripts (no test framework, no package.json):
 
 ```bash
+node plugins/shipguard/skills/sg-pre-review/pre-review-smoke-test.mjs
+node plugins/shipguard/skills/sg-pre-review/evidence-guard-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-review/review-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-review/monitor-smoke-test.mjs
 node plugins/shipguard/skills/sg-improve/improve-dry-run-smoke-test.mjs
