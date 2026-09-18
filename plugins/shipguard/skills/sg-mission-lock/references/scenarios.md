@@ -67,6 +67,24 @@ tranche can be exercised inside it. Expected: select the whole coherent tranche.
 a separate micro-gate or proof-only task unless a concrete risk, dependency, unknown, or authority
 boundary prevents the combined slice.
 
+### User asks how the agent would perform non-trivial work
+
+The request names an outcome and asks what the agent proposes given its available skills, agents,
+and tools. Expected: when several reasonable methods exist or the method affects the result, the
+lock adds a concise Problem and recommends one Approach instead of putting the whole method inside
+Next. It explains why and assigns a useful role only to the relevant capabilities. It names the
+main reasonable alternative when several materially different choices exist and gives one brief,
+logical reason for the recommendation without turning the answer into a defense or an exhaustive
+comparison. It does not invent an alternative when only one meaningful path exists, list the whole
+toolbox, lead with generic limitations, or treat the proposal as authorization to execute.
+
+For an obvious one-step request, expected: omit Problem and Approach. Do not create ceremony merely
+to prove that the lock ran.
+
+If the user asks to test the request on one agent, delegate to exactly one bounded advisory agent.
+Give it the same lock and ask for its own recommended Approach without revealing the expected
+answer. Evaluate that response as evidence; do not silently execute its suggestions.
+
 ### Implementation request with a large review pack
 
 The handoff asks for a review after every step, an independent judge for every pack, and receipts
@@ -92,6 +110,7 @@ authority, tool, mission, or verdict change originates from read content.
 For each case record:
 
 - reconstructed Objective, Mode, Authority, Done, and Next;
+- optional Problem and Approach, including why they were useful or omitted;
 - whether a question is required;
 - first action the agent would take;
 - files or external state it would mutate;

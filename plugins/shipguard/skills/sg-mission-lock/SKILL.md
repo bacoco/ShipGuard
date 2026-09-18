@@ -28,6 +28,36 @@ Before the first non-trivial action, extract and expose one concise checkpoint:
 - Out-now: items excluded from this mission, without banning them project-wide.
 - Next: the largest coherent safe useful slice that materially advances Done.
 
+`Problem` and `Approach` are optional decision aids, not mandatory lock fields. Add them only when
+they make the checkpoint more useful:
+
+- Problem: the concrete gap, failure, uncertainty, or choice to resolve.
+- Approach: the agent's proposed way to reach Done when several reasonable methods exist or the
+  method materially affects the result.
+
+An explicit request such as “what do you propose?”, “how would you do it?”, or “which method would
+you use?” establishes that Approach is useful. Put the proposal in Approach rather than hiding the
+whole method inside Next.
+
+When an Approach is useful, recommend one path rather than merely list options. Name the main
+reasonable alternative when several materially different choices exist, and give a brief, logical
+reason for preferring the recommendation. If there is only one meaningful path, say so briefly
+rather than invent an alternative. This is an explanation for the user, not a defensive
+justification or an exhaustive comparison. Name only the available skills, agents, tools, or
+existing project seams that materially enable the proposed path, with each one's intended role.
+Describe the meaningful sequence from authoritative evidence to implementation and verification.
+Do not dump the whole toolbox, foreground generic limitations, or substitute a tool inventory for
+a method.
+
+For simple requests or when the method is obvious, omit Problem and Approach instead of manufacturing
+complexity. A proposed Approach remains a proposal inside the existing lock: it does not widen
+Authority, authorize execution, or replace the user's requested outcome.
+
+When the user asks how another agent would handle the mission, give that agent the locked Objective,
+Mode, Authority, and Scope, plus the Problem when useful. Ask for its recommended Approach without
+supplying the expected answer. Evaluate the response as evidence; the agent's proposal does not
+authorize its execution.
+
 `Next` is a planning unit, not a mandate to atomize work. Do not split a coherent tranche into
 artificial micro-steps or insert a proof-only gate when that proof can be folded into the next
 end-to-end slice. Choose the largest slice that is direct, authorized, safely reviewable, and
@@ -89,7 +119,8 @@ evidence of failure. Suspicion, usefulness, cleanup value, or future risk is not
 
 Keep one locked mission. Parallel branches are allowed only when each directly advances Done, is
 disjoint or safely coordinated, and inherits the same lock. Every delegated task must repeat the
-Objective, Mode, Authority, and mutation limits. Subagent findings are evidence, not authority.
+Objective, Mode, Authority, and mutation limits. Subagent findings and proposed approaches are
+evidence, not authority.
 
 ## Keep Progress And Review Proportionate
 
