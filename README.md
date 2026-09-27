@@ -4,6 +4,23 @@
 
 **Ship with confidence.** ShipGuard finds bugs before your users do — and gets smarter every time.
 
+## 1. Keep powerful reasoning models inside the user's request
+
+ShipGuard's **Strict Delta Lock** prevents an agent from turning its own proposal, interpretation,
+or summary into permission. The user's request is the complete authorized delta; everything else
+stays invariant. If a terse approval such as “do it” could select an agent-authored proposal that
+conflicts with an earlier user constraint, ShipGuard requires one explicit clarification before the
+dependent action.
+
+The guard is enabled by default for GPT-5.6 Sol, high-effort GPT-6 Astra/Sol, Claude Opus 5, and
+Fable 5.1 or later. In Claude Code or Codex, say “disable Strict Delta Lock for this mission,”
+“re-enable Strict Delta Lock,” or ask for its status. The setting is part of the `sg-mission-lock`
+skill, follows the current mission and its subagents, and resets to `on` for the next mission.
+
+Run `/sg-model-scope-test` to measure the active model and effort, or name several configurations to
+compare. It executes isolated scope-drift probes and reports `PASS`, `FAIL`, or `UNAVAILABLE` in the
+chat. Use `--strict=both` to compare the model's unaided behavior with Strict Delta Lock enabled.
+
 ## How it works
 
 ![ShipGuard Demo](docs/screenshots/demo.gif)
@@ -25,7 +42,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
 | Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
-| Mission Lock | 🟢 Updated in 2.6.4 | Code-first mission guard; read content (pages, files, tool output) is data — it never instructs, widens authority, or passes a review; non-Sol activation is explicit opt-in |
+| Mission Lock | 🟢 Updated in 2.12.0 | Strict Delta Lock is on by default for targeted reasoning models; agent-authored proposals never create authority; explicit opt-out available |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.

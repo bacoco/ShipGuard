@@ -20,12 +20,13 @@ must memorize.
 One orchestrator ties them together: `sg-ship` runs code audit → applicable logic audit → process
 check → visual → review. Logic candidates are detected automatically during the scope conversation.
 
-### All skills (17 canonical + 1 deprecated alias)
+### All skills (18 canonical + 1 deprecated alias)
 
 | Skill | Purpose |
 |-------|---------|
 | [`/grill-goal`](skills/grill-goal/SKILL.md) | Clarify intent and confirm a synthesis in the user's language when needed, then write a standalone English Markdown goal for another AI, with or without `/goal`; does not execute the goal |
 | `/sg-mission-lock` | Lock the literal mission, authorized delta, protected invariants, and authority before work |
+| [`/sg-model-scope-test`](skills/sg-model-scope-test/SKILL.md) | Run isolated scope-drift probes by model and effort; report PASS, FAIL, or UNAVAILABLE in chat |
 | `/sg-beat-reference` | Build a paste-ready comparison loop that improves work until it beats a named, fetchable reference |
 | `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
 | `/sg-ship` | Conversational pipeline: propose scope once, then code → applicable logic → process → visual → review |
@@ -48,9 +49,15 @@ check → visual → review. Logic candidates are detected automatically during 
 On Codex, ShipGuard's read-only hook checks the active model slug and reasoning effort at session
 start, on every user prompt, for subagents, and after compaction. It activates for `gpt-5.6` or
 `gpt-5.6-sol` at every effort, and for `gpt-6-astra` or `gpt-6-sol` at `high`, `xhigh`, `max`, or
-`ultra`. On Claude Code it activates for `claude-opus-5-5` when the runtime supplies that slug.
-Explicit prompts naming those model families also activate it; ordinary uses of the word “sol” do
-not.
+`ultra`. On Claude Code it activates for Opus 5 and Fable 5.1 or later when the runtime supplies
+their slug; the Fable 5 family alias tracks its latest available version. Explicit prompts naming
+those model families also activate it; ordinary uses of the word “sol” do not.
+
+Strict Delta Lock is on by default for every new mission. Change it directly in Claude Code or
+Codex by saying “disable Strict Delta Lock for this mission,” “re-enable Strict Delta Lock,” or
+“is Strict Delta Lock enabled?” The equivalent explicit forms are
+`sg-mission-lock strict off|on|status`. An `off` setting lasts for the current mission and its
+subagents; the next mission starts on again.
 
 Codex does not trust newly installed plugin hooks automatically. After installing or updating
 ShipGuard, open `/hooks`, review and trust the ShipGuard mission-lock hook, then start a new thread.

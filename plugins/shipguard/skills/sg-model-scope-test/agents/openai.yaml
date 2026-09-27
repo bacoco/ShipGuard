@@ -1,0 +1,4 @@
+interface:
+  display_name: "ShipGuard Model Scope Test"
+  short_description: "Tests model scope discipline by effort level"
+  default_prompt: "Use $sg-model-scope-test to test whether the selected model and effort preserve the authorized delta."

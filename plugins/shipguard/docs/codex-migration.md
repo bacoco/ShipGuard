@@ -55,8 +55,10 @@ The expected entry is `shipguard@shipguard` at the current plugin version.
 
 Codex requires explicit trust for plugin hooks. Open `/hooks`, review the ShipGuard hook, trust its
 current definition, and start a new thread. The hook is read-only and stateless: it injects mission
-guidance for `gpt-5.6` / `gpt-5.6-sol`, high-effort `gpt-6-astra` / `gpt-6-sol`,
-`claude-opus-5-5` when its slug is available, or prompts that explicitly name those families.
+guidance for `gpt-5.6` / `gpt-5.6-sol`, high-effort `gpt-6-astra` / `gpt-6-sol`, Claude Opus 5 or
+Fable 5.1+ when their slug is available, or prompts that explicitly name those families. The Fable
+5 alias tracks the latest family version. Strict Delta Lock is enabled by default and can be changed
+in chat with `sg-mission-lock strict off|on|status` or equivalent ordinary language.
 
 If the hook is not trusted, `/sg-mission-lock` remains available, but automatic model-aware
 activation is not guaranteed.

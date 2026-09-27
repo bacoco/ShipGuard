@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Mission Lock"
-  short_description: "Prevents mission drift and inferred authority"
-  default_prompt: "Use $sg-mission-lock to lock the mission and authority before working."
+  short_description: "Locks scope; controls Strict Delta mode"
+  default_prompt: "Use $sg-mission-lock to lock the mission and authority, or to set or report Strict Delta mode."
 
 policy:
   allow_implicit_invocation: true

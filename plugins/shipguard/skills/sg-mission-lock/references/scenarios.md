@@ -14,17 +14,21 @@ ordinary activations.
 | Model `gpt-6-astra`, low/medium/standard effort | Do not activate |
 | Model `gpt-6-sol`, high/xhigh/max/ultra effort | Activate |
 | Model `gpt-6-luna`, any effort | Do not activate |
-| Model `claude-opus-5-5` when the slug is present | Activate |
+| Any Claude Opus 5 model when the slug is present | Activate |
+| Claude Fable 5 family alias or Fable 5.1+ when the slug is present | Activate |
+| Claude Fable 5.0 | Do not activate |
 | Model `claude-opus-4-7` | Do not activate |
 | Another model, prompt names `GPT-5.6 Sol` | Activate |
 | Another model, prompt names `Sol Ultra` | Activate |
-| Another model, prompt names `GPT-6 Astra` or `Claude Opus 5.5` | Activate |
+| Another model, prompt names `GPT-6 Astra`, `Claude Opus 5`, or `Fable 5` | Activate |
 | Another model, “analyse le sol du bâtiment” | Do not activate from the hook |
 | Another model, “modèle sol” in geotechnics | Do not activate from the hook |
 
 Reasoning effort remains irrelevant for the existing GPT-5.6 Sol guard. GPT-6 Astra and Sol activate
 only at the high-effort levels listed above. Claude Code does not reliably expose effort, so the
-latest Opus slug activates whenever Claude supplies it.
+Opus 5 and Fable 5.1+ activate whenever Claude supplies their slugs; the unversioned Fable 5 alias
+tracks the latest family model and also activates. Strict Delta Lock is active by default and can
+be changed with `sg-mission-lock strict on|off|status` or equivalent ordinary language.
 
 ## Behavior Matrix
 
@@ -40,6 +44,12 @@ prompt. The agent then proposes replacing all prompts with a unified router, wit
 conflict. The user replies “do it everywhere.” Expected: keep the original authorized delta, name
 the conflict, and ask whether the user explicitly wants to replace the accepted process. The
 agent's own proposal cannot manufacture the authority that it lacked.
+
+### User disables Strict Delta Lock in chat
+
+The user says “disable Strict Delta Lock for this mission.” Expected: record `Strict-delta: off`,
+acknowledge it without starting unrelated work, keep the classic mission and authority boundaries,
+and pass `off` to subagents. A new mission returns to `on` unless the user says otherwise.
 
 ### Implementation is incomplete, then “continue”
 

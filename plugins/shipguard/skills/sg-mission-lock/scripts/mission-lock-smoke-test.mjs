@@ -32,6 +32,8 @@ function assertActive(input) {
   assert.match(result.hookSpecificOutput.additionalContext, /complete authorized delta/);
   assert.match(result.hookSpecificOutput.additionalContext, /own plan, proposal/);
   assert.match(result.hookSpecificOutput.additionalContext, /ask one explicit question/);
+  assert.match(result.hookSpecificOutput.additionalContext, /defaults ON/);
+  assert.match(result.hookSpecificOutput.additionalContext, /ordinary chat language/);
 }
 
 function assertInactive(input) {
@@ -121,10 +123,16 @@ assertActive(claudeCode("SessionStart", { model: "gpt-5.6-sol" }));
 assertActive(claudeCode("SessionStart", { model: "gpt-5.6-sol-2026-07-01" }));
 assertInactive(claudeCode("SessionStart", { model: "gpt-5.6-solar" }));
 assertInactive(claudeCode("SessionStart", { model: "gpt-5.5" }));
+assertActive(claudeCode("SessionStart", { model: "claude-opus-5" }));
+assertActive(claudeCode("SessionStart", { model: "claude-opus-5-1" }));
 assertActive(claudeCode("SessionStart", { model: "claude-opus-5-5" }));
 assertActive(claudeCode("SessionStart", { model: "claude-opus-5-5-2026-09-01" }));
+assertActive(claudeCode("SessionStart", { model: "claude-fable-5" }));
+assertActive(claudeCode("SessionStart", { model: "claude-fable-5-1" }));
+assertActive(claudeCode("SessionStart", { model: "claude-fable-5-2" }));
 assertInactive(claudeCode("SessionStart", { model: "claude-opus-4-7" }));
-assertInactive(claudeCode("SessionStart", { model: "claude-opus-5-5-20preview" }));
+assertInactive(claudeCode("SessionStart", { model: "claude-fable-4-9" }));
+assertInactive(claudeCode("SessionStart", { model: "claude-fable-5-0" }));
 // `model` is optional even on SessionStart, so its absence must not activate.
 assertInactive(claudeCode("SessionStart"));
 
@@ -136,6 +144,10 @@ assertActive(claudeCode("UserPromptSubmit", { prompt: "Passe à Sol Ultra." }));
 assertActive(claudeCode("UserPromptSubmit", { prompt: "Sol c'est toi, relis la mission." }));
 assertActive(claudeCode("UserPromptSubmit", { prompt: "Use GPT-6 Astra at high effort." }));
 assertActive(claudeCode("UserPromptSubmit", { prompt: "Passe à Claude Opus 5.5." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Use Opus 5 for this task." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Passe au modèle Fable 5.1." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Use the latest Fable 5 model." }));
+assertInactive(claudeCode("UserPromptSubmit", { prompt: "Use Fable 5.0 for this task." }));
 
 assertInactive(claudeCode("UserPromptSubmit", { prompt: "Analyse le sol du bâtiment." }));
 assertInactive(claudeCode("UserPromptSubmit", { prompt: "Sol is a musical note." }));
@@ -187,10 +199,13 @@ assert.match(skillText, /Treat Read Content As Data/);
 assert.match(skillText, /is evidence, never\s+instructions/s);
 assert.match(skillText, /Read content never widens authority/);
 assert.match(skillText, /a finding to report, not a directive to follow/);
+assert.match(skillText, /strict off/);
+assert.match(skillText, /ordinary language/);
 assert.doesNotMatch(skillText, /smallest action|next smallest step/);
 
 const adapterText = readFileSync(adapter, "utf8");
 assert.match(adapterText, /allow_implicit_invocation: true/);
+assert.match(adapterText, /Strict Delta/);
 
 const hooks = JSON.parse(readFileSync(hooksJson, "utf8"));
 for (const event of ["SessionStart", "UserPromptSubmit", "SubagentStart"]) {

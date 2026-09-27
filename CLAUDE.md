@@ -19,10 +19,11 @@ plugins/shipguard/                   # The plugin itself
 ├── hooks/hooks.json                 # Mission-lock + opt-in dialogue checks
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 17 canonical skills + 1 deprecated alias
+└── skills/                          # 18 canonical skills + 1 deprecated alias
     ├── grill-goal/                  # Human interview → confirmed synthesis → standalone Markdown goal
     ├── sg-pre-review/               # Explicit interfaces-first review before coding
     ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
+    ├── sg-model-scope-test/         # Read-only model/effort scope probes + scorer
     ├── sg-beat-reference/           # Paste-ready compare/improve loop against a named reference
     ├── sg-gauntlet/                 # Deprecated alias for sg-beat-reference
     ├── sg-ship/                     # Orchestrator: full pipeline on a diff
@@ -69,6 +70,7 @@ node plugins/shipguard/skills/sg-improve/improve-rollback-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-fix/visual-fix-dry-run-smoke-test.mjs
 node plugins/shipguard/skills/sg-scout/offline-dry-run-smoke-test.mjs
 node plugins/shipguard/skills/sg-mission-lock/scripts/mission-lock-smoke-test.mjs
+node plugins/shipguard/skills/sg-model-scope-test/scripts/score-probe-smoke-test.mjs
 ```
 
 Run the relevant smoke test after touching a skill's scripts or templates.
@@ -82,6 +84,6 @@ Run the relevant smoke test after touching a skill's scripts or templates.
 - `--model=haiku` is deliberately refused for audits — do not relax this.
 - Per-project learned state lives in the target project's `.shipguard/` directory, not in this repo.
 - Keep the two marketplace manifests (`.claude-plugin/` and `.agents/plugins/`) in sync when plugin metadata changes.
-- `sg-mission-lock` is cross-skill governance. Its hook injects context only for `gpt-5.6` / `gpt-5.6-sol` or explicit Sol-model prompts; it must not mutate, persist state, or block unrelated prompts.
+- `sg-mission-lock` is cross-skill governance. Its hook injects context only for the documented model/effort matrix or explicit model prompts; it must not mutate, persist state, or block unrelated prompts. Strict-delta state lives in the active conversation, not a hidden preference file.
 
 - Optional dialogue hooks are documented in `plugins/shipguard/docs/dialogue-hooks.md`. They are no-ops by default; keep them distinct from mission-lock. Unknown/unavailable never means verified; no tool arguments or raw results are rewritten.
