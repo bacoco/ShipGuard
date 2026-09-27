@@ -100,7 +100,7 @@ The review page provides:
 - Each finding: `SG-###` id, severity (sorted first), an **evidence badge** — `measured` (a real observation), `reasoned` (a static/simulated prediction), `manual` (a human annotation) — source lane, and route/file location
 - The canonical per-lane schemas are untouched; findings.json is an additive projection
 - **Dynamic default tab:** the dashboard opens on the first tab with data (findings → audit → logic → visual → process → recorded)
-- **Lane chips:** `run.json` (written by `sg-ship` / `shipguard run`) renders per-lane status chips (`ran` / `skipped` / `not-applicable` / `error` / `needs-agent`); a declared skipped lane shows its reason in place of a generic empty state
+- **Lane chips:** `run.json` (written by `sg-ship` / `shipguard run`) renders per-lane status chips (`pending` / `running` / `ran` / `skipped` / `not-applicable` / `error` / `needs-agent`); transitional states expose work still in progress, and a declared non-`ran` lane shows its reason in place of a generic empty state
 - CLI equivalent: `node visual-tests/shipguard.mjs review [--serve]`
 
 **Visual Tests tab**

@@ -58,6 +58,8 @@ body{background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-s
 .lane-chips:empty{display:none}
 .lane-chip{font-size:12px;border-radius:999px;padding:3px 10px;border:1px solid var(--border,#2b374c);color:var(--muted,#a6b2c2)}
 .lane-chip.ran{border-color:#2ea043;color:#2ea043}
+.lane-chip.pending{border-color:#8b949e;color:#8b949e}
+.lane-chip.running{border-color:#58a6ff;color:#58a6ff}
 .lane-chip.error{border-color:#da3633;color:#da3633}
 .lane-chip.needs-agent{border-color:#d29a22;color:#d29a22}
 #findings-view{padding:16px 24px}
@@ -1807,7 +1809,7 @@ function renderLaneChips() {
     var l = __RUN_DATA__.lanes[name];
     if (!l || !l.status) return;
     var chip = document.createElement('span');
-    chip.className = 'lane-chip ' + (l.status === 'ran' ? 'ran' : l.status === 'error' ? 'error' : l.status === 'needs-agent' ? 'needs-agent' : '');
+    chip.className = 'lane-chip ' + (['pending', 'running', 'ran', 'error', 'needs-agent'].includes(l.status) ? l.status : '');
     chip.textContent = name + ': ' + l.status + (l.status !== 'ran' && l.reason ? ' (' + l.reason + ')' : '');
     box.appendChild(chip);
   });

@@ -361,6 +361,30 @@ async function main() {
     assert(builtHtml.includes('id="main-tab-findings"'), 'template: Findings tab button missing');
     assert(builtHtml.includes('id="main-tab-logic"'), 'template: Logic tab button missing');
     assert(builtHtml.includes('renderLogicTab'), 'template: logic renderer missing');
+    // The dashboard must expose in-flight orchestration honestly: planned or
+    // running lanes are not green execution receipts.
+    {
+      const nodes = new Map([['lane-chips', { children: [], appendChild(child) { this.children.push(child); } }]]);
+      const document = {
+        createElement() { return { className: '', textContent: '' }; },
+        getElementById(id) { return nodes.get(id) || null; },
+      };
+      const start = builtHtml.indexOf('function laneReason(');
+      const end = builtHtml.indexOf('function renderFindingsTab(', start);
+      assert(start >= 0 && end > start, 'lane renderer boundaries missing');
+      runInNewContext(builtHtml.slice(start, end) + '\nrenderLaneChips();', {
+        document,
+        __RUN_DATA__: { lanes: {
+          audit: { status: 'running', reason: 'Phase 1 active' },
+          process: { status: 'pending', reason: 'awaiting Phase 2' },
+        } },
+      });
+      const chips = nodes.get('lane-chips').children;
+      assert(chips.length === 2, 'lane chips: expected running and pending states');
+      assert(chips[0].className === 'lane-chip running', 'running lane was not rendered distinctly');
+      assert(chips[1].className === 'lane-chip pending', 'pending lane was not rendered distinctly');
+      assert(chips.every(chip => !chip.className.includes(' ran')), 'transitional lane rendered as ran');
+    }
     // Execute the installed renderer, not a reimplementation or an embedded-text check.
     // Minimal DOM seam proves row construction; browser visibility is checked separately.
     const nodes = new Map();
