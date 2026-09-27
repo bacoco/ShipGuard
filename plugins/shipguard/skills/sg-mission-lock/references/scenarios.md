@@ -27,8 +27,8 @@ ordinary activations.
 Reasoning effort remains irrelevant for the existing GPT-5.6 Sol guard. GPT-6 Astra and Sol activate
 only at the high-effort levels listed above. Claude Code does not reliably expose effort, so the
 Opus 5 and Fable 5.1+ activate whenever Claude supplies their slugs; the unversioned Fable 5 alias
-tracks the latest family model and also activates. Strict Delta Lock is active by default and can
-be changed with `sg-mission-lock strict on|off|status` or equivalent ordinary language.
+tracks the latest family model and also activates. Strict Delta Lock is active by default and the
+user controls it in ordinary language.
 
 ## Behavior Matrix
 

@@ -34,10 +34,11 @@ Read [references/probes.md](references/probes.md) for the exact payload and expe
 not paraphrase its scenarios between configurations. Run a fresh subagent for every configuration
 and trial so one answer cannot teach the next one.
 
-For `--strict=on`, include the Strict Delta contract from the reference. For `--strict=off`, state
-that Strict-delta is explicitly off for this probe and omit the strict contract. For `both`, run the
-same configuration and trial count once in each state. If the runtime hook prevents establishing the
-requested state, report that lane as `UNAVAILABLE`; do not label a contaminated lane as baseline.
+When the user asks to test with strict protection, include the Strict Delta contract from the
+reference. When the user asks to test without it, state that Strict-delta is explicitly off for this
+probe and omit the strict contract. When the user asks to compare both, run the same configuration
+and trial count once in each state. If the runtime hook prevents establishing the requested state,
+report that lane as `UNAVAILABLE`; do not label a contaminated lane as baseline.
 
 Require the subagent to return only the JSON schema in the reference. Do not accept its own PASS or
 FAIL claim. Save each configuration's combined trials to a temporary JSON file outside the

@@ -4,22 +4,32 @@
 
 **Ship with confidence.** ShipGuard finds bugs before your users do — and gets smarter every time.
 
-## 1. Keep powerful reasoning models inside the user's request
+## Say what you want. ShipGuard keeps the agent inside it.
 
-ShipGuard's **Strict Delta Lock** prevents an agent from turning its own proposal, interpretation,
-or summary into permission. The user's request is the complete authorized delta; everything else
-stays invariant. If a terse approval such as “do it” could select an agent-authored proposal that
-conflicts with an earlier user constraint, ShipGuard requires one explicit clarification before the
-dependent action.
+Powerful reasoning models sometimes turn an ambiguity — or their own suggestion — into permission
+to change more than you asked. ShipGuard prevents that automatically. Your request is the allowed
+change; everything else stays as it is. If two interpretations would produce materially different
+results, the agent asks before acting.
 
-The guard is enabled by default for GPT-5.6 Sol, high-effort GPT-6 Astra/Sol, Claude Opus 5, and
-Fable 5.1 or later. In Claude Code or Codex, say “disable Strict Delta Lock for this mission,”
-“re-enable Strict Delta Lock,” or ask for its status. The setting is part of the `sg-mission-lock`
-skill, follows the current mission and its subagents, and resets to `on` for the next mission.
+There is no command to learn. Talk to Claude or Codex in ordinary language, in any language:
 
-Run `/sg-model-scope-test` to measure the active model and effort, or name several configurations to
-compare. It executes isolated scope-drift probes and reports `PASS`, `FAIL`, or `UNAVAILABLE` in the
-chat. Use `--strict=both` to compare the model's unaided behavior with Strict Delta Lock enabled.
+> “Change only the zoom-photo prompt. Keep everything else exactly as it is.”
+>
+> “Give the agent more freedom for this task.”
+>
+> “Protect the scope strictly again.”
+>
+> “Is strict scope protection active?”
+
+Strict scope protection starts enabled for GPT-5.6 Sol, high-effort GPT-6 Astra/Sol, Claude Opus 5,
+and Fable 5.1 or later. Turning it off affects only the current task and its subagents; the next task
+starts protected again.
+
+You can also ask Claude or Codex to test one or several model/effort combinations:
+
+> “Test whether Astra at high, max and ultra respects my scope, with and without strict protection.”
+
+ShipGuard replies in the chat with `PASS`, `FAIL`, or `UNAVAILABLE` for each configuration.
 
 ## How it works
 
@@ -42,7 +52,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
 | Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
-| Mission Lock | 🟢 Updated in 2.12.0 | Strict Delta Lock is on by default for targeted reasoning models; agent-authored proposals never create authority; explicit opt-out available |
+| Scope protection | 🟢 Updated in 2.12.0 | Enabled automatically for targeted reasoning models; controlled entirely through ordinary conversation |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.
@@ -59,9 +69,7 @@ Six AI-powered modules. Use one, some, or all six. No test files to write.
 
 Auto-discover routes, generate tests, mark bugs on screenshots — **AI traces to source code and fixes automatically**.
 
-```
-/sg-visual-run
-```
+> “Check the screens affected by my changes.”
 
 </td>
 <td width="50%" valign="top">
@@ -72,9 +80,7 @@ Parallel AI agents scan your codebase and report bugs without changing source fi
 `--fix` only when you want tier-gated safe fixes. Race conditions, auth gaps, shell failures, silent
 exceptions, resource leaks.
 
-```
-/sg-code-audit
-```
+> “Review my recent changes for implementation bugs.”
 
 </td>
 </tr>
@@ -96,9 +102,7 @@ Check procedures and algorithms against their **declared contracts and invariant
 
 Record your browser interactions and **turn them into replayable tests**. Like Excel's macro recorder, but for visual testing.
 
-```
-/sg-record http://localhost:3000
-```
+> “Record this browser flow so it can be replayed later.”
 
 </td>
 <td width="50%" valign="top">
@@ -107,9 +111,7 @@ Record your browser interactions and **turn them into replayable tests**. Like E
 
 ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new techniques. Each audit is better than the last.
 
-```
-/sg-improve
-```
+> “Capture what ShipGuard should learn from this run.”
 
 </td>
 </tr>
@@ -120,14 +122,12 @@ ShipGuard **learns from every run** and gets smarter. Scouts GitHub for new tech
 
 **Simulate** how the process behaves **before/after** your **diff** — by default it **runs the code "in its head"** (no stack to boot, works on a 5-container app), and reports how the behavior moved: output, errors, timing, token cost. Every finding tagged reasoned vs measured. Backend twin of the Visual Debugger. **Observe-not-fix.**
 
-```
-/sg-process-check I changed the chunking
-```
+> “Compare the process behavior before and after my chunking change.”
 
 </td>
 <td width="50%" valign="top">
 
-### 🔗 One pipeline — `/sg-ship`
+### 🔗 One request
 
 Static **find** → semantic **logic check** when applicable → dynamic **process check** → **visual**
 confirm → **human** decides. Speak normally: ShipGuard inspects the change, proposes the perimeter
@@ -160,9 +160,9 @@ codex plugin add shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 
-For automatic activation on the documented reasoning-heavy model families, open `/hooks` in Codex,
-review and trust the ShipGuard mission-lock hook, then start a new thread. The hook is read-only and
-a no-op for unrelated models.
+For automatic activation on the documented reasoning-heavy model families, open the Hooks settings
+in Codex, review and trust the ShipGuard mission-lock hook, then start a new thread. The hook is
+read-only and a no-op for unrelated models.
 It reduces mission drift and overclaiming; it is not a guarantee of zero hallucinations.
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)

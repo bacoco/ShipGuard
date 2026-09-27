@@ -14,13 +14,34 @@ must memorize.
 | | 📸 **Visual E2E** | 🎬 **Recorder** | 🔍 **Code Audit** | 🧭 **Logic Audit** | 🧪 **Process Check** | 🧠 **Improve** |
 |---|---|---|---|---|---|---|
 | **What** | Discover routes and verify screenshots | Record interactions as replayable tests | Find implementation bugs | Check procedures and algorithms against contracts/invariants | Compare behavior before/after the diff | Preserve learnings and scout techniques |
-| **Command** | `/sg-visual-run` | `/sg-record` | `/sg-code-audit` | `/sg-logic-audit` | `/sg-process-check` | `/sg-improve` |
+| **Say** | “Check the affected screens” | “Record this browser flow” | “Review my code for bugs” | “Check this workflow's invariants” | “Compare behavior before and after” | “Capture what to learn from this run” |
 | **Output** | Screenshots + annotations | YAML manifests | `audit-results.json` | `logic-results.json` + counterexamples | `process-results.json` | `.shipguard/learnings.yaml` + issues |
 
-One orchestrator ties them together: `sg-ship` runs code audit → applicable logic audit → process
-check → visual → review. Logic candidates are detected automatically during the scope conversation.
+ShipGuard can tie them together in one request: code audit → applicable logic audit → process check
+→ visual check → human review. Logic candidates are detected automatically during the conversation.
 
-### All skills (18 canonical + 1 deprecated alias)
+### Keep the agent inside what you asked
+
+ShipGuard automatically treats your request as the complete allowed change. A suggestion made by
+the agent does not become permission. If an ambiguity could materially change the result, method,
+data, or scope, the agent asks before acting.
+
+Control this protection by speaking normally in Claude Code or Codex:
+
+> “Give the agent more freedom for this task.”
+>
+> “Protect the scope strictly again.”
+>
+> “Is strict scope protection active?”
+>
+> “Test whether Astra at high, max and ultra respects my scope.”
+
+Protection starts enabled for each new task. Turning it off affects only the current task and its
+subagents. Model tests return `PASS`, `FAIL`, or `UNAVAILABLE` directly in the chat.
+
+### Technical skill catalog (optional)
+
+These identifiers document the plugin internals. Users do not need them for normal use.
 
 | Skill | Purpose |
 |-------|---------|
@@ -44,7 +65,7 @@ check → visual → review. Logic candidates are detected automatically during 
 | `/sg-improve` | Capture session learnings and improvement issues, with snapshot/rollback safety |
 | `/sg-scout` | Research GitHub for techniques that improve ShipGuard's audits and visual runs |
 
-### Mission lock for reasoning-heavy models
+### Technical activation details
 
 On Codex, ShipGuard's read-only hook checks the active model slug and reasoning effort at session
 start, on every user prompt, for subagents, and after compaction. It activates for `gpt-5.6` or
@@ -53,14 +74,13 @@ start, on every user prompt, for subagents, and after compaction. It activates f
 their slug; the Fable 5 family alias tracks its latest available version. Explicit prompts naming
 those model families also activate it; ordinary uses of the word “sol” do not.
 
-Strict Delta Lock is on by default for every new mission. Change it directly in Claude Code or
-Codex by saying “disable Strict Delta Lock for this mission,” “re-enable Strict Delta Lock,” or
-“is Strict Delta Lock enabled?” The equivalent explicit forms are
-`sg-mission-lock strict off|on|status`. An `off` setting lasts for the current mission and its
-subagents; the next mission starts on again.
+Strict scope protection is on by default for every new task and is controlled through ordinary
+conversation. An `off` setting lasts for the current task and its subagents; the next task starts on
+again.
 
 Codex does not trust newly installed plugin hooks automatically. After installing or updating
-ShipGuard, open `/hooks`, review and trust the ShipGuard mission-lock hook, then start a new thread.
+ShipGuard, open the Hooks settings, review and trust the ShipGuard mission-lock hook, then start a
+new thread.
 Until trusted, the skill remains explicitly callable and implicitly selectable, but automatic
 model-aware activation is not guaranteed.
 
@@ -89,7 +109,7 @@ codex plugin add shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 
-Then open `/hooks` in Codex and trust the ShipGuard mission-lock hook once.
+Then open the Hooks settings in Codex and trust the ShipGuard mission-lock hook once.
 
 Migrating from an older local Codex adapter or a Claude marketplace install? See [`docs/codex-migration.md`](docs/codex-migration.md).
 

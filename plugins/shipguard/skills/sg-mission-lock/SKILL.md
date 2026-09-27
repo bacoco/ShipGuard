@@ -75,12 +75,12 @@ acceptance criteria, ask one concise question and stop before any action that de
 
 ## Control Strict Delta In Conversation
 
-Strict Delta Lock defaults to `on` for every new mission. The user can change or inspect it through
-this skill or in ordinary language in Claude Code or Codex:
+Strict Delta Lock defaults to `on` for every new mission. The normal interface is ordinary language
+in Claude Code or Codex:
 
-- `sg-mission-lock strict off` or “disable Strict Delta Lock for this mission” sets it to `off`;
-- `sg-mission-lock strict on` or “re-enable Strict Delta Lock” sets it to `on`;
-- `sg-mission-lock strict status` or “is Strict Delta Lock enabled?” reports the current value.
+- “give the agent more freedom for this task” sets it to `off`;
+- “protect the scope strictly again” sets it to `on`;
+- “is strict scope protection active?” reports the current value.
 
 An explicit `off` applies only to the current mission and its subagents. Keep it off across turns,
 corrections, and compaction until the user re-enables it or the mission ends. A new mission starts
