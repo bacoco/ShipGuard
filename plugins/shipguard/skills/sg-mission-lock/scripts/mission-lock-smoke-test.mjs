@@ -29,6 +29,9 @@ function assertActive(input) {
   assert.equal(result.hookSpecificOutput.hookEventName, input.hook_event_name);
   assert.match(result.hookSpecificOutput.additionalContext, /\$sg-mission-lock/);
   assert.match(result.hookSpecificOutput.additionalContext, /never broaden authority/);
+  assert.match(result.hookSpecificOutput.additionalContext, /complete authorized delta/);
+  assert.match(result.hookSpecificOutput.additionalContext, /own plan, proposal/);
+  assert.match(result.hookSpecificOutput.additionalContext, /ask one explicit question/);
 }
 
 function assertInactive(input) {
@@ -81,12 +84,47 @@ for (const effort of ["standard", "ultra"]) {
 }
 assertActive(codex("UserPromptSubmit", { model: "gpt-5.6-sol" }));
 
+for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-astra-2026-09-01"]) {
+  for (const effort of ["high", "xhigh", "max", "ultra"]) {
+    assertActive(codex("UserPromptSubmit", {
+      model,
+      model_reasoning_effort: effort,
+      prompt: "continue",
+    }));
+  }
+  for (const effort of ["low", "medium", "standard"]) {
+    assertInactive(codex("UserPromptSubmit", {
+      model,
+      model_reasoning_effort: effort,
+      prompt: "continue",
+    }));
+  }
+}
+assertInactive(codex("UserPromptSubmit", {
+  model: "gpt-6-luna",
+  model_reasoning_effort: "ultra",
+  prompt: "continue",
+}));
+assertInactive(codex("UserPromptSubmit", {
+  model: "gpt-6-astra",
+  prompt: "continue",
+}));
+assertInactive(codex("UserPromptSubmit", {
+  model: "gpt-6-astra-20preview",
+  model_reasoning_effort: "ultra",
+  prompt: "continue",
+}));
+
 // --- Claude Code: SessionStart is the one event that can carry `model`. ---
 assertActive(claudeCode("SessionStart", { model: "gpt-5.6" }));
 assertActive(claudeCode("SessionStart", { model: "gpt-5.6-sol" }));
 assertActive(claudeCode("SessionStart", { model: "gpt-5.6-sol-2026-07-01" }));
 assertInactive(claudeCode("SessionStart", { model: "gpt-5.6-solar" }));
 assertInactive(claudeCode("SessionStart", { model: "gpt-5.5" }));
+assertActive(claudeCode("SessionStart", { model: "claude-opus-5-5" }));
+assertActive(claudeCode("SessionStart", { model: "claude-opus-5-5-2026-09-01" }));
+assertInactive(claudeCode("SessionStart", { model: "claude-opus-4-7" }));
+assertInactive(claudeCode("SessionStart", { model: "claude-opus-5-5-20preview" }));
 // `model` is optional even on SessionStart, so its absence must not activate.
 assertInactive(claudeCode("SessionStart"));
 
@@ -96,6 +134,8 @@ assertInactive(claudeCode("SessionStart"));
 assertActive(claudeCode("UserPromptSubmit", { prompt: "Use GPT 5.6 Sol for this review." }));
 assertActive(claudeCode("UserPromptSubmit", { prompt: "Passe à Sol Ultra." }));
 assertActive(claudeCode("UserPromptSubmit", { prompt: "Sol c'est toi, relis la mission." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Use GPT-6 Astra at high effort." }));
+assertActive(claudeCode("UserPromptSubmit", { prompt: "Passe à Claude Opus 5.5." }));
 
 assertInactive(claudeCode("UserPromptSubmit", { prompt: "Analyse le sol du bâtiment." }));
 assertInactive(claudeCode("UserPromptSubmit", { prompt: "Sol is a musical note." }));

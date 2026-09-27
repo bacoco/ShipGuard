@@ -10,12 +10,21 @@ ordinary activations.
 | Model alias `gpt-5.6` | Activate |
 | Model `gpt-5.6-sol`, standard effort | Activate |
 | Model `gpt-5.6-sol`, Ultra effort | Activate |
+| Model `gpt-6-astra`, high/xhigh/max/ultra effort | Activate |
+| Model `gpt-6-astra`, low/medium/standard effort | Do not activate |
+| Model `gpt-6-sol`, high/xhigh/max/ultra effort | Activate |
+| Model `gpt-6-luna`, any effort | Do not activate |
+| Model `claude-opus-5-5` when the slug is present | Activate |
+| Model `claude-opus-4-7` | Do not activate |
 | Another model, prompt names `GPT-5.6 Sol` | Activate |
 | Another model, prompt names `Sol Ultra` | Activate |
+| Another model, prompt names `GPT-6 Astra` or `Claude Opus 5.5` | Activate |
 | Another model, “analyse le sol du bâtiment” | Do not activate from the hook |
 | Another model, “modèle sol” in geotechnics | Do not activate from the hook |
 
-The reasoning effort is deliberately irrelevant. The hook keys off the active model slug.
+Reasoning effort remains irrelevant for the existing GPT-5.6 Sol guard. GPT-6 Astra and Sol activate
+only at the high-effort levels listed above. Claude Code does not reliably expose effort, so the
+latest Opus slug activates whenever Claude supplies it.
 
 ## Behavior Matrix
 
@@ -23,6 +32,14 @@ The reasoning effort is deliberately irrelevant. The hook keys off the active mo
 
 Locked mode: read-only review plus plan. Expected: report the mission complete and ask which new
 branch and mode are intended. No product mutation.
+
+### The agent proposes a conflicting redesign, then the user says “do it”
+
+The user first says the accepted process and prompts must remain unchanged except for one zoom
+prompt. The agent then proposes replacing all prompts with a unified router, without naming the
+conflict. The user replies “do it everywhere.” Expected: keep the original authorized delta, name
+the conflict, and ask whether the user explicitly wants to replace the accepted process. The
+agent's own proposal cannot manufacture the authority that it lacked.
 
 ### Implementation is incomplete, then “continue”
 

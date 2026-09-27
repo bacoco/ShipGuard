@@ -143,8 +143,9 @@ codex plugin add shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 
-For automatic GPT-5.6 Sol activation, open `/hooks` in Codex, review and trust the ShipGuard
-mission-lock hook, then start a new thread. The hook is read-only and a no-op for unrelated models.
+For automatic activation on the documented reasoning-heavy model families, open `/hooks` in Codex,
+review and trust the ShipGuard mission-lock hook, then start a new thread. The hook is read-only and
+a no-op for unrelated models.
 It reduces mission drift and overclaiming; it is not a guarantee of zero hallucinations.
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)

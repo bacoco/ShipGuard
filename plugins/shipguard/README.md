@@ -25,7 +25,7 @@ check → visual → review. Logic candidates are detected automatically during 
 | Skill | Purpose |
 |-------|---------|
 | [`/grill-goal`](skills/grill-goal/SKILL.md) | Clarify intent and confirm a synthesis in the user's language when needed, then write a standalone English Markdown goal for another AI, with or without `/goal`; does not execute the goal |
-| `/sg-mission-lock` | Lock the literal mission and authority before work; model-aware Codex activation for GPT-5.6 Sol |
+| `/sg-mission-lock` | Lock the literal mission, authorized delta, protected invariants, and authority before work |
 | `/sg-beat-reference` | Build a paste-ready comparison loop that improves work until it beats a named, fetchable reference |
 | `/sg-gauntlet` | Deprecated compatibility alias for `/sg-beat-reference` |
 | `/sg-ship` | Conversational pipeline: propose scope once, then code → applicable logic → process → visual → review |
@@ -43,24 +43,28 @@ check → visual → review. Logic candidates are detected automatically during 
 | `/sg-improve` | Capture session learnings and improvement issues, with snapshot/rollback safety |
 | `/sg-scout` | Research GitHub for techniques that improve ShipGuard's audits and visual runs |
 
-### Mission lock for GPT-5.6 Sol
+### Mission lock for reasoning-heavy models
 
-On Codex, ShipGuard's read-only hook checks the active model slug at session start, on every user
-prompt, for subagents, and after compaction. For `gpt-5.6` or `gpt-5.6-sol` — regardless of reasoning
-effort — it injects the requirement to run `/sg-mission-lock` first. Explicit `GPT-5.6 Sol`
-or `Sol Ultra` prompts also activate it; ordinary uses of the word “sol” do not.
+On Codex, ShipGuard's read-only hook checks the active model slug and reasoning effort at session
+start, on every user prompt, for subagents, and after compaction. It activates for `gpt-5.6` or
+`gpt-5.6-sol` at every effort, and for `gpt-6-astra` or `gpt-6-sol` at `high`, `xhigh`, `max`, or
+`ultra`. On Claude Code it activates for `claude-opus-5-5` when the runtime supplies that slug.
+Explicit prompts naming those model families also activate it; ordinary uses of the word “sol” do
+not.
 
 Codex does not trust newly installed plugin hooks automatically. After installing or updating
 ShipGuard, open `/hooks`, review and trust the ShipGuard mission-lock hook, then start a new thread.
 Until trusted, the skill remains explicitly callable and implicitly selectable, but automatic
 model-aware activation is not guaranteed.
 
-To opt in explicitly for all models in a runtime such as Claude Code, prefix the
+Claude Code does not expose model or effort on every hook event. To cover every prompt and subagent
+instead of relying on the session-start slug, prefix the
 hook command with `SHIPGUARD_MISSION_LOCK_ALL_MODELS=1`. The default remains
-Sol-only, so existing installations do not receive a new automatic guard
-silently.
+model-aware, so unrelated models do not receive the guard silently.
 
-This guard targets mission drift, inferred authority, and overbroad verification claims. It reduces
+This guard targets mission drift, inferred authority, self-authored authority, and overbroad
+verification claims. In particular, a model proposal cannot silently replace an earlier user
+constraint, and a terse approval of a conflicting proposal requires a clarification. It reduces
 those failure modes; no prompt or hook can guarantee that a model never hallucinates.
 
 ### Install
