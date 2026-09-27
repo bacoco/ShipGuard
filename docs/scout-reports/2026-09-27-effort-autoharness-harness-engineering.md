@@ -27,14 +27,15 @@ does not become safer merely because the model reasons longer. ShipGuard should 
 phase: low or medium for bounded implementation and iteration; high for counterexamples and final
 verification; maximum only for explicitly autonomous, difficult work.
 
-### 2. Claude Code activation has an observable coverage gap
+### 2. Model-aware activation has an observable coverage gap
 
 Claude Code does not expose model and effort on every hook event. `UserPromptSubmit` has prompt text
 but no reliable model field, while `SubagentStart` has neither. The existing all-model environment
-opt-in covers this, but the default model-aware path cannot guarantee protection after every
-delegation. Keep this limitation explicit. Any future change to automatic coverage must preserve
-the repository's current contract that unrelated models and prompts remain unaffected unless the
-owner deliberately changes that policy.
+opt-in covered this, but the default model-aware path could not guarantee protection after every
+delegation. On 2026-09-27 the owner explicitly replaced that policy: protection now follows every
+configured host lifecycle event, independently of model and effort. Claude Code and Codex have
+shipped adapters; OpenCode and DeepSeek Harness (`dsh`) still require host-specific adapters before
+automatic protection can be claimed.
 
 ### 3. Deterministic boundaries should guard objective authority
 
@@ -90,8 +91,8 @@ a permanent benchmark campaign.
 ## Prioritized follow-up
 
 1. Ship truthful `run.json` transitions and dashboard rendering. **Implemented with this report.**
-2. Decide explicitly whether Claude Code should remain model-aware by default or protect every
-   prompt and subagent; do not change this product contract implicitly.
+2. Protect every configured Claude Code and Codex event independently of model and effort.
+   **Owner decision accepted and implemented in 2.14.0.**
 3. Design a minimal authority envelope for objective `PreToolUse` denials.
 4. Add one sandboxed tool-action scope probe.
 5. Split the largest skills through progressive disclosure, starting with mission control and audit.

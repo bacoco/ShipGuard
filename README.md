@@ -23,10 +23,10 @@ There is no command to learn. Talk to Claude or Codex in ordinary language, in a
 >
 > “Is strict scope protection active?”
 
-Strict scope protection starts enabled for GPT-5.6 Sol, high-effort GPT-6 Astra/Sol, Claude Opus 5,
-and Fable 5.1 or later. Choose one of three modes in the chat: protected, relaxed for this task only,
-or relaxed across future tasks and sessions until you turn protection back on. If you only say
-“turn it off,” the agent asks which duration you mean.
+Strict scope protection starts enabled for every model and reasoning effort on supported hosts.
+Choose one of three modes in the chat: protected, relaxed for this task only, or relaxed across
+future tasks and sessions until you turn protection back on. If you only say “turn it off,” the
+agent asks which duration you mean.
 
 You can also ask Claude or Codex to test one or several model/effort combinations:
 
@@ -55,7 +55,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
 | Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
-| Scope protection | 🟢 Updated in 2.13.0 | Three conversational modes: protected, relaxed for this task, or relaxed until re-enabled |
+| Scope protection | 🟢 Updated in 2.14.0 | All models by default; three conversational protection modes |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.
@@ -163,9 +163,9 @@ codex plugin add shipguard@shipguard
 npm install -g agent-browser && agent-browser install --with-deps
 ```
 
-For automatic activation on the documented reasoning-heavy model families, open the Hooks settings
-in Codex, review and trust the ShipGuard mission-lock hook, then start a new thread. The hook is
-read-only and a no-op for unrelated models.
+For automatic activation, open the Hooks settings in Codex, review and trust the ShipGuard
+mission-lock hook, then start a new thread. The read-only hook activates on every configured host
+event, independently of model or effort, while protection is on.
 It reduces mission drift and overclaiming; it is not a guarantee of zero hallucinations.
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)
@@ -531,19 +531,21 @@ Inspired by [eval-robuste](https://github.com/Alexmacapple/alex-claude-skill/tre
 
 Built for **Claude Code**. Partial support for other AI CLIs:
 
-| Feature | Claude Code | Codex CLI / Gemini CLI |
-|---------|------------|----------------------|
-| Code Audit (parallel) | ✅ Full | ❌ Requires Agent tool |
-| Visual E2E Debugger | ✅ Full | ✅ agent-browser is CLI-independent |
-| Macro Recorder | ✅ Full | ✅ Playwright is CLI-independent |
-| Review Dashboard | ✅ Full | ✅ Pure Node.js |
-| Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
-| Self-Improving Engine | ✅ Full | ✅ gh CLI is universal |
-| Mission Lock | ✅ Explicit skill | ✅ Codex hook after `/hooks` trust; explicit skill elsewhere |
+| Feature | Claude Code | Codex CLI | Other AI CLIs |
+|---------|-------------|-----------|----------------|
+| Code Audit (parallel) | ✅ Full | ⚠️ Non-parallel lanes | ⚠️ Non-parallel lanes |
+| Visual E2E Debugger | ✅ Full | ✅ agent-browser | ✅ agent-browser when shell tools exist |
+| Macro Recorder | ✅ Full | ✅ Playwright | ✅ Playwright when shell tools exist |
+| Review Dashboard | ✅ Full | ✅ Pure Node.js | ✅ Pure Node.js |
+| Visual Discover/Fix | ✅ Full | ✅ Shell + LLM | ⚠️ Depends on host tools |
+| Self-Improving Engine | ✅ Full | ✅ gh CLI | ⚠️ Depends on host tools |
+| Mission Lock | ✅ Trusted plugin hook | ✅ Trusted plugin hook | ⚠️ Explicit skill; automatic protection needs an adapter |
 
 The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
 
-Community adapters welcome.
+OpenCode and DeepSeek Harness (`dsh`) have distinct plugin and hook APIs. ShipGuard does not yet
+ship adapters for them, so installing or copying the skill alone does not establish automatic
+protection. Community adapters are welcome.
 
 ---
 
