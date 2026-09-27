@@ -1,11 +1,13 @@
-# Experimental Jev dialogue controller
+# Experimental Jev dialogue controller — proposal
+
+**Status: design only. No Jev adapter or associated test has been added by this change.**
 
 ## Scope
 
-This proposal adds an optional controller behind the existing dialogue hook, not new lifecycle
-hooks or a replacement for mission-lock. The first supported check is deliberately narrow:
-compare a final success/completion claim with explicitly supplied source evidence at `Stop`.
-The adapter and focused protocol tests accompany this proposal in the pull request.
+This proposal describes an optional controller behind the existing dialogue hook, not new
+lifecycle hooks or a replacement for mission-lock. The first proposed check is deliberately
+narrow: compare a final success/completion claim with explicitly supplied source evidence at
+`Stop`. Implementation and its focused protocol tests remain to be done.
 
 No provider is selected, installed, started or called by default. Existing host permissions,
 mission-lock, hook trust, deadlines and recursion guards remain authoritative. GrillGoal stays
@@ -36,20 +38,21 @@ Missing, redacted or truncated required context means `unknown`. Invalid provide
 timeouts and transport failures mean `unavailable`. Neither state means verified. A low concern
 score is not a success certificate. Any proposed contradiction remains a semantic suspicion.
 
-## Default and correction modes
+## Proposed default and correction modes
 
-The initial adapter is advisory by default. A possible contradiction can be reported without
+The proposed adapter is advisory by default. A possible contradiction can be reported without
 requesting another agent turn. An additional explicit correction opt-in may return an existing
-`finding`, retaining source passages and the host's one-correction limit. It never changes tool
-arguments, tool results, permissions, mission scope or persistent settings.
+`finding`, retaining source passages and the host's one-correction limit. It must never change
+tool arguments, tool results, permissions, mission scope or persistent settings.
 
 ## Verification boundary
 
-Use the existing dependency-free Node smoke-test convention. Cover request/response mapping,
-exact passages, missing evidence, invalid options/types/probabilities, timeout, no retry,
-redirect refusal, no default network call, and the existing hook's correction recursion guard.
-Use only in-process or loopback HTTP fixtures. Protocol tests do not prove live model quality,
-actual host activation, safety, latency savings or useful error detection.
+For implementation, use the existing dependency-free Node smoke-test convention. Cover
+request/response mapping, exact passages, missing evidence, invalid options/types/probabilities,
+timeout, no retry, redirect refusal, no default network call, and the existing hook's correction
+recursion guard. Use only in-process or loopback HTTP fixtures. Protocol tests would not prove
+live model quality, actual host activation, safety, latency savings or useful error detection.
+No tests or live model calls were run for this documentation-only change.
 
 Merge and live activation are separate decisions. A provider endpoint, model and transmission
 scope must be explicitly selected before a live call; no fallback provider is allowed.
