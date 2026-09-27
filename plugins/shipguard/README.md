@@ -71,12 +71,10 @@ These identifiers document the plugin internals. Users do not need them for norm
 
 ### Technical activation details
 
-On Codex, ShipGuard's read-only hook checks the active model slug and reasoning effort at session
-start, on every user prompt, for subagents, and after compaction. It activates for `gpt-5.6` or
-`gpt-5.6-sol` at every effort, and for `gpt-6-astra` or `gpt-6-sol` at `high`, `xhigh`, `max`, or
-`ultra`. On Claude Code it activates for Opus 5 and Fable 5.1 or later when the runtime supplies
-their slug; the Fable 5 family alias tracks its latest available version. Explicit prompts naming
-those model families also activate it; ordinary uses of the word “sol” do not.
+On Claude Code and Codex, ShipGuard's read-only hook activates at session start, on every user
+prompt, and for subagents, independently of model or reasoning effort. Protection follows the
+configured lifecycle event instead of a model allowlist, so a model switch cannot silently remove
+it.
 
 Strict scope protection is controlled through ordinary conversation. Its three modes are `on`,
 `off-task`, and `off-persistent`. Task-only relaxation ends with the current task. Persistent
@@ -87,12 +85,11 @@ Codex does not trust newly installed plugin hooks automatically. After installin
 ShipGuard, open the Hooks settings, review and trust the ShipGuard mission-lock hook, then start a
 new thread.
 Until trusted, the skill remains explicitly callable and implicitly selectable, but automatic
-model-aware activation is not guaranteed.
+activation is not guaranteed.
 
-Claude Code does not expose model or effort on every hook event. To cover every prompt and subagent
-instead of relying on the session-start slug, prefix the
-hook command with `SHIPGUARD_MISSION_LOCK_ALL_MODELS=1`. The default remains
-model-aware, so unrelated models do not receive the guard silently.
+OpenCode and DeepSeek Harness (`dsh`) use different plugin and hook APIs. ShipGuard does not yet
+ship adapters for them; copying the skill makes its instructions available only when that host can
+load the format, and does not establish automatic protection.
 
 This guard targets mission drift, inferred authority, self-authored authority, and overbroad
 verification claims. In particular, a model proposal cannot silently replace an earlier user
@@ -520,20 +517,22 @@ Scans GitHub for techniques that could make ShipGuard better, scoring each on im
 
 Built for **Claude Code**. Partial support for other AI CLIs:
 
-| Feature | Claude Code | Codex CLI / Gemini CLI |
-|---------|------------|----------------------|
-| Code Audit (parallel) | ✅ Full | ❌ Requires Agent tool |
-| Process Check (dynamic) | ✅ Full | ✅ Bash + git worktree + LLM prompts |
-| Visual E2E Debugger | ✅ Full | ✅ agent-browser is CLI-independent |
-| Macro Recorder | ✅ Full | ✅ Playwright is CLI-independent |
-| Review Dashboard | ✅ Full | ✅ Pure Node.js |
-| Visual Discover/Fix | ✅ Full | ✅ Bash + LLM prompts |
-| Self-Improving Engine | ✅ Full | ✅ gh CLI is universal |
-| Mission Lock | ✅ Explicit skill | ✅ Codex hook after `/hooks` trust; explicit skill elsewhere |
+| Feature | Claude Code | Codex CLI | Other AI CLIs |
+|---------|-------------|-----------|----------------|
+| Code Audit (parallel) | ✅ Full | ⚠️ Non-parallel lanes | ⚠️ Non-parallel lanes |
+| Process Check (dynamic) | ✅ Full | ✅ Shell + git + LLM | ⚠️ Depends on host tools |
+| Visual E2E Debugger | ✅ Full | ✅ agent-browser | ✅ agent-browser when shell tools exist |
+| Macro Recorder | ✅ Full | ✅ Playwright | ✅ Playwright when shell tools exist |
+| Review Dashboard | ✅ Full | ✅ Pure Node.js | ✅ Pure Node.js |
+| Visual Discover/Fix | ✅ Full | ✅ Shell + LLM | ⚠️ Depends on host tools |
+| Self-Improving Engine | ✅ Full | ✅ gh CLI | ⚠️ Depends on host tools |
+| Mission Lock | ✅ Trusted plugin hook | ✅ Trusted plugin hook | ⚠️ Explicit skill; automatic protection needs an adapter |
 
 The visual testing pipeline works with any AI CLI that can run shell commands and read/write files. Code audit parallelization requires Claude Code's `Agent` tool with worktree isolation.
 
-Community adapters welcome.
+OpenCode and DeepSeek Harness (`dsh`) have distinct plugin and hook APIs. ShipGuard does not yet
+ship adapters for them, so installing or copying the skill alone does not establish automatic
+protection. Community adapters are welcome.
 
 ---
 

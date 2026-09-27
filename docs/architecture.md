@@ -12,7 +12,7 @@ ShipGuard is composed of 17 canonical skills plus one deprecated alias: a cross-
 |-------|---------|-------|--------|
 | `grill-goal` | Human dialogue and confirmed synthesis; does not execute the goal | User request | Standalone Markdown goal |
 | `sg-pre-review` | Explicit interfaces-first review before design, report-only | Original request + repository + optional supplied plan | Chat report; optional `prereview-results.json` for Pre-Review tab |
-| `sg-mission-lock` | Lock literal objective, mode, authority, scope, and Done before work; Codex hook activates it for GPT-5.6 Sol | User mission + active model metadata | Developer-context guard; no project files or runtime state |
+| `sg-mission-lock` | Lock literal objective, mode, authority, scope, and Done before work; host hook activates it by default | User mission + host lifecycle event | Developer-context guard; no project files or runtime state |
 | `sg-beat-reference` | Build a bounded prompt that compares an artifact against a named, fetchable reference | Quality goal + reference + ceiling | Paste-ready comparison-loop prompt |
 | `sg-gauntlet` | Deprecated compatibility alias for `sg-beat-reference` | Former command | Delegates to canonical skill |
 | `sg-ship` | Conversational orchestrator -- proposes scope once, then code -> applicable logic -> process -> visual -> review | User request + repo diff | Unified review across applicable signals |
@@ -32,10 +32,11 @@ ShipGuard is composed of 17 canonical skills plus one deprecated alias: a cross-
 ### Mission-lock boundary
 
 `hooks/hooks.json` invokes a zero-dependency, read-only Node script on `SessionStart` (including the
-`compact` source), `UserPromptSubmit`, and `SubagentStart`. The script reads hook JSON from stdin and
-emits additional developer context only for the exact `gpt-5.6` / `gpt-5.6-sol` family or an explicit
-Sol-model prompt. It stores nothing, edits nothing, and blocks nothing. Codex plugin hooks remain
-inactive until the user reviews and trusts them.
+`compact` source), `UserPromptSubmit`, and `SubagentStart`. While persistent protection is on, the
+script emits additional developer context for every configured event without inspecting model or
+effort. It stores nothing, edits nothing, and blocks nothing. Codex plugin hooks remain inactive
+until the user reviews and trusts them. Other harnesses require an adapter for their native plugin
+and hook contracts before they receive automatic protection.
 
 ## Data Flow
 

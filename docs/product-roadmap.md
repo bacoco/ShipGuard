@@ -61,7 +61,9 @@
 ## Shipped in 2.6.0
 
 - **`sg-mission-lock`** -- reusable objective/mode/authority guard that prevents terse continuations, handoffs, findings, or subagents from silently expanding the user mission.
-- **Model-aware Codex activation** -- a read-only, stateless plugin hook activates the guard for `gpt-5.6` / `gpt-5.6-sol` at any reasoning effort, including after compaction and inside subagents.
+- **Initial model-aware Codex activation** -- the original read-only, stateless plugin hook targeted
+  `gpt-5.6` / `gpt-5.6-sol`; 2.14.0 later replaced the allowlist with protected-by-default host
+  lifecycle activation.
 - **Honest trust boundary** -- automatic activation requires the user to review and trust the plugin hook; implicit skill selection remains a fallback, not a guarantee.
 - **Regression harness** -- standalone Node smoke tests cover standard/Ultra effort, explicit model naming, lifecycle events, malformed input, and ordinary “sol” false positives.
 

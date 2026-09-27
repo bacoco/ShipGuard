@@ -85,6 +85,10 @@ Run the relevant smoke test after touching a skill's scripts or templates.
 - `--model=haiku` is deliberately refused for audits — do not relax this.
 - Per-project learned state lives in the target project's `.shipguard/` directory, not in this repo.
 - Keep the two marketplace manifests (`.claude-plugin/` and `.agents/plugins/`) in sync when plugin metadata changes.
-- `sg-mission-lock` is cross-skill governance. Its hook injects context only for the documented model/effort matrix or explicit model prompts; it must not mutate or block unrelated prompts. The hook may read the explicit persistent preference at `~/.shipguard/mission-lock.json`; only the conversational skill's settings script writes it. Task-only state stays in the active conversation.
+- `sg-mission-lock` is cross-skill governance. Its hook injects context for every configured host
+  lifecycle event while protection is on, independently of model or effort; it must not mutate or
+  block prompts. The hook may read the explicit persistent preference at
+  `~/.shipguard/mission-lock.json`; only the conversational skill's settings script writes it.
+  Task-only state stays in the active conversation.
 
 - Optional dialogue hooks are documented in `plugins/shipguard/docs/dialogue-hooks.md`. They are no-ops by default; keep them distinct from mission-lock. Unknown/unavailable never means verified; no tool arguments or raw results are rewritten.

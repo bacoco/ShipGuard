@@ -7,29 +7,18 @@ ordinary activations.
 
 | Runtime/prompt | Expected activation |
 |---|---|
-| Model alias `gpt-5.6` | Activate |
-| Model `gpt-5.6-sol`, standard effort | Activate |
-| Model `gpt-5.6-sol`, Ultra effort | Activate |
-| Model `gpt-6-astra`, high/xhigh/max/ultra effort | Activate |
-| Model `gpt-6-astra`, low/medium/standard effort | Do not activate |
-| Model `gpt-6-sol`, high/xhigh/max/ultra effort | Activate |
-| Model `gpt-6-luna`, any effort | Do not activate |
-| Any Claude Opus 5 model when the slug is present | Activate |
-| Claude Fable 5 family alias or Fable 5.1+ when the slug is present | Activate |
-| Claude Fable 5.0 | Do not activate |
-| Model `claude-opus-4-7` | Do not activate |
-| Another model, prompt names `GPT-5.6 Sol` | Activate |
-| Another model, prompt names `Sol Ultra` | Activate |
-| Another model, prompt names `GPT-6 Astra`, `Claude Opus 5`, or `Fable 5` | Activate |
-| Another model, “analyse le sol du bâtiment” | Do not activate from the hook |
-| Another model, “modèle sol” in geotechnics | Do not activate from the hook |
+| Claude Code `SessionStart` (`startup`, `resume`, `clear`, `compact`, or `fork`), model present or absent | Activate |
+| Claude Code `UserPromptSubmit`, any prompt | Activate |
+| Claude Code `SubagentStart`, any agent type | Activate |
+| Codex configured lifecycle event, any model and effort | Activate |
+| Another harness executing the compatible hook contract | Activate |
+| Missing or malformed hook event | Do not activate |
+| Any supported event while persistent mode is off | Do not activate |
 
-Reasoning effort remains irrelevant for the existing GPT-5.6 Sol guard. GPT-6 Astra and Sol activate
-only at the high-effort levels listed above. Claude Code does not reliably expose effort, so the
-Opus 5 and Fable 5.1+ activate whenever Claude supplies their slugs; the unversioned Fable 5 alias
-tracks the latest family model and also activates. Strict Delta Lock is active by default unless
-the user selected the persistent relaxed mode, and the user controls all three modes in ordinary
-language.
+Activation follows the configured host event, not a model or effort allowlist. Strict Delta Lock is
+active by default unless the user selected the persistent relaxed mode, and the user controls all
+three modes in ordinary language. OpenCode and DeepSeek Harness require their own adapters before
+they can execute this hook contract; skill files alone do not establish automatic protection.
 
 ## Behavior Matrix
 

@@ -24,6 +24,8 @@ The main branch is `main`. Create feature branches for changes; do not commit di
 - Explicit exception: `grill-goal` must contain only its self-contained `SKILL.md`. Do not add an adapter, scripts, or supporting files; its behavior must not depend on external agent instructions or development reports.
 - Keep the `visual-tests/_results/` output contract stable (`audit-results.json`, `logic-results.json`, `process-results.json`, TOON format): skills consume each other's files.
 - Version lives in `plugins/shipguard/.claude-plugin/plugin.json`; mirror metadata changes in `.codex-plugin/plugin.json` and both marketplace manifests (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`).
-- Keep `sg-mission-lock`, its Codex hook, and its smoke test aligned. The hook must remain read-only, stateless, non-blocking, and a no-op for unrelated models/prompts.
+- Keep `sg-mission-lock`, its host hook, and its smoke test aligned. The hook must remain read-only,
+  stateless, and non-blocking. While Strict Delta is protected, every configured host lifecycle
+  event activates regardless of model or effort; persistent relaxation is the explicit opt-out.
 - Skills are report-only by default; `--fix` is always opt-in. Do not change that default.
 - `--model=haiku` is refused for audits by design — do not relax.
