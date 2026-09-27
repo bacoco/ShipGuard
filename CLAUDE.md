@@ -63,6 +63,7 @@ node plugins/shipguard/hooks/dialogue-check-smoke-test.mjs
 node plugins/shipguard/hooks/model-controller-smoke-test.mjs
 node plugins/shipguard/skills/sg-pre-review/pre-review-smoke-test.mjs
 node plugins/shipguard/skills/sg-pre-review/evidence-guard-smoke-test.mjs
+node plugins/shipguard/skills/sg-ship/run-manifest-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-review/review-smoke-test.mjs
 node plugins/shipguard/skills/sg-visual-review/monitor-smoke-test.mjs
 node plugins/shipguard/skills/sg-improve/improve-dry-run-smoke-test.mjs

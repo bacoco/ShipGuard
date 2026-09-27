@@ -76,16 +76,22 @@ ordinary-language authorization into the internal audit fix control.
   "timestamp": "<iso>",
   "scope": {"type": "diff", "value": "<ref>"},
   "lanes": {
-    "audit":   {"status": "ran", "results": "audit-results.json"},
-    "logic":   {"status": "ran", "results": "logic-results.json"},
-    "process": {"status": "ran", "results": "process-results.json"},
+    "audit":   {"status": "pending", "reason": "awaiting Phase 1"},
+    "logic":   {"status": "pending", "reason": "awaiting Phase 1.5"},
+    "process": {"status": "pending", "reason": "awaiting Phase 2"},
     "visual":  {"status": "skipped", "reason": "no agent-browser"},
     "crawl":   {"status": "not-applicable", "reason": "crawl is a CLI recette lane (shipguard run) — not part of the diff pipeline"}
   }
 }
 ```
 
-Lane statuses: `ran` | `skipped` | `not-applicable` | `error` | `needs-agent` — every non-`ran` status MUST carry a `reason`. The dashboard renders these as lane chips and shows the declared reason in place of generic empty states.
+Lane statuses: `pending` | `running` | `ran` | `skipped` | `not-applicable` | `error` |
+`needs-agent` — every non-`ran` status MUST carry a `reason`. Initialize each planned lane as
+`pending`, switch it to `running` immediately before invoking the lane, and use `ran` only after its
+declared result exists and can be read. A lane that fails becomes `error`; never leave a completed
+run with `pending` or `running`. Write each transition atomically so an interruption cannot turn
+planned work into a false execution receipt. The dashboard renders every state as a lane chip and
+shows the declared reason in place of generic empty states.
 3. **Freshness check (audit reuse).** The audit is the most expensive lane. If `visual-tests/_results/audit-results.json` already exists and is **newer than the last commit touching the scoped files**, offer to reuse it instead of re-running Phase 1. Never reuse silently — say what is being reused and why it is still fresh.
 4. **Ask at most one scope question.** Present the concrete scope and planned checks in plain
    language, including any Logic Audit candidate or reason it does not apply. Example:
@@ -121,6 +127,10 @@ The tree **mutates during Phase 1** in this case, so after the audit lane finish
 
 This produces `visual-tests/_results/audit-results.json` with `impacted_backend[]` (`{endpoint, reason, severity}` objects) and `impacted_ui_routes[]` (`{route, reason, severity, bug_count}` objects) — the lists the next lanes consume.
 
+Update `run.json` to `audit.status = "running"` before invoking the lane, then to `ran` with its
+result path only after `audit-results.json` is readable. Record `error` plus the observed reason if
+the lane does not produce a usable result.
+
 If the audit finds nothing impacted, note it and still run the diff-scoped process-check (a clean audit doesn't mean the behavior didn't change).
 
 ---
@@ -144,6 +154,9 @@ not-applicable in Phase 0, stop after discovery and write the valid `not-applica
 declared its result. Skip the lane only when the user excluded it in ordinary language, and record
 that exact exclusion.
 
+As with every executable lane, set `logic.status = "running"` before invocation; its initial
+`pending` state never counts as semantic coverage.
+
 Logic findings judge absolute contracts and invariants. They do not replace the before/after
 process lane, even when the logic result is clean.
 
@@ -158,6 +171,8 @@ Run, literally:
 ```
 
 (mode passthrough, default `reason`). It reads `impacted_backend[]`, simulates the behavioral delta of the changed units (reasoning by default, no infra), and writes `visual-tests/_results/process-results.json` — including any `impacted_ui_routes[]` and `surprise` flags. Findings stay tagged **reasoned vs measured**.
+
+Set `process.status = "running"` before invocation and `ran` only after the result is readable.
 
 ---
 
@@ -176,6 +191,9 @@ When Logic Audit ran, use its internal bridge:
 ```
 
 sg-visual-run **unions every selected route list** (dedupes by route, highest severity wins, ordered severity-first) and confirms the impacted routes in the browser. If the lane is skipped, **say why** (no UI / no agent-browser / `--no-visual`) — never imply visual coverage that didn't run. Record the skip in `run.json` too (status `skipped` + the stated reason) — the spoken reason alone is not enough.
+
+When selected, set `visual.status = "running"` before invocation and `ran` only after
+`visual-results.json` is readable.
 
 **Staleness guard:** before consuming `audit-results.json`, `logic-results.json`, or `process-results.json` here (and in Phase 4), check they are not older than the current scope's last commit. Never consume results older than the scope's last commit without saying so.
 
@@ -234,4 +252,5 @@ Print one summary across all applicable lanes:
 - [ ] `/sg-visual-run --from-audit [--from-logic] --from-process` run (union of selected route lists, dedupe by route, highest severity wins), or skipped **with a stated reason**
 - [ ] `/sg-visual-review` built — one dashboard with Visual Tests, Code Audit, Logic, Process, and Recorded tabs
 - [ ] `visual-tests/_results/run.json` written and updated after each phase — every skipped/not-applicable lane declared with a reason
+- [ ] No final lane remains `pending` or `running`; `ran` names only a readable result produced or explicitly reused by this run
 - [ ] Consolidated cross-lane summary printed (audit-fix delta labeled separately under `--fix`); no fixes/decisions made by sg-ship itself

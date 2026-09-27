@@ -111,7 +111,11 @@ The CLI's exit code is the machine contract a CI consumes, and each code is an *
 
 **Precedence when several are true at once: `2` > `3` > `1` > `0`.** Untrustworthy evidence outranks a wrong declaration, because a human who fixes only the declaration gets another untrustworthy run. An incomplete recette outranks its own findings, because a partial finding list must never be read as a complete one. *Incomplete is never clean*, and a broken tool never masquerades as a product finding.
 
-`run.json` lanes carry `status` (one of `ran`, `skipped`, `not-applicable`, `error`, `needs-agent`) and, on any non-`ran` status, a required `reason`. Two additive optional lane fields drive the aggregation:
+`run.json` lanes carry `status` (one of `pending`, `running`, `ran`, `skipped`, `not-applicable`,
+`error`, `needs-agent`) and, on any non-`ran` status, a required `reason`. `pending` and `running`
+are transitional states for an interactive `sg-ship` run: they expose planned or active work but
+never count as coverage. A completed producer run must replace every transitional state with a
+terminal one. Two additive optional lane fields drive the aggregation:
 
 - `remedy`: `"infrastructure"` or `"declaration"` — **who can fix this lane**. A status says what happened; only `remedy` says whether a retry is worth anything. Present only on a lane that needs one, so a clean run declares no `remedy` anywhere. `"infrastructure"` maps to exit `2`, `"declaration"` to exit `3`.
 - `truncated`: `{reason, max_pages, queued_unvisited}` on the crawl lane — present only when the page cap was reached with work still queued. It carries `remedy: "declaration"`: the fix is raising `crawl.max_pages` in `_config.yaml` or passing `--max-pages=N`, never a retry, which would stop at exactly the same page.
