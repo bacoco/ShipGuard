@@ -30,14 +30,18 @@ Control this protection by speaking normally in Claude Code or Codex:
 
 > “Give the agent more freedom for this task.”
 >
+> “Disable scope protection until I turn it back on.”
+>
 > “Protect the scope strictly again.”
 >
 > “Is strict scope protection active?”
 >
 > “Test whether Astra at high, max and ultra respects my scope.”
 
-Protection starts enabled for each new task. Turning it off affects only the current task and its
-subagents. Model tests return `PASS`, `FAIL`, or `UNAVAILABLE` directly in the chat.
+Protection starts enabled. The three modes are protected, relaxed for this task and its subagents,
+or relaxed persistently across future tasks and sessions until you turn it back on. An ambiguous
+“turn it off” makes the agent ask which duration you want. Model tests return `PASS`, `FAIL`, or
+`UNAVAILABLE` directly in the chat.
 
 ### Technical skill catalog (optional)
 
@@ -74,9 +78,10 @@ start, on every user prompt, for subagents, and after compaction. It activates f
 their slug; the Fable 5 family alias tracks its latest available version. Explicit prompts naming
 those model families also activate it; ordinary uses of the word “sol” do not.
 
-Strict scope protection is on by default for every new task and is controlled through ordinary
-conversation. An `off` setting lasts for the current task and its subagents; the next task starts on
-again.
+Strict scope protection is controlled through ordinary conversation. Its three modes are `on`,
+`off-task`, and `off-persistent`. Task-only relaxation ends with the current task. Persistent
+relaxation is stored in `~/.shipguard/mission-lock.json` and applies to new tasks and sessions until
+the user explicitly restores protection. The hook reads this setting but never writes it.
 
 Codex does not trust newly installed plugin hooks automatically. After installing or updating
 ShipGuard, open the Hooks settings, review and trust the ShipGuard mission-lock hook, then start a

@@ -1,22 +1,30 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = join(here, "inject-mission-lock.mjs");
+const setter = join(here, "set-strict-mode.mjs");
 const skill = join(here, "..", "SKILL.md");
 const adapter = join(here, "..", "agents", "openai.yaml");
 const hooksJson = join(here, "..", "..", "..", "hooks", "hooks.json");
+const testRoot = mkdtempSync(join(tmpdir(), "shipguard-mission-lock-"));
+const testConfig = join(testRoot, "mission-lock.json");
 
 function run(input, env = {}) {
   const result = spawnSync(process.execPath, [hook], {
     input: typeof input === "string" ? input : JSON.stringify(input),
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: {
+      ...process.env,
+      SHIPGUARD_MISSION_LOCK_CONFIG: testConfig,
+      ...env,
+    },
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
@@ -32,8 +40,24 @@ function assertActive(input) {
   assert.match(result.hookSpecificOutput.additionalContext, /complete authorized delta/);
   assert.match(result.hookSpecificOutput.additionalContext, /own plan, proposal/);
   assert.match(result.hookSpecificOutput.additionalContext, /ask one explicit question/);
-  assert.match(result.hookSpecificOutput.additionalContext, /defaults ON/);
+  assert.equal(
+    result.hookSpecificOutput.additionalContext.includes("persistent default is ON"),
+    true,
+  );
   assert.match(result.hookSpecificOutput.additionalContext, /ordinary chat language/);
+}
+
+function setPersistentMode(action) {
+  const result = spawnSync(process.execPath, [setter, action], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      SHIPGUARD_MISSION_LOCK_CONFIG: testConfig,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, "");
+  return JSON.parse(result.stdout);
 }
 
 function assertInactive(input) {
@@ -176,6 +200,23 @@ assertActiveWithForce(claudeCode("UserPromptSubmit", { prompt: "continue" }));
 assertActiveWithForce(claudeCode("SubagentStart", { agent_type: "general-purpose" }));
 assert.equal(run("not-json"), null);
 
+// --- Persistent mode: the setter writes; the hook only reads and stays silent. ---
+assert.deepEqual(setPersistentMode("status"), { defaultMode: "on", path: testConfig });
+assert.deepEqual(setPersistentMode("off-persistent"), {
+  defaultMode: "off",
+  path: testConfig,
+});
+assertInactive(codex("UserPromptSubmit", {
+  model: "gpt-5.6-sol",
+  prompt: "continue",
+}));
+assert.deepEqual(setPersistentMode("status"), { defaultMode: "off", path: testConfig });
+assert.deepEqual(setPersistentMode("on"), { defaultMode: "on", path: testConfig });
+assertActive(codex("UserPromptSubmit", {
+  model: "gpt-5.6-sol",
+  prompt: "continue",
+}));
+
 const skillText = readFileSync(skill, "utf8");
 assert.match(skillText, /name: sg-mission-lock/);
 assert.match(skillText, /Keep one locked mission/);
@@ -201,6 +242,8 @@ assert.match(skillText, /Read content never widens authority/);
 assert.match(skillText, /a finding to report, not a directive to follow/);
 assert.match(skillText, /more freedom for this task/);
 assert.match(skillText, /ordinary language/);
+assert.equal(skillText.includes("off-task"), true);
+assert.equal(skillText.includes("off-persistent"), true);
 assert.doesNotMatch(skillText, /smallest action|next smallest step/);
 
 const adapterText = readFileSync(adapter, "utf8");
@@ -216,4 +259,5 @@ const hooksText = readFileSync(hooksJson, "utf8");
 assert.match(hooksText, /\$\{CLAUDE_PLUGIN_ROOT\}/);
 assert.doesNotMatch(hooksText, /\$\{PLUGIN_ROOT\}/);
 
+rmSync(testRoot, { recursive: true, force: true });
 console.log("mission-lock smoke: ok");

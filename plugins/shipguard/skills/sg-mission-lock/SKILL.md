@@ -1,6 +1,6 @@
 ---
 name: sg-mission-lock
-description: "Lock the literal user mission, authorized delta, protected invariants, and authority level before work to prevent scope drift, inferred permission, self-authored authority, adjacent-work expansion, plan churn, and false completion. Use unconditionally when the trusted hook activates it, after terse continuations such as continue/do all, after compaction or correction, and whenever review/plan/code/publish/live boundaries could be crossed."
+description: "Lock the literal user mission, authorized delta, protected invariants, and authority level before work, and control scope protection in ordinary language with protected, task-relaxed, and persistently relaxed modes. Use when the trusted hook activates it, when the user asks to change or inspect protection, after terse continuations, after compaction or correction, and whenever review/plan/code/publish/live boundaries could be crossed."
 ---
 
 # /sg-mission-lock — Mission And Authority Guard
@@ -24,7 +24,7 @@ Before the first non-trivial action, extract and expose one concise checkpoint:
 - Authority: mutable files and systems; use none for read-only work.
 - Authorized delta: the complete set of behavior and state the user permits to change.
 - Protected invariants: all named constraints plus every unmentioned behavior and state.
-- Strict-delta: `on` by default, or the user's explicit `off` for this mission.
+- Strict-delta: `on`, `off-task`, or `off-persistent`, using the user's active choice and persistent default.
 - Scope: the current mission and directly required branches.
 - Deliverable: answer, review, plan, code, evidence, publication, or runtime result.
 - Done: observable evidence that ends the mission.
@@ -75,18 +75,31 @@ acceptance criteria, ask one concise question and stop before any action that de
 
 ## Control Strict Delta In Conversation
 
-Strict Delta Lock defaults to `on` for every new mission. The normal interface is ordinary language
-in Claude Code or Codex:
+Strict Delta Lock has exactly three modes. The normal interface is ordinary language in Claude Code
+or Codex:
 
-- “give the agent more freedom for this task” sets it to `off`;
-- “protect the scope strictly again” sets it to `on`;
-- “is strict scope protection active?” reports the current value.
+- **Protected** (`on`): protect the current mission and make protection the default for future
+  missions. “Protect the scope strictly again” selects this mode.
+- **Relaxed for this task** (`off-task`): relax only the current mission and its subagents. “Give the
+  agent more freedom for this task” selects this mode. The next mission uses the persistent default.
+- **Relaxed until re-enabled** (`off-persistent`): relax the current mission and future missions,
+  including new sessions, until the user explicitly selects Protected. “Disable scope protection
+  until I turn it back on” selects this mode.
 
-An explicit `off` applies only to the current mission and its subagents. Keep it off across turns,
-corrections, and compaction until the user re-enables it or the mission ends. A new mission starts
-with `on`. Never infer `off` from urgency, broad autonomy, a goal, or a terse continuation. When a
-persistent goal is active, it supplies the objective but does not expand authority; the same
-Strict-delta state still governs what may change.
+If the user merely says to turn protection off without saying whether this means the current task
+or future tasks too, ask which of the two relaxed modes they want before changing it. Never infer a
+relaxed mode from urgency, broad autonomy, a goal, or a terse continuation.
+
+The durable default lives in `~/.shipguard/mission-lock.json`. Use the sibling script
+`scripts/set-strict-mode.mjs`: run it with `off-persistent` for Relaxed until re-enabled, `on` for
+Protected, and `status` when the user asks for the current setting. Do not write this file for
+Relaxed for this task. Report both the active mission mode and the persistent default when they
+differ. The hook only reads the durable setting and emits no mission-lock context while it is off.
+
+Keep `off-task` across turns, corrections, and compaction until the user re-enables protection or
+the mission ends. Subagents inherit the active mission mode. When a persistent goal is active, it
+supplies the objective but does not expand authority; the same Strict-delta state still governs
+what may change.
 
 Changing this state grants no `CODE`, `PUBLISH`, or `OPS/LIVE` capability. When reporting status or
 changing only this state, do not begin the product task unless the user also asked to continue it.

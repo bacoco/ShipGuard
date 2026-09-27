@@ -17,13 +17,16 @@ There is no command to learn. Talk to Claude or Codex in ordinary language, in a
 >
 > “Give the agent more freedom for this task.”
 >
+> “Disable scope protection until I turn it back on.”
+>
 > “Protect the scope strictly again.”
 >
 > “Is strict scope protection active?”
 
 Strict scope protection starts enabled for GPT-5.6 Sol, high-effort GPT-6 Astra/Sol, Claude Opus 5,
-and Fable 5.1 or later. Turning it off affects only the current task and its subagents; the next task
-starts protected again.
+and Fable 5.1 or later. Choose one of three modes in the chat: protected, relaxed for this task only,
+or relaxed across future tasks and sessions until you turn protection back on. If you only say
+“turn it off,” the agent asks which duration you mean.
 
 You can also ask Claude or Codex to test one or several model/effort combinations:
 
@@ -52,7 +55,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
 | Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
-| Scope protection | 🟢 Updated in 2.12.0 | Enabled automatically for targeted reasoning models; controlled entirely through ordinary conversation |
+| Scope protection | 🟢 Updated in 2.13.0 | Three conversational modes: protected, relaxed for this task, or relaxed until re-enabled |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
 > ⚠️ Requires **Claude Code or Codex**. Visual flows also require `agent-browser`. Some flows are experimental and evolving fast.

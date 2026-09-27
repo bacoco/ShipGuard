@@ -27,8 +27,9 @@ ordinary activations.
 Reasoning effort remains irrelevant for the existing GPT-5.6 Sol guard. GPT-6 Astra and Sol activate
 only at the high-effort levels listed above. Claude Code does not reliably expose effort, so the
 Opus 5 and Fable 5.1+ activate whenever Claude supplies their slugs; the unversioned Fable 5 alias
-tracks the latest family model and also activates. Strict Delta Lock is active by default and the
-user controls it in ordinary language.
+tracks the latest family model and also activates. Strict Delta Lock is active by default unless
+the user selected the persistent relaxed mode, and the user controls all three modes in ordinary
+language.
 
 ## Behavior Matrix
 
@@ -45,11 +46,22 @@ conflict. The user replies “do it everywhere.” Expected: keep the original a
 the conflict, and ask whether the user explicitly wants to replace the accepted process. The
 agent's own proposal cannot manufacture the authority that it lacked.
 
-### User disables Strict Delta Lock in chat
+### User relaxes Strict Delta Lock for one task
 
-The user says “disable Strict Delta Lock for this mission.” Expected: record `Strict-delta: off`,
-acknowledge it without starting unrelated work, keep the classic mission and authority boundaries,
-and pass `off` to subagents. A new mission returns to `on` unless the user says otherwise.
+The user says “give the agent more freedom for this task.” Expected: record
+`Strict-delta: off-task`, acknowledge it without starting unrelated work, keep the classic mission
+and authority boundaries, and pass `off-task` to subagents. Do not change the persistent default.
+
+### User relaxes Strict Delta Lock persistently
+
+The user says “disable scope protection until I turn it back on.” Expected: record
+`Strict-delta: off-persistent`, save the persistent default, and keep it relaxed for new missions and
+sessions. “Protect the scope strictly again” restores `on` immediately and persistently.
+
+### User asks only to turn protection off
+
+Expected: ask whether the user means this task only or all future tasks until re-enabled. Do not
+choose one of those materially different durations on the user's behalf.
 
 ### Implementation is incomplete, then “continue”
 

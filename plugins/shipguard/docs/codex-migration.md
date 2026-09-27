@@ -54,12 +54,13 @@ The expected entry is `shipguard@shipguard` at the current plugin version.
 ### Trust the mission-lock hook
 
 Codex requires explicit trust for plugin hooks. Open the Hooks settings, review the ShipGuard hook,
-trust its current definition, and start a new thread. The hook is read-only and stateless: it injects mission
+trust its current definition, and start a new thread. The hook is read-only: it injects mission
 guidance for `gpt-5.6` / `gpt-5.6-sol`, high-effort `gpt-6-astra` / `gpt-6-sol`, Claude Opus 5 or
 Fable 5.1+ when their slug is available, or prompts that explicitly name those families. The Fable
 5 alias tracks the latest family version. Strict scope protection is enabled by default and can be
-changed by speaking normally in the chat: ask to relax it for the current task, restore it, or
-report its current status.
+changed by speaking normally in the chat: keep it protected, relax it for the current task, or relax
+it persistently across future sessions until it is re-enabled. Persistent preference is stored in
+`~/.shipguard/mission-lock.json`; the hook reads that file but never writes it.
 
 If the hook is not trusted, the mission guard remains available when explicitly requested in chat,
 but automatic model-aware activation is not guaranteed.
