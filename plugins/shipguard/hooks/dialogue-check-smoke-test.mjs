@@ -87,12 +87,21 @@ try {
   assert.ok(!JSON.stringify(unsafe).includes('fixture-sensitive-value'));
   const manifest = JSON.parse(readFileSync(join(root, 'hooks.json'), 'utf8'));
   const missionCommand = 'node \"${CLAUDE_PLUGIN_ROOT}/skills/sg-mission-lock/scripts/inject-mission-lock.mjs\"';
+  const missionHook = { type: 'command', command: missionCommand, timeout: 5 };
   for (const event of ['SessionStart', 'UserPromptSubmit', 'SubagentStart']) {
-    const group = { hooks: [{ type: 'command', command: missionCommand, timeout: 5 }] };
-    if (event === 'SessionStart') group.matcher = 'startup|resume|clear|compact';
-    assert.deepEqual(manifest.hooks[event][0], group, 'original mission hook declaration changed');
+    const group = manifest.hooks[event]?.[0];
+    assert.deepEqual(group?.hooks, [missionHook], 'mission hook command declaration changed');
+    if (event === 'SessionStart') {
+      assert.equal(typeof group.matcher, 'string', 'SessionStart mission hook must declare its matcher in hooks.json');
+      assert.ok(group.matcher.length > 0, 'SessionStart mission hook matcher must not be empty');
+    } else {
+      assert.equal(group.matcher, undefined, `${event} mission hook must not declare a matcher`);
+    }
   }
   for (const event of ['UserPromptSubmit','PreToolUse','PostToolUse','Stop']) assert.ok(manifest.hooks[event].some(g => g.hooks.some(h => h.command.includes('/hooks/dialogue-check.mjs'))));
+  const repoGuidance = readFileSync(join(root, '../../..', 'CLAUDE.md'), 'utf8');
+  assert.match(repoGuidance, /Exception: `grill-goal` contains only `SKILL\.md`/);
+  assert.match(repoGuidance, /It must remain usable without an adapter/);
   assert.deepEqual(readdirSync(join(root, '../skills/grill-goal')), ['SKILL.md']);
   console.log('dialogue hook smoke: passed (protocol/fault fixtures; no model calls)');
 } finally { rmSync(temp, { recursive: true, force: true }); }
