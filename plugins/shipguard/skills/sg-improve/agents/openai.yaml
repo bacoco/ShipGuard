@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Improve"
-  short_description: "Capture session learnings for future ShipGuard runs."
-  default_prompt: "Extract ShipGuard learnings from this session."
+  short_description: "Capture learnings or explicitly audit selected prompts."
+  default_prompt: "Extract ShipGuard learnings from this session. For an explicit --prompt-audit request, follow the prompt-audit branch in SKILL.md instead; do not run the retrospective or write learnings."
 
 policy:
   allow_implicit_invocation: false
@@ -13,4 +13,7 @@ dependencies:
       description: "Inspect repository state before writing learnings."
     - type: "shell"
       value: "gh"
-      description: "List, create, and comment on ShipGuard improvement issues in Phase 5."
+      description: "List, create, and comment on ShipGuard improvement issues in Phase 5; not used by --prompt-audit."
+    - type: "shell"
+      value: "node"
+      description: "Run the local prompt-audit inventory and evidence/diff helper for --prompt-audit. The helper does not call models or write files."
