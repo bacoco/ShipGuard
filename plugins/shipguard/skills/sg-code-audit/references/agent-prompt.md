@@ -212,6 +212,13 @@ The JSON MUST follow this exact schema:
 
 **Note:** `verification_score` and `verified` are set to `null` in the zone output. They are populated later during aggregation by the orchestrator's verification phase. Zone agents should NOT set these fields to any other value.
 
+In each `description`, state concisely the observation, how it was obtained (code reading or execution),
+the triggering condition if known, and the possible impact with its uncertainty. If you propose
+reproduction or verification, give one explicit action per step and the result that would confirm
+the claim. Label unexecuted steps as proposed; do not report them as verified. State unknown
+conditions, results, or scope limits instead of inventing them. Use one term for the same concept
+throughout the finding, while preserving technical distinctions and negations.
+
 Increment the bug counter sequentially: r{round_number}-{zone.id}-001, r{round_number}-{zone.id}-002, etc.
 
 ## Output Validation Contract
