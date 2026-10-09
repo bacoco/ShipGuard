@@ -40,6 +40,11 @@ function assertActive(input) {
   assert.match(result.hookSpecificOutput.additionalContext, /complete authorized delta/);
   assert.match(result.hookSpecificOutput.additionalContext, /own plan, proposal/);
   assert.match(result.hookSpecificOutput.additionalContext, /ask one explicit question/);
+  assert.match(result.hookSpecificOutput.additionalContext, /concise reformulation in the user's language/);
+  assert.match(result.hookSpecificOutput.additionalContext, /one stable term per concept/);
+  assert.match(result.hookSpecificOutput.additionalContext, /Cut filler, not conditions, negations, exceptions, uncertainty/);
+  assert.match(result.hookSpecificOutput.additionalContext, /never invent a user-chosen method or replace the original request/);
+  assert.equal(Object.hasOwn(result, "prompt"), false);
   assert.equal(
     result.hookSpecificOutput.additionalContext.includes("persistent default is ON"),
     true,
@@ -134,6 +139,10 @@ assert.match(skillText, /A `DEVIATION` notice.*never creates permission/s);
 assert.match(skillText, /Authority capabilities are non-transitive/);
 assert.match(skillText, /wait for explicit user\s+confirmation/s);
 assert.match(skillText, /largest coherent safe useful slice/);
+assert.match(skillText, /one stable term per concept/);
+assert.match(skillText, /keep every condition, negation, exception, uncertainty/);
+assert.match(skillText, /Do not impose a fixed word count or an English-only dictionary/);
+assert.match(skillText, /original request remains the\s+authority/s);
 assert.match(skillText, /Do not split a coherent tranche into\s+artificial micro-steps/s);
 assert.match(skillText, /Continue independent authorized slices when one slice is blocked/);
 assert.match(skillText, /one independent final review/);
@@ -158,6 +167,7 @@ assert.doesNotMatch(skillText, /smallest action|next smallest step/);
 const adapterText = readFileSync(adapter, "utf8");
 assert.match(adapterText, /allow_implicit_invocation: true/);
 assert.match(adapterText, /Strict Delta/);
+assert.match(adapterText, /restate and lock the mission concisely in the user's terms/);
 
 const hooks = JSON.parse(readFileSync(hooksJson, "utf8"));
 for (const event of ["SessionStart", "UserPromptSubmit", "SubagentStart"]) {

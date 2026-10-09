@@ -31,6 +31,16 @@ Before the first non-trivial action, extract and expose one concise checkpoint:
 - Out-now: items excluded from this mission, without banning them project-wide.
 - Next: the largest coherent safe useful slice that materially advances Done.
 
+Use this checkpoint as a short reformulation of the need, not as another prompt that replaces the
+user's words. Write in the user's language. Reuse their names for domain objects and the project's
+exact technical terms; use one stable term per concept instead of varying synonyms. Cut filler and
+repetition, but keep every condition, negation, exception, uncertainty, required order, number,
+identifier, evidence requirement, and authority limit. Do not invent a method when the user has not
+chosen one; make any agent-selected `Next` visibly an agent decision. Label inferences rather than
+stating them as user facts. If a shorter sentence would change the meaning, keep the longer one.
+Do not impose a fixed word count or an English-only dictionary. The original request remains the
+authority for every field in the checkpoint.
+
 `Next` is a planning unit, not a mandate to atomize work. Do not split a coherent tranche into
 artificial micro-steps or insert a proof-only gate when that proof can be folded into the next
 end-to-end slice. Choose the largest slice that is direct, authorized, safely reviewable, and

@@ -7,6 +7,7 @@ const BASE_CONTEXT = [
   "SHIPGUARD MISSION LOCK REQUIRED.",
   "Invoke $sg-mission-lock before any other skill, delegation, plan, tool call, or mutation.",
   "Lock Objective, Mode, Authority, Authorized-delta, Protected-invariants, Strict-delta, Scope, Deliverable, Done, Out-now, and Next.",
+  "Make that lock a concise reformulation in the user's language: reuse their domain terms and exact technical names, with one stable term per concept. Cut filler, not conditions, negations, exceptions, uncertainty, order, numbers, evidence requirements, or authority limits. Mark inferences; never invent a user-chosen method or replace the original request.",
   "Strict-delta has three modes controlled through ordinary chat language: ON, OFF for the current mission, or OFF persistently until re-enabled.",
   "The persistent default is ON unless the user explicitly changes it; a current-mission OFF never changes that default.",
   "Never infer either OFF mode.",

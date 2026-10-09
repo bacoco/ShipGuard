@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Mission Lock"
-  short_description: "Locks scope; controls three Strict Delta modes"
-  default_prompt: "Use $sg-mission-lock to lock the mission and authority, or to select and report the protected, task-relaxed, or persistently relaxed Strict Delta mode."
+  short_description: "Locks scope in the user's terms; controls three Strict Delta modes"
+  default_prompt: "Use $sg-mission-lock to restate and lock the mission concisely in the user's terms, or to select and report the protected, task-relaxed, or persistently relaxed Strict Delta mode."
 
 policy:
   allow_implicit_invocation: true
