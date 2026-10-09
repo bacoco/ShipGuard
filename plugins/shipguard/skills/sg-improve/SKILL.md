@@ -1,11 +1,26 @@
 ---
 name: sg-improve
-description: Use after an audit, visual run, or debugging session when learnings should be captured — records local hints and mistakes, and proposes sanitized improvement issues.
+description: Use after an audit, visual run, or debugging session when learnings should be captured — records local hints and mistakes, and proposes sanitized improvement issues. Use --prompt-audit for an explicit read-only review of selected instructions.
 context: conversation
-argument-hint: "[--local-only] [--github-only] [--dry-run] [--history] [--rollback[=#N]] [--keep-all]"
+argument-hint: "[--prompt-audit] [--local-only] [--github-only] [--dry-run] [--history] [--rollback[=#N]] [--keep-all]"
 ---
 
 # /sg-improve — Self-Improving Feedback Loop
+
+## Explicit prompt-audit mode
+
+For `/sg-improve --prompt-audit`, route here **before** the retrospective, model recommendation,
+Phase 0, or any local-learning/GitHub action. Follow [references/prompt-audit.md](references/prompt-audit.md)
+and use `prompt-audit.mjs` for inventory and final evidence/diff validation. This mode needs no prior
+ShipGuard session. Select only files within the user's authorized prompt-review scope.
+
+It is report-only: return the report and proposed diff in chat; no source edits, learning writes,
+snapshots, publication, model switch, or live model comparison. `--dry-run` is a redundant spelling
+of this mode's default. Reject combinations with `--local-only`, `--github-only`, `--history`,
+`--rollback`, `--keep-all`, or `--fix` before taking action. A later request to implement an accepted
+proposal is a separate task governed by the existing mutation rules, not an automatic continuation.
+Unknown coverage or failed validation stays partial. On completion, stop; do not fall through to
+Phases 0–6. Without `--prompt-audit`, the existing retrospective below is unchanged.
 
 After an audit or visual-test session, extract what went well and what didn't, then feed those insights back into ShipGuard so the next run is better.
 
