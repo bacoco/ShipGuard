@@ -7,13 +7,27 @@ description: "Review a proposed change before coding: find reusable interfaces, 
 
 Analyze the concrete request in the user message, not this skill description. Determine whether
 the current path meets that request and identify the smallest justified change. Invoke explicitly. Accept the request or confirmed goal, repository and optional
-`--focus=<path>` within that repository. Preserve scope, exclusions and explicit decisions;
+`--focus=<path>` within that repository and an explicitly supplied `--goal=<file>`. Preserve scope, exclusions and explicit decisions;
 a quoted proposal is not a decision. Ask about material ambiguity, without restarting GrillGoal.
 
 Report-only: reject `--fix`; no source changes, business API calls, hooks, commits or publication.
 Reuse applicable sources already read. Record commit and relevant working-tree changes when
 available; do not invent Git state for an archive. Write only an explicitly requested report path,
 without overwriting an existing report without agreement. Otherwise return the report in chat.
+
+## Optional supplied-goal coverage
+
+When a goal is explicitly supplied, keep the original request alongside it rather than replacing
+one with the other. First compare their meaning: omissions, invented requirements and conflicts
+remain visible. A goal file, an ID, a hash or a model's agreement is not human confirmation.
+For every numbered criterion, report the actual producer/consumer comparison, its own decisive
+citations, and a proposed discriminating verification; never say that proposed check has run.
+Retain unresolved criteria and conflicts, and do not rewrite the goal to complete the review.
+An apparently complete inventory may still omit part of the original need: disclose that limit.
+
+For the explicit local runner's `--goal FILE` mode, use [goal-coverage.md](references/goal-coverage.md).
+Without that option the runner keeps its existing output contract. Free-form goals remain usable
+conversationally; do not convert or overwrite one silently to make the runner accept it.
 
 ## Perform the analysis, one requested outcome at a time
 
@@ -58,12 +72,13 @@ its conditions. A schema describes shape; it does not establish current runtime 
 
 When the user explicitly requests a local-model endpoint, use the read-only
 [local runner](run-pre-review.mjs) with `--root`, `--request` (the original request file),
-`--endpoint` and `--model`. It guides search and checks quoted source lines mechanically.
+`--endpoint` and `--model`, plus `--goal FILE` only for a supplied numbered goal. It guides search and checks quoted source lines mechanically.
 An optional `--trace` must name a new file explicitly requested for evidence. Do not invoke
 another model implicitly or select a provider. The runner returns JSON on stdout, not a dashboard
 result; render it using the report contract. Exit 3 means partial. Exit 0 means review delivery,
 never a clean audit or proof of semantic correctness. `model_claim` remains an agent claim;
-only citation provenance is mechanically validated, even when evidence_validation is valid.
+citation provenance and, in goal mode, enumerated-criterion coverage and input freshness are
+mechanically checked. None proves semantic correctness or goal fulfillment.
 
 Use [references/report.md](references/report.md). For each request, provide the extracted evidence,
 comparison and decision, not instructions to perform them later. Then summarize the smallest next
