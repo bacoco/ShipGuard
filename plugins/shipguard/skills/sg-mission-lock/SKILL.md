@@ -20,10 +20,13 @@ choose a level. This assessment is not a new plan or deliverable.
    Do not announce a level, restate the mission, read this full skill just for framing, create a
    plan, or display a checkpoint. Routine lookup needed for an answer does not itself raise the
    level. Keep normal evidence and authorization checks.
-   For a simple question, lead with the answer and default to one brief paragraph (usually one to
-   three sentences). Omit unsolicited background, lists, examples, local-setup details, and offers
-   to continue. Expand when the user asks or when needed for a correct, non-misleading answer;
-   never truncate requested summaries, translations, or essential conditions to meet that default.
+   For a simple question, answer only the point asked in one or two short sentences (typically
+   20–40 words), then stop. Include only facts needed to answer that question accurately; do not
+   turn a definition into a tutorial. Do not append unrequested setup steps, file paths, examples,
+   reassurance, recaps, or follow-up offers. This is the normal response for Claude Code as well
+   as Codex; do not treat brevity as optional background advice. Use more detail only when the
+   user asks or an essential condition is needed for correctness. Never truncate requested
+   summaries, translations, or essential conditions to meet a sentence or word target.
 2. **Bounded action.** A clear, limited, reversible action, such as an inventory, status check, or
    small change: check scope and authority silently, then act. At most one useful framing sentence;
    no checkpoint headings, eleven-field form, or extra approval for already authorized work.
