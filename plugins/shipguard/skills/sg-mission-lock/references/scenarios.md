@@ -53,6 +53,18 @@ event produces no output. Test JSON event passthrough, settings preservation, an
   separately frozen. No mode authorizes an excluded deployment, adjacent cleanup, or native
   approval bypass. No task-only preference is persisted by the hook.
 
+### Concision of simple answers
+
+- Ask “Que signifie SSH ?” without a brevity instruction: expect the definition and only essential
+  context in one short paragraph, normally one to three sentences. Do not add a tour of the local
+  infrastructure or an offer to continue.
+- Ask a different simple definition such as “C’est quoi un port réseau ?”: the same short default
+  must generalize beyond a repeated question.
+- Explicitly ask for detail and three concrete examples: supply that requested detail and all
+  three examples. Concision is a default, not a hard sentence/word cap or a reason to omit facts.
+- Keep the level-2 and level-3 behavior and authorization rules unchanged. Assess the actual reply;
+  matching policy text alone does not demonstrate concise behavior.
+
 ## Behavior Matrix
 
 ### Review is complete, then “do all”
