@@ -56,10 +56,11 @@ event produces no output. Test JSON event passthrough, settings preservation, an
 ### Concision of simple answers
 
 - Ask “Que signifie SSH ?” without a brevity instruction: expect the definition and only essential
-  context in one short paragraph, normally one to three sentences. Do not add a tour of the local
-  infrastructure or an offer to continue.
-- Ask a different simple definition such as “C’est quoi un port réseau ?”: the same short default
-  must generalize beyond a repeated question.
+  context in one or two short sentences (typically 20–40 words), then stop. Apply this equally in
+  Claude Code and Codex. Do not add a local-infrastructure tour, setup steps, or a follow-up offer.
+- Ask a different simple definition such as “C’est quoi un port réseau ?”: the same minimal answer
+  must generalize beyond a repeated question. Assess relevance as well as length: a correct short
+  definition must not continue into an unrequested explanation of configuration or usage.
 - Explicitly ask for detail and three concrete examples: supply that requested detail and all
   three examples. Concision is a default, not a hard sentence/word cap or a reason to omit facts.
 - Keep the level-2 and level-3 behavior and authorization rules unchanged. Assess the actual reply;
