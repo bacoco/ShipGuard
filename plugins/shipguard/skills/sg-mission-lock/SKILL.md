@@ -1,6 +1,6 @@
 ---
 name: sg-mission-lock
-description: "Apply proportional mission protection: answer simple questions directly, silently check bounded actions, and use a concise explicit lock only for complex, sensitive, or materially ambiguous work. Use also for explicit Strict Delta settings requests. Preserve scope and authority at every level; terse continuations or compaction alone do not require full framing."
+description: "Apply proportional mission protection: answer simple questions directly and briefly, silently check bounded actions, and use a concise explicit lock only for complex, sensitive, or materially ambiguous work. Use also for explicit Strict Delta settings requests. Preserve scope and authority at every level; terse continuations or compaction alone do not require full framing."
 ---
 
 # /sg-mission-lock — Mission And Authority Guard
@@ -20,6 +20,10 @@ choose a level. This assessment is not a new plan or deliverable.
    Do not announce a level, restate the mission, read this full skill just for framing, create a
    plan, or display a checkpoint. Routine lookup needed for an answer does not itself raise the
    level. Keep normal evidence and authorization checks.
+   For a simple question, lead with the answer and default to one brief paragraph (usually one to
+   three sentences). Omit unsolicited background, lists, examples, local-setup details, and offers
+   to continue. Expand when the user asks or when needed for a correct, non-misleading answer;
+   never truncate requested summaries, translations, or essential conditions to meet that default.
 2. **Bounded action.** A clear, limited, reversible action, such as an inventory, status check, or
    small change: check scope and authority silently, then act. At most one useful framing sentence;
    no checkpoint headings, eleven-field form, or extra approval for already authorized work.
