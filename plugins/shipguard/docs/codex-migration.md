@@ -61,6 +61,13 @@ protected, relax it for the current task, or relax it persistently across future
 is re-enabled. Persistent preference is stored in `~/.shipguard/mission-lock.json`; the hook reads
 that file but never writes it.
 
+This activation supplies proportional guidance, not a mandatory full checkpoint. Simple questions
+get direct answers; clear bounded actions use a silent scope check; complex, sensitive, or materially
+ambiguous tasks use a short explicit lock. The current agent makes this decision without another
+model or keyword gate. All levels keep user constraints and native permissions, and none changes
+Strict Delta settings. Previously loaded skill text may remain in an existing conversation;
+installation and hook trust alone do not prove the behavior of every already-running session.
+
 If the hook is not trusted, the mission guard remains available when explicitly requested in chat,
 but automatic activation is not guaranteed.
 

@@ -165,7 +165,16 @@ npm install -g agent-browser && agent-browser install --with-deps
 
 For automatic activation, open the Hooks settings in Codex, review and trust the ShipGuard
 mission-lock hook, then start a new thread. The read-only hook activates on every configured host
-event, independently of model or effort, while protection is on.
+event, independently of model or effort, while protection is on. The agent adapts the framing:
+
+- Simple question: answer directly, without a mission form or plan.
+- Clear, bounded, reversible action: check scope silently; at most one useful sentence.
+- Complex, sensitive, or materially ambiguous work: state a short explicit lock before acting.
+
+The current agent chooses using complexity, risk, and ambiguity; there is no extra model call or
+keyword classifier. All levels retain authorization and scope guards. A short production restart
+is sensitive; explaining what a restart means does not authorize one. Framing levels do not change
+the user's protected, task-relaxed, or persistently relaxed Strict Delta setting.
 It reduces mission drift and overclaiming; it is not a guarantee of zero hallucinations.
 
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)
