@@ -61,6 +61,7 @@ Smoke tests are standalone Node scripts (no test framework, no package.json):
 ```bash
 node plugins/shipguard/hooks/dialogue-check-smoke-test.mjs
 node plugins/shipguard/hooks/model-controller-smoke-test.mjs
+node plugins/shipguard/hooks/dialogue-review-smoke-test.mjs
 node plugins/shipguard/skills/sg-pre-review/pre-review-smoke-test.mjs
 node plugins/shipguard/skills/sg-pre-review/evidence-guard-smoke-test.mjs
 node plugins/shipguard/skills/sg-ship/run-manifest-smoke-test.mjs

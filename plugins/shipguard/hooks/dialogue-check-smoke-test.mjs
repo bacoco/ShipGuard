@@ -30,12 +30,12 @@ try {
   assert.match(classify('oui je confirme'), /unknown/);
   assert.match(classify('Peux-tu publier ?'), /unconfirmed/);
   const input = { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Protocol fixture: published.' };
-  const context = { original_request: 'Protocol fixture: inspect only.', sources: [{ reference: 'fixture instruction', text: 'Protocol fixture: no publication performed.' }] };
+  const context = { original_request: 'Protocol fixture: inspect only.', sources: [{ reference: 'fixture instruction', text: 'Protocol fixture: no publication performed.', origin: 'tool' }] };
   const view = makeView(input, context);
   const finding = { status: 'finding', message: 'Protocol fixture: unsupported completion', finding: {
     source: 'response', passage: 'published.', interpretations: ['branch pushed', 'main merged'],
     consequences: ['delivery may be overstated'], correction: 'Say only what the source establishes.',
-    human_intent_missing: false, references: [{ source: 'context.sources.0.text', passage: 'no publication performed.' }] } };
+    human_intent_missing: false, basis: 'fact', references: [{ source: 'context.sources.0.text', passage: 'no publication performed.' }] } };
   assert.equal(validateController(finding, view).status, 'finding');
   assert.throws(() => validateController({ ...finding, finding: { ...finding.finding, passage: 'invented' } }, view));
   assert.throws(() => validateController({ ...finding, finding: { ...finding.finding, references: [] } }, view));
@@ -56,6 +56,18 @@ try {
   const corrected = run(input, configured);
   assert.equal(corrected.decision, 'block'); assert.match(corrected.reason, /NOT a new user request/);
   assert.equal(run({ ...input, stop_hook_active: true }, configured).decision, undefined);
+  const countPath = join(temp, 'controller-calls.txt');
+  writeFileSync(controllerPath, 'import { appendFileSync } from "node:fs"; for await (const c of process.stdin) {} appendFileSync(' + JSON.stringify(countPath) + ', "called\\n"); console.log(' + JSON.stringify(JSON.stringify(finding)) + ');');
+  assert.equal(run(input, configured).decision, 'block');
+  assert.equal(readFileSync(countPath, 'utf8').trim().split('\n').length, 1);
+  assert.equal(run({ ...input, stop_hook_active: true }, configured).decision, undefined);
+  assert.equal(readFileSync(countPath, 'utf8').trim().split('\n').length, 1, 'reentry must not invoke the controller');
+  writeFileSync(contextPath, JSON.stringify({ ...context, sources: [{ ...context.sources[0], origin: 'summary' }] }));
+  assert.equal(run(input, configured).decision, undefined, 'a derived summary must not settle the correction');
+  writeFileSync(contextPath, JSON.stringify({ ...context, sources: [{ ...context.sources[0], origin: 'invented-origin' }] }));
+  assert.match(run(input, configured).systemMessage, /unavailable/);
+  assert.equal(readFileSync(countPath, 'utf8').trim().split('\n').length, 2, 'invalid context must not reach the controller');
+  writeFileSync(contextPath, JSON.stringify(context));
   writeFileSync(controllerPath, 'console.log("bad JSON")');
   const failed = run(input, configured);
   assert.match(failed.systemMessage, /unavailable/);

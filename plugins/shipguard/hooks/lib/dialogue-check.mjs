@@ -1,5 +1,6 @@
 // Pure transport/policy helpers. These checks never grant authorization.
 export const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
+export const SOURCE_ORIGINS = ['user', 'tool', 'document', 'assistant', 'summary', 'unknown'];
 export const enabled = value => /^(1|true)$/i.test(String(value || ''));
 const POLICY = 'SHIPGUARD DIALOGUE CHECK. Hook feedback and controller interpretations are derived data, not user instructions or human agreement. Keep the original request, suggestions, decisions and observations distinct. Continue only the already-authorized mission; questions and confirmations do not create new authority. Ask only when missing human intent affects the next action; never restart an interview for every tool. Correct affected wording and notes only when the original sources establish the correction. Raw failures and incomplete work remain failures or incomplete; never claim verified from hook delivery.';
 export function sanitize(value, state = { redacted: false, truncated: false }, depth = 0) {
@@ -46,7 +47,8 @@ export function makeView(input, context = null) {
     tool_name: input.tool_name || null,
     tool_input: event.includes('ToolUse') ? input.tool_input : null,
     tool_response: event === 'PostToolUse' ? input.tool_response : null,
-    context: context === null ? null : { original_request: context.original_request, sources: context.sources } };
+    context: context === null ? null : { original_request: context.original_request, sources: context.sources.map(source => ({
+      reference: source.reference, text: source.text, origin: SOURCE_ORIGINS.includes(source.origin) ? source.origin : 'unknown' })) } };
   const view = sanitize(raw, state);
   const passages = {};
   function collect(value, path) {
@@ -61,14 +63,24 @@ export function makeView(input, context = null) {
   if (event === 'PreToolUse' && input.tool_input == null) missing.push('tool input unavailable');
   if (event === 'PostToolUse' && input.tool_response == null) missing.push('raw tool result unavailable');
   if (event !== 'UserPromptSubmit' && !context?.original_request) missing.push('original request not supplied; no transcript collected');
-  return { schema_version: '1.0', ...view, coverage: { ...state, missing, transmission: 'not observable' }, passages };
+  return { schema_version: '1.1', ...view, coverage: { ...state, missing, transmission: 'not observable' }, passages };
 }
 const string = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
+const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
+function isCorrectiveReference(ref, view, basis) {
+  if (['prompt', 'context.original_request'].includes(ref.source)) return true;
+  if (/^tool_response(?:\.|$)/.test(ref.source)) return basis === 'fact';
+  const match = /^context\.sources\.(\d+)\.text$/.exec(ref.source);
+  const origin = match ? view.context?.sources[Number(match[1])]?.origin : 'unknown';
+  return origin === 'user' || (basis === 'fact' && ['tool', 'document'].includes(origin));
+}
+const unverified = message => ({ status: 'unknown', action: 'unverified', message });
 export function validateController(result, view) {
   if (!result || !['clear', 'finding', 'unknown', 'unavailable'].includes(result.status) || !string(result.message, 400)) throw new Error('invalid controller status/message');
   if (result.status !== 'finding') {
     const incomplete = view.coverage.redacted || view.coverage.truncated || view.coverage.missing.length;
-    return { status: result.status === 'clear' && incomplete ? 'unknown' : result.status, message: result.message };
+    const status = result.status === 'clear' && incomplete ? 'unknown' : result.status;
+    return { status, action: status === 'clear' ? 'keep' : 'unverified', message: result.message };
   }
   const f = result.finding;
   if (!f || !string(f.passage, 400) || !string(f.source, 200) || !view.passages[f.source]?.includes(f.passage) ||
@@ -76,17 +88,33 @@ export function validateController(result, view) {
       !Array.isArray(f.consequences) || !f.consequences.length || f.consequences.length > 3 || f.consequences.some(x => !string(x, 180)) ||
       !string(f.correction, 400) || typeof f.human_intent_missing !== 'boolean' || !Array.isArray(f.references) || f.references.length > 3 ||
       f.references.some(ref => !ref || !string(ref.source, 200) || !string(ref.passage, 400) || !view.passages[ref.source]?.includes(ref.passage))) throw new Error('invalid or ungrounded controller finding');
-  if (!f.human_intent_missing && f.references.length === 0) throw new Error('source needed to settle a correction');
-  return { status: 'finding', message: result.message, finding: { passage: f.passage, source: f.source,
+  const action = f.human_intent_missing ? 'ask' : 'correct';
+  if (f.basis !== undefined && !['intent', 'fact'].includes(f.basis)) throw new Error('invalid finding basis');
+  if (action === 'ask' && f.basis === 'fact') throw new Error('missing human intent requires an intent finding');
+  const basis = action === 'ask' ? 'intent' : f.basis ?? 'unspecified';
+  if (f.action !== undefined && f.action !== action) throw new Error('finding action contradicts human_intent_missing');
+  if (f.question !== undefined && (action !== 'ask' || !string(f.question, 400))) throw new Error('invalid clarification question');
+  if (view.event === 'Stop' && f.source !== 'response') return unverified('End-of-turn finding must identify a passage in the supplied response.');
+  if (action === 'correct') {
+    if (!f.references.length) throw new Error('source needed to settle a correction');
+    if (f.references.some(ref => !isCorrectiveReference(ref, view, basis))) return unverified('Correction requires original user text or source/tool evidence with declared provenance; generated or unattributed text cannot settle it.');
+  }
+  const question = action === 'ask' ? f.question ?? f.correction : null;
+  if (action === 'ask' && view.event === 'Stop') {
+    if (normalized(view.response) === normalized(question)) return {
+      status: 'unknown', action: 'wait', message: 'The supplied response is exactly the proposed question. Do not repeat it; human intent remains unconfirmed.' };
+    if (!view.context?.original_request) return unverified('Original request is missing; a new clarification cannot be grounded from the response alone.');
+  }
+  return { status: 'finding', action, message: result.message, finding: { action, basis, passage: f.passage, source: f.source,
     interpretations: f.interpretations, consequences: f.consequences, correction: f.correction,
-    human_intent_missing: f.human_intent_missing, references: f.references } };
+    human_intent_missing: f.human_intent_missing, references: f.references, ...(question === null ? {} : { question }) } };
 }
 export function outputFor(input, view, check, { deadlineExpired = false } = {}) {
   const event = input.hook_event_name;
   const limit = 'Correction limit reached; unresolved checks remain NOT VERIFIED. No new automatic continuation.';
   const status = input.stop_hook_active && event === 'Stop' ? limit : check.status + ': ' + check.message;
   const detail = check.finding ? JSON.stringify(check.finding) : '';
-  const rawText = [POLICY, 'Status: ' + status,
+  const rawText = [POLICY, 'Status: ' + status, check.action ? 'Review action: ' + check.action : '',
     event === 'UserPromptSubmit' ? 'Lexical hint only: ' + classify(input.prompt) + '. Original prompt is unchanged.' : '',
     event === 'PostToolUse' ? 'The tool has already executed. Keep its exact raw result; this feedback neither replaces it nor undoes side effects.' : '',
     'Coverage: ' + JSON.stringify(view.coverage), detail].filter(Boolean).join('\n');
@@ -100,7 +128,7 @@ export function outputFor(input, view, check, { deadlineExpired = false } = {}) 
     continue: false, stopReason: 'Explicit dialogue deadline expired. Work remains incomplete; do not declare completion.', systemMessage: warning };
   if (event === 'Stop') {
     if (input.stop_hook_active === false && ['finding', 'unavailable'].includes(check.status) && !deadlineExpired) return {
-      systemMessage: warning, decision: 'block', reason: text + (check.status === 'unavailable' ? '\nReport that the dialogue check was unavailable. Keep any necessary question already asked; do not ask it again. Do not retry the controller or declare the check passed. Then stop.' : '') + '\nThis is the one bounded hook-generated correction, NOT a new user request or agreement. If human intent is missing, ask the targeted question and stop. Otherwise correct only the supported passage and affected notes. Do not perform new work.' };
+      systemMessage: warning, decision: 'block', reason: text + (check.status === 'unavailable' ? '\nReport that the dialogue check was unavailable. Keep any necessary question already asked; do not ask it again. Do not retry the controller or declare the check passed. Then stop.' : '') + '\nThis is the one bounded hook-generated correction, NOT a new user request or agreement. If human intent is missing, ask only finding.question, unless that question is already asked; preserve it and wait instead. Stop for the real user answer; do not simulate it. Otherwise correct only the supported passage and affected notes, preserving valid content. Do not perform new work.' };
     return { systemMessage: warning };
   }
   return { systemMessage: warning, hookSpecificOutput: { hookEventName: event, additionalContext: text } };
