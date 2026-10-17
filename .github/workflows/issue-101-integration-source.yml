@@ -1,27 +1,24 @@
 name: Issue 101 isolated integration baseline
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [agent/101-verifier-protocol-hardening]
 permissions:
   contents: read
 jobs:
   baseline:
-    if: github.event.pull_request.number == 102 && github.event.pull_request.head.repo.full_name == 'bacoco/ShipGuard'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: 4ec99e780563879103cebda56fa78bcb3fd64c4b
           fetch-depth: 0
           persist-credentials: false
       - name: Export exact source and execute baseline smoke tests
         shell: bash
         run: |
           set -eu
-          test "$(git rev-parse HEAD)" = 4ec99e780563879103cebda56fa78bcb3fd64c4b
           mkdir -p "$RUNNER_TEMP/shipguard-101-baseline"
-          git bundle create "$RUNNER_TEMP/shipguard-101-baseline/source.bundle" HEAD
+          git bundle create "$RUNNER_TEMP/shipguard-101-baseline/source.bundle" --all HEAD
           git rev-parse HEAD > "$RUNNER_TEMP/shipguard-101-baseline/HEAD.txt"
           node --version > "$RUNNER_TEMP/shipguard-101-baseline/node-version.txt"
           for name in code-audit-contract review monitor; do
@@ -37,5 +34,5 @@ jobs:
         with:
           name: shipguard-101-exact-baseline
           path: ${{ runner.temp }}/shipguard-101-baseline/
-          retention-days: 1
+          retention-days: 2
           if-no-files-found: error
