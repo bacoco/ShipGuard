@@ -5,7 +5,7 @@ import { constants } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { EVENTS, enabled, makeView, validateController, outputFor } from './lib/dialogue-check.mjs';
+import { EVENTS, SOURCE_ORIGINS, enabled, makeView, validateController, outputFor } from './lib/dialogue-check.mjs';
 const env = process.env;
 if (!enabled(env.SHIPGUARD_DIALOGUE_HOOKS) || enabled(env.SHIPGUARD_DIALOGUE_CONTROLLER_ACTIVE)) process.exit(0);
 async function readInput() {
@@ -37,7 +37,8 @@ async function readContext(path) {
     if (count > 16384) throw new Error('context too large');
     const data = JSON.parse(buffer.subarray(0, count).toString('utf8'));
     if (!data || typeof data.original_request !== 'string' || !Array.isArray(data.sources) || data.sources.length > 4 ||
-        data.sources.some(x => !x || typeof x.text !== 'string' || typeof x.reference !== 'string')) throw new Error('invalid selected context');
+        data.sources.some(x => !x || typeof x.text !== 'string' || typeof x.reference !== 'string' ||
+          (x.origin !== undefined && !SOURCE_ORIGINS.includes(x.origin)))) throw new Error('invalid selected context');
     return data;
   } finally { await file.close(); }
 }
