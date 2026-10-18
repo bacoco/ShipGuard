@@ -1,0 +1,3 @@
+Temporary read-only integration baseline branch for issue 101.
+Expected source: 4ec99e780563879103cebda56fa78bcb3fd64c4b.
+This branch is not part of PR 102 and must not be merged.
