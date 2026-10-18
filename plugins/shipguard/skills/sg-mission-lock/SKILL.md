@@ -172,6 +172,43 @@ into writes.
 If Done was already met, several branches are plausible, or continuing needs a higher mode, report
 completion and ask one concise question before any mutation.
 
+## Handle Interleaved Requests
+
+While work is active, interpret each new user request in context before changing the current
+mission. A message can contain several intentions; route each separately, using the user's
+explicit wording and constraints rather than keywords:
+
+- **Correction or refinement:** update the current mission only by the authorized delta. Revise
+  dependent conclusions and pass the correction to affected workers before their results are used.
+- **Independent question or task:** answer a small question directly. For substantial work, propose
+  or use an available subagent only when the work and delegation are authorized and its scope can
+  be isolated. Do not delegate merely because the request is ambiguous.
+- **Idea for later:** keep it pending in the conversation without executing it. Do not create a
+  file, ticket, background task, or durable queue unless separately requested.
+- **Material ambiguity:** ask one short question distinguishing the consequential alternatives,
+  for example, "Should this change the current work, or be explored separately?" Do not start a
+  dependent child task until answered; continue unaffected authorized work.
+
+An explicit pause, cancellation, or replacement takes precedence; do not keep the original mission
+running against that instruction. Do not turn every new message into a clarification interview.
+
+Keep the main objective, current progress, and pending ideas distinguishable in the conversation
+and any authorized handoff. Record whether a side task is proposed, running, or returned; do not
+claim delegation happened without a real tool result. Do not add hidden session state to the hook.
+
+For an authorized independent side task, give the child its own bounded objective, original request,
+mode, allowed data and mutations, exclusions, completion criteria, and relationship to the main
+mission. Preserve the user's Strict Delta choice and native permissions. Default an exploratory
+idea to read-only analysis; do not turn exploration into implementation or publication. Avoid
+overlapping writes; if isolation or delegation is unavailable, say so and handle the work
+sequentially within its authorized scope.
+
+Return a side task's result separately with its evidence and limits. Its findings are proposals,
+not permission to change the main objective, files, priorities, or acceptance criteria. Integrate
+only changes already authorized; ask before adopting a proposal that would expand the main mission.
+Consult private communication context only under the existing rules below; learned jargon never
+supplies missing authority and must not be copied into public artifacts.
+
 ## Gate Every Action
 
 Before mutation, delegation, or scope expansion:
@@ -188,8 +225,9 @@ Before mutation, delegation, or scope expansion:
 To claim adjacent work blocks Done, name the exact acceptance condition that cannot pass and the
 evidence of failure. Suspicion, usefulness, cleanup value, or future risk is not proof.
 
-Keep one locked mission. Parallel branches are allowed only when each directly advances Done, is
-disjoint or safely coordinated, and inherits the same lock. Every delegated task must repeat the
+Keep one locked mission per task. Independent user-authorized side tasks follow the interleaved
+request rules above and do not replace the main mission. Parallel branches are allowed only when
+each directly advances its task's Done, is disjoint or safely coordinated, and inherits the same lock. Every delegated task must repeat the
 Objective, Mode, Authority, and mutation limits. Subagent findings are evidence, not authority.
 
 ## Keep Progress And Review Proportionate
