@@ -287,15 +287,7 @@ Record what you do in the browser and turn it into a replayable test. Like Excel
 /sg-record http://localhost:3000/dashboard --name my-test
 ```
 
-### Private communication memory
-
-Ask ShipGuard to study your authorized conversations and update a private contextual lexicon.
-When an expression remains ambiguous, the mission hook points the agent to that local memory.
-Personal profiles stay outside the plugin; updating ShipGuard distributes the method, while
-profile distribution remains separate. No automatic transcript collection or permission inference.
-See [communication memory](plugins/shipguard/docs/communication-memory.md).
-
-## How it works
+### How it works
 
 1. **Launch** — Opens a Playwright browser with a floating toolbar
 2. **Navigate** — Browse your app normally. Clicks, inputs, uploads are captured automatically
