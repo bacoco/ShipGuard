@@ -53,7 +53,7 @@ shipguard/                              (GitHub repo)
 │   │   ├── hero-banner.jpg
 │   │   ├── code-audit-bugs.png
 │   │   ├── visual-tests-grid.png
-│   │   ├── annotation-with-note.png
+│   │   ├── smart-annotations.jpg
 │   │   ├── discover-output.png
 │   │   └── monitor-tab-gantt.png
 │   ├── specs/
@@ -141,7 +141,7 @@ Captured via agent-browser + build-review.mjs with test data. 6 screenshots (act
 1. **hero-banner.jpg** — Gemini-generated hero image (compressed from 7.2MB to 212KB)
 2. **code-audit-bugs.png** — Code Audit tab with 8 bug cards, severity colors, filters
 3. **visual-tests-grid.png** — screenshot grid with 3 tests, real thumbnails, PASS/FAIL badges
-4. **annotation-with-note.png** — lightbox with drawn rectangle + text note describing the problem
+4. **smart-annotations.jpg** — lightbox with drawn rectangle + text note describing the problem
 5. **discover-output.png** — terminal output of `/sg-visual-discover` showing 24 routes, smart scope
 6. **monitor-tab-gantt.png** — Monitor tab — Gantt timeline of audit agents with live stats.
 
@@ -163,8 +163,8 @@ Done LAST, after all file changes are committed and pushed.
 {
   "name": "shipguard",
   "owner": {
-    "name": "Loic Baconnier",
-    "url": "https://github.com/bacoco"
+    "name": "ShipGuard contributors",
+    "url": "https://github.com/bacoco/ShipGuard"
   },
   "plugins": [
     {
@@ -185,7 +185,7 @@ Done LAST, after all file changes are committed and pushed.
   "description": "ShipGuard — AI-powered code audit + visual E2E testing. Audit the code first, verify visually second. Zero tests written.",
   "version": "2.0.0",
   "author": {
-    "name": "bacoco"
+    "name": "ShipGuard contributors"
   }
 }
 ```

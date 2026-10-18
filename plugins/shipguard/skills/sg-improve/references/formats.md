@@ -27,7 +27,7 @@ zone_hints:
 infra_hints:
   # Service-specific knowledge that helps with rebuild timing,
   # post-audit verification, and Docker dependency ordering.
-  - service: "api-synthesia"
+  - service: "api-service"
     startup_time_seconds: 240
     note: "Needs (healthy) before uranus can start"
     last_seen: "2026-04-14"

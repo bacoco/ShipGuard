@@ -308,7 +308,7 @@ The GitHub repo has been renamed from `bacoco/agentic-visual-debugger` to `bacoc
 
 ## Proven Patterns
 
-This design is based on real-world testing: 3 rounds of parallel audit on a 330-file monorepo (ExcenIA Hub), which found and fixed 594 bugs across 82 commits. Key lessons incorporated:
+This design incorporates lessons from anonymized audit exercises. Key lessons incorporated:
 
 - 10 agents is the sweet spot (fewer context overflows than 20, 30% less tokens)
 - Auto-retry with smaller scope when context overflows (happened ~30% of the time with large zones)

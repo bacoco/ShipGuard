@@ -106,7 +106,7 @@ benefit or delivery permission. An agent can misclassify an interpretation or gi
 with real quotations. The tests deliberately preserve that counterexample. Required human decisions,
 independent acceptance checks and the host's permissions remain necessary. This mode does not
 freeze the whole repository, validate a delivered candidate SHA, control another worker's files,
-interrupt every native tool path or integrate Loriq. Source citations retain the existing guard's
+interrupt every native tool path or integrate an external orchestration project. Source citations retain the existing guard's
 coverage. Request/goal freshness is not a whole-repository immutability claim.
 
 Disable by omitting `--goal`; this creates no durable state to migrate or delete. The ordinary goal,

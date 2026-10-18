@@ -244,7 +244,7 @@ If `{repo_root}/.shipguard/accepted-risks.json` exists, read it. If it does not 
     {
       "finding_key": "apps/api/auth.py::jwt token never expires",
       "reason": "legacy tokens until Q3 migration",
-      "accepted_by": "loic",
+      "accepted_by": "reviewer",
       "expires": "2026-09-30"
     }
   ]
@@ -438,7 +438,7 @@ Also write `audit-results.toon` alongside the JSON file. TOON (Token-Optimized O
 # verified: checked={checked} confirmed={confirmed} uncertain={uncertain} rejected={rejected}
 # bugs[{bug_count}]{id,severity,category,fix_tier,file,line,title,verified,score}:
 r1-z01-001,high,logic-error,test-first,apps/uranus/src/components/foo.tsx,71,key={index} on reorderable list,true,95
-r1-z01-002,medium,error-handling,mechanical,apps/api-synthesia/routes/chat.py,142,bare except swallows errors,uncertain,55
+r1-z01-002,medium,error-handling,mechanical,apps/api-service/routes/chat.py,142,bare except swallows errors,uncertain,55
 r1-z03-001,high,security,human-only,apps/uranus/src/lib/auth.ts,23,JWT secret in client bundle,true,98
 ...
 ```

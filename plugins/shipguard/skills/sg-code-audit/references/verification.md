@@ -100,8 +100,8 @@ Stop without writing if the current HEAD is not `{source_sha}`.
 ## Critical Flows to Trace
 
 {List of flow pairs from Step 1, formatted as:
-  - caller: src/hooks/use-dossier-api.ts:45 → callee: apps/api-synthesia/routes/dossier/dossier_routes.py:120
-  - caller: src/lib/api-client.ts:78 → callee: apps/api-synthesia/routes/chat_routes.py:55
+  - caller: src/hooks/use-dossier-api.ts:45 → callee: apps/api-service/routes/dossier/dossier_routes.py:120
+  - caller: src/lib/api-client.ts:78 → callee: apps/api-service/routes/chat_routes.py:55
 }
 
 ## Previous Comparable Findings

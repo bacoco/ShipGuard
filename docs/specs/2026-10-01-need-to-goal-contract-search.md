@@ -73,7 +73,7 @@ solves human-intent inference, semantic entailment or self-grading bias.
 | 6: tool result, fulfillment and delivery differ | Retain | `analyzed` and `completed` are review statuses, never test execution, fulfillment or permission. |
 | 7: SSO example | Illustrative, not an incident | Preserve its distinction between explicit SSO request and separately established access rules; do not invent requirements from the example. |
 | 8: thirteen falsifiers | Mixed coverage, detailed below | Passing a protocol fixture must not be generalized to semantic or live-host behavior. |
-| 9: ShipGuard versus Loriq | Retain boundary | This is ShipGuard's existing pre-review consumer. No Loriq source, Operator, admission or queue is changed. |
+| 9: ShipGuard versus external orchestration project | Retain boundary | This is ShipGuard's existing pre-review consumer. No external orchestration project source, Operator, admission or queue is changed. |
 | 10: staged implementation and comparative evaluation | First slice implemented; evaluation not run | The cancelled model campaign remains cancelled. No superiority or savings claim. |
 | 11: challenge rather than endorse | Performed as self-review, not independent certification | Both the old omission gap and the new semantic counterexample are retained. A separate reviewer can still reject the design. |
 | 12: ToT, LATS, CIRL references | Valid conceptual leads only | Primary abstract pages rechecked; no reproduction, full-method adoption or transfer claim to ShipGuard. |
@@ -192,20 +192,18 @@ GrillGoal path with this handoff before testing a search layer, keeping tasks/mo
 and total costs comparable. The earlier cancellation of model evaluations is not reversed here.
 No result in this patch justifies a new MCTS service, autonomous model router or permission gate.
 
-Loriq [#1170][L1170], [#1171][L1171], [#1162][L1162] and [#1166][L1166] remain related study owners;
-their private code and execution evidence are not copied into this public document. This pass
-implements no Loriq adapter. ShipGuard [#77][I77] and [#82][I82] remain the prior dialogue-hook and
+External orchestration studies remain outside this public document. This pass
+implements no external orchestration adapter. ShipGuard [#77][I77] and [#82][I82] remain the prior dialogue-hook and
 authority/receipt discussions, not evidence that all their historical proposals are active.
 
 ## Sources
 
-The [initial RFC][original] preserves the full historical source register and proposal. The three
+Earlier proposals are historical context, not active requirements. The three
 primary abstract pages consulted again are [Tree of Thoughts][R1], [Language Agent Tree Search][R2]
 and [Cooperative Inverse Reinforcement Learning][R3]. They respectively support the existence of
 path exploration/backtracking, MCTS with environment feedback, and uncertainty about human rewards.
 They do not demonstrate the usefulness of this ShipGuard implementation.
 
-[original]: https://github.com/bacoco/ShipGuard/blob/15c81e2ee65505ae18cf46910e536ebe779f5829/docs/specs/2026-10-01-need-to-goal-contract-search.md
 [old-guard]: https://github.com/bacoco/ShipGuard/blob/db30182e55c5fddc82615944404898172de7df58/plugins/shipguard/skills/sg-pre-review/evidence-guard.mjs
 [old-runner]: https://github.com/bacoco/ShipGuard/blob/db30182e55c5fddc82615944404898172de7df58/plugins/shipguard/skills/sg-pre-review/run-pre-review.mjs
 [old-report]: https://github.com/bacoco/ShipGuard/blob/db30182e55c5fddc82615944404898172de7df58/plugins/shipguard/skills/sg-pre-review/references/report.md
@@ -214,10 +212,6 @@ They do not demonstrate the usefulness of this ShipGuard implementation.
 [coverage]: ../../plugins/shipguard/skills/sg-pre-review/goal-coverage.mjs
 [runner]: ../../plugins/shipguard/skills/sg-pre-review/run-pre-review.mjs
 [usage]: ../../plugins/shipguard/skills/sg-pre-review/references/goal-coverage.md
-[L1170]: https://github.com/bacoco/Loriq/issues/1170
-[L1171]: https://github.com/bacoco/Loriq/issues/1171
-[L1162]: https://github.com/bacoco/Loriq/issues/1162
-[L1166]: https://github.com/bacoco/Loriq/issues/1166
 [I77]: https://github.com/bacoco/ShipGuard/issues/77
 [I82]: https://github.com/bacoco/ShipGuard/issues/82
 [R1]: https://arxiv.org/abs/2305.10601v2

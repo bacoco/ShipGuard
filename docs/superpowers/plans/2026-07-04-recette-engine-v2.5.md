@@ -45,7 +45,7 @@
 - [ ] **Step 1: Create the feature branch**
 
 ```bash
-cd /data/loic/ShipGuard && git checkout -b feat/recette-engine-v2.5
+cd /path/to/ShipGuard && git checkout -b feat/recette-engine-v2.5
 ```
 
 Expected: `Switched to a new branch 'feat/recette-engine-v2.5'`. All later commits happen on this branch.
@@ -1586,7 +1586,7 @@ Build a throwaway static project and run the full recette:
 T=$(mktemp -d) && mkdir -p $T/docs && cat > $T/docs/index.html <<'EOF'
 <html><body><h1>Recette fixture</h1><img src="ghost.png"></body></html>
 EOF
-cd $T && node /data/loic/ShipGuard/plugins/shipguard/cli/shipguard.mjs init
+cd $T && node /path/to/ShipGuard/plugins/shipguard/cli/shipguard.mjs init
 # edit visual-tests/_config.yaml: uncomment app block with root: docs, start python3 http.server; add profile
 cat > $T/visual-tests/_config.yaml <<'EOF'
 version: 2
@@ -1607,7 +1607,7 @@ steps:
   - action: open
     url: "{base_url}/index.html"
 EOF
-node /data/loic/ShipGuard/plugins/shipguard/cli/shipguard.mjs run --profile=smoke; echo "exit=$?"
+node /path/to/ShipGuard/plugins/shipguard/cli/shipguard.mjs run --profile=smoke; echo "exit=$?"
 ```
 
 Expected: `exit=1` (the ghost.png broken asset is a finding), `visual-tests/_results/` contains `run.json`, `crawl-results.json`, `visual-results.json`, `report.md`, a non-empty screenshot, and `review.html` is skipped with the copy hint (no build-review.mjs in the temp project). App server is stopped afterwards (check `shipguard status`).
@@ -2046,9 +2046,9 @@ Same pattern for the process tab empty state with `laneReason('process')`, and i
 - [ ] **Step 5: Visual verification (agent-browser)**
 
 ```bash
-cd /data/loic/ShipGuard && node plugins/shipguard/skills/sg-visual-review/build-review.mjs --serve --port=0
+cd /path/to/ShipGuard && node plugins/shipguard/skills/sg-visual-review/build-review.mjs --serve --port=0
 agent-browser open http://127.0.0.1:<actualPort>/review.html
-agent-browser screenshot /data/loic/tmp/claude-1003/-data-loic/236cf905-c1f8-424b-99a2-bb2a07b6e907/scratchpad/findings-tab.png
+agent-browser screenshot /path/to/review/findings-tab.png
 agent-browser close
 node plugins/shipguard/skills/sg-visual-review/build-review.mjs --stop
 ```
@@ -2299,7 +2299,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - [ ] **Step 1: Full smoke suite**
 
 ```bash
-cd /data/loic/ShipGuard
+cd /path/to/ShipGuard
 node plugins/shipguard/cli/cli-smoke-test.mjs && \
 node plugins/shipguard/cli/appserver-smoke-test.mjs && \
 node plugins/shipguard/cli/crawl-smoke-test.mjs && \

@@ -497,7 +497,7 @@ git commit -m "feat: add --from-audit flag to /sg-visual-run for code→visual h
   "description": "ShipGuard — AI-powered code audit + visual E2E testing. Audit the code first, verify visually second. Zero tests written.",
   "version": "2.0.0",
   "author": {
-    "name": "bacoco"
+    "name": "ShipGuard contributors"
   }
 }
 ```

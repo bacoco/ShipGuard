@@ -50,7 +50,7 @@ See [communication memory](plugins/shipguard/docs/communication-memory.md).
 
 ## How it works
 
-![ShipGuard Demo](docs/screenshots/demo.gif)
+![ShipGuard Demo](docs/screenshots/code-audit-dark.png)
 
 ```
 code audit → check contracts and invariants → simulate behavior → confirm on screen → human review
@@ -499,7 +499,7 @@ After each audit or test session, extract what worked and what didn't.
 | Zone sizing | "hooks/ needs max 80 files per zone" | Code Audit zone discovery |
 | Bug patterns | "`.first()` without None guard → critical" | Agent checklist injection |
 | Noise filters | "f-string loggers → batch into single entry" | Agent prompt |
-| Infra timing | "api-synthesia needs 4 min to start" | Post-audit rebuild |
+| Infra timing | "api-service needs 4 min to start" | Post-audit rebuild |
 | Success patterns | "worktree isolation works — don't change" | What NOT to touch |
 | Coding mistakes | `mistakes.md` — error journal read at every session | All development |
 

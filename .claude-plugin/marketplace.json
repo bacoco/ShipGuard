@@ -1,8 +1,8 @@
 {
   "name": "shipguard",
   "owner": {
-    "name": "Loic Baconnier",
-    "url": "https://github.com/bacoco"
+    "name": "ShipGuard contributors",
+    "url": "https://github.com/bacoco/ShipGuard"
   },
   "plugins": [
     {

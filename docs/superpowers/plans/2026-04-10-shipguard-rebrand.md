@@ -53,14 +53,14 @@ Changes:
 - [ ] **Step 1: Rename plugin directory**
 
 ```bash
-cd /Users/macstudio/agentic-visual-debugger
+cd /path/to/agentic-visual-debugger
 git mv plugins/agentic-visual-debugger plugins/shipguard
 ```
 
 - [ ] **Step 2: Rename skill directories**
 
 ```bash
-cd /Users/macstudio/agentic-visual-debugger/plugins/shipguard/skills
+cd /path/to/agentic-visual-debugger/plugins/shipguard/skills
 git mv visual-run sg-visual-run
 git mv visual-review sg-visual-review
 git mv visual-discover sg-visual-discover
@@ -157,7 +157,7 @@ Grep for skill name references. These are file-path based (relative), so probabl
 - [ ] **Step 10: Verify — grep entire skills/ directory for old names**
 
 ```bash
-cd /Users/macstudio/agentic-visual-debugger
+cd /path/to/agentic-visual-debugger
 grep -r "\/visual-run\|\/visual-review\|\/visual-discover\|\/visual-fix\|\/code-audit" plugins/shipguard/skills/ --include="*.md" --include="*.html" --include="*.mjs"
 ```
 
@@ -189,8 +189,8 @@ Replace the full content with:
 {
   "name": "shipguard",
   "owner": {
-    "name": "Loic Baconnier",
-    "url": "https://github.com/bacoco"
+    "name": "ShipGuard contributors",
+    "url": "https://github.com/bacoco/ShipGuard"
   },
   "plugins": [
     {
@@ -529,7 +529,7 @@ git commit -m "docs: recapture screenshots for ShipGuard rebrand"
 - [ ] **Step 1: Verify tree is clean and everything is pushed**
 
 ```bash
-cd /Users/macstudio/agentic-visual-debugger
+cd /path/to/agentic-visual-debugger
 # Hard check: if anything is uncommitted, STOP
 if [ -n "$(git status --porcelain)" ]; then echo "ERROR: uncommitted changes — commit or stash before renaming"; git status --short; exit 1; fi
 git push
@@ -576,7 +576,7 @@ git push
 - [ ] **Step 1: Grep for any remaining old references**
 
 ```bash
-cd /Users/macstudio/agentic-visual-debugger
+cd /path/to/agentic-visual-debugger
 grep -r "agentic-visual-debugger" --include="*.md" --include="*.json" --include="*.html" --include="*.mjs" --include="*.yaml" . | grep -v ".git/" | grep -v "node_modules" | grep -v "shipguard-rebrand"
 ```
 
