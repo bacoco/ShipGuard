@@ -26,6 +26,24 @@ Read [profile format](../skills/sg-communication-memory/references/profile-forma
 Validate or query using the bundled read-only helper; semantic analysis remains the current
 agent's task. No background harvesting, remote model request or automatic publication is added.
 
+## Friction episodes and progress since last study
+
+Ask “Where did I get frustrated or repeat myself, and where did the AI misunderstand?” to study
+contextual episodes, evidenced causes, unknowns and repairs. Technical retries are distinguished
+from expression problems; a clear request ignored by the AI does not become a human wording defect.
+No psychological profile, emotion classifier or rigid command syntax is introduced.
+
+Ask “What happened since the last study; did my phrasing or the AI's responses improve?” for a
+private progress review. The current agent compares the last completed report and per-source
+checkpoints with newly available evidence, preserving late-arriving events and incomplete gaps.
+Human-side and AI-side changes are assessed separately with comparable samples and explicit limits.
+No baseline means no claimed longitudinal improvement. A failed save does not advance checkpoints.
+
+The report proposes optional concrete phrasing aids where useful, matching AI-side improvements,
+and contextual shared vocabulary. Study state remains private and separate from the runtime
+profile; the read-only lookup helper does not compute or store longitudinal progress.
+See [progress review](../skills/sg-communication-memory/references/progress-review.md).
+
 ## Install, distribute and verify
 
 Install or update ShipGuard through the host's native plugin mechanism. Do not edit cached
