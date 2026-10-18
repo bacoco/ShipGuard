@@ -34,6 +34,12 @@ You can also ask Claude or Codex to test one or several model/effort combination
 
 ShipGuard replies in the chat with `PASS`, `FAIL`, or `UNAVAILABLE` for each configuration.
 
+## Consolidated release 2.16.0
+
+Goal-linked pre-review, verifier protocol hardening, an optional E2E evidence adapter, prompt audits
+and grounded dialogue reviews are now integrated with private communication memory.
+See [capabilities, validation limits and native updates](plugins/shipguard/docs/consolidation-2.16.0.md).
+
 ## Private communication memory
 
 Ask ShipGuard to study your authorized conversations and update a private contextual lexicon.

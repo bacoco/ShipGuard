@@ -8,7 +8,7 @@ export const REPORT_LIMIT = 32 * 1024 * 1024;
 const FILE_LIMIT = 32 * 1024 * 1024;
 const TOTAL_LIMIT = 128 * 1024 * 1024;
 export function readRegular(file, limit = REPORT_LIMIT) {
-  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const st = fstatSync(fd);
     ensure(st.isFile() && st.size <= limit, 'UNSAFE_FILE', 'Expected a bounded regular file', 2);

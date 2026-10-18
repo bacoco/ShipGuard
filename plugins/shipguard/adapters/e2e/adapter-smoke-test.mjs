@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -71,6 +72,19 @@ try {
       assert.throws(() => evidencePath(root, name));
   });
   if (process.platform !== 'win32') {
+    await check('FIFO reports are rejected without blocking before file validation', () => {
+      const fifo = join(root, 'fifo-report.json');
+      const mk = spawnSync('mkfifo', [fifo], { encoding: 'utf8' });
+      assert.equal(mk.status, 0, mk.stderr);
+      const moduleUrl = new URL('./artifacts.mjs', import.meta.url).href;
+      const probe = 'import { readRegular } from ' + JSON.stringify(moduleUrl) + '; '
+        + 'try { readRegular(' + JSON.stringify(fifo) + '); process.exitCode=2; } '
+        + 'catch (error) { if(error.code!=="UNSAFE_FILE") throw error; }';
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', probe],
+        { encoding: 'utf8', timeout: 1500 });
+      assert.equal(child.error, undefined, child.error?.message);
+      assert.equal(child.status, 0, child.stderr);
+    });
     await check('artifact symlink is not followed', async () => {
       const p = project('symlink'); const doc = fixture(); addImage(doc, p);
       rmSync(join(p, '.e2e', 'results', 'image.png'));

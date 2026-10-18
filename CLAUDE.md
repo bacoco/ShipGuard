@@ -60,6 +60,15 @@ Exception: `grill-goal` contains only `SKILL.md`, with all behavioral instructio
 Smoke tests are standalone Node scripts (no test framework, no package.json):
 
 ```bash
+node plugins/shipguard/hooks/dialogue-review-smoke-test.mjs
+node plugins/shipguard/skills/sg-improve/prompt-audit-smoke-test.mjs
+node plugins/shipguard/skills/sg-pre-review/goal-coverage-smoke-test.mjs
+node plugins/shipguard/skills/sg-pre-review/goal-runner-smoke-test.mjs
+node plugins/shipguard/skills/sg-code-audit/verification-result-smoke-test.mjs
+node plugins/shipguard/skills/sg-code-audit/verification-result-cli-smoke-test.mjs
+node plugins/shipguard/adapters/e2e/adapter-smoke-test.mjs
+node plugins/shipguard/adapters/e2e/outcomes-smoke-test.mjs
+node plugins/shipguard/adapters/e2e/runner-smoke-test.mjs
 node plugins/shipguard/hooks/dialogue-check-smoke-test.mjs
 node plugins/shipguard/hooks/model-controller-smoke-test.mjs
 node plugins/shipguard/hooks/dialogue-review-smoke-test.mjs

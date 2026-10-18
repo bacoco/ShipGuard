@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, realpathSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -46,7 +46,7 @@ try {
       assert.equal(v.telemetry, '1'); assert.equal(v.ci, '1');
       assert.ok(v.argv.includes('--strict-cache')); assert.equal(v.argv[v.argv.indexOf('--retries') + 1], '0');
       assert.equal(v.argv[v.argv.indexOf('--workers') + 1], '1');
-      assert.ok(v.argv.includes(join(p, 'selected test.e2e.ts')));
+      assert.ok(v.argv.includes(realpathSync(join(p, 'selected test.e2e.ts'))));
       assert.equal(json(join(r.bundle, 'adapter-run.json')).mode, 'run');
     });
     await check('runner log retention is bounded without blocking the child', async () => {
