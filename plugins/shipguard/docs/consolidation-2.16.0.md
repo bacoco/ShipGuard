@@ -59,3 +59,15 @@ Recheck the installed definitions and both script entry points through every res
 Do not modify cached scripts, hook trust records, or authentication to make an update pass.
 A compatibility link does not reload a running conversation's skills or prove native approval.
 Remove temporary aliases only after the sessions using them have been restarted.
+
+## 2.16.1 follow-up
+
+Release 2.16.1 includes the intermediate-idea routing merged after the 2.16.0 tag.
+Corrections refine the active task, independent requests keep their own scope, and ideas for later
+do not create background work. Material ambiguity is clarified before dependent delegation.
+The release has a distinct version so native plugin updaters can identify the changed content.
+
+Codex may also refresh a Git marketplace at startup of another session and prune an older cached
+plugin version. Cache preservation is therefore relevant beyond explicit plugin-add commands.
+A moving main reference can trigger this again after a future release. Choosing a pinned release
+is a separate update-policy decision; this release does not make that choice for the user.
