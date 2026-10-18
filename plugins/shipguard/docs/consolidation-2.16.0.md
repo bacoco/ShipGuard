@@ -43,3 +43,19 @@ A marketplace pinned to an old commit intentionally stays there on upgrade. When
 update is authorized, re-register that same source using the native marketplace commands with
 ref main; retain the previous configuration for rollback. Never edit cached plugin files.
 A successful install is not proof of loading in a running session. Native hook review remains human.
+
+### Preserve hook paths for running Codex sessions
+
+The native Codex installer can prune old version directories even while open sessions still invoke
+their hook scripts. A missing cached script can therefore produce repeated hook exit-code 1 errors.
+Before an authorized update, record the running sessions, version directories (including aliases)
+and each version's hooks/hooks.json. Keep this operational inventory private.
+
+Compare the old hook definitions with the incoming version before installation. If they differ,
+do not create compatibility links: arrange any necessary session restart with the user. If they
+are identical and the installation removes an old version directory, an authorized temporary
+symlink from that exact version name to the new version preserves the existing hook paths.
+Recheck the installed definitions and both script entry points through every restored path.
+Do not modify cached scripts, hook trust records, or authentication to make an update pass.
+A compatibility link does not reload a running conversation's skills or prove native approval.
+Remove temporary aliases only after the sessions using them have been restarted.
