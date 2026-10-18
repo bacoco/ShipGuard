@@ -1,0 +1,6 @@
+interface:
+  display_name: "ShipGuard Communication Memory"
+  short_description: "Study dialogue and consult private contextual jargon"
+  default_prompt: "Use $sg-communication-memory to update my private jargon and communication profile from the authorized conversation histories."
+policy:
+  allow_implicit_invocation: true
