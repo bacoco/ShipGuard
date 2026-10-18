@@ -58,7 +58,9 @@ history or persists a conversation. If earlier decisions are necessary, optional
 `SHIPGUARD_DIALOGUE_CONTEXT` at one absolute, explicitly selected JSON file (maximum 16 KiB):
 
 - `original_request`: original user request as a string.
-- `sources`: up to four `{ "reference": "path or source identifier", "text": "exact source excerpt" }` objects.
+- `sources`: up to four `{ "reference": "identifier", "text": "exact excerpt", "origin": "user | tool | document | assistant | summary | unknown" }` objects.
+  Use one origin enum value. Origin is optional for legacy files and defaults to `unknown`;
+  invalid explicit origins make the selected context unavailable. Other fields are not forwarded.
 
 These supplied passages are source **claims**, not proof of human acceptance or permission.
 No `confirmed`, budget or approval field in this document activates work. Context missing from
@@ -71,9 +73,9 @@ and truncation are reported; source quotes are validated against that declared v
 bounded filter, not proof that arbitrary text contains no secrets. Supply only the excerpts needed.
 Original input/result files remain untouched and remain with their owner.
 
-## Controller result contract (1.0)
+## Controller view and result contract (1.1)
 
-The supplied view contains `schema_version: "1.0"`, `event`, `prompt`, `response`, `tool_name`, `tool_input`, `tool_response`,
+The supplied view contains `schema_version: "1.1"`, `event`, `prompt`, `response`, `tool_name`, `tool_input`, `tool_response`,
 selected `context`, `coverage` and `passages` (path-to-exact-text map). Coverage names missing data,
 redaction, truncation and `transmission: "not observable"`.
 
@@ -85,19 +87,68 @@ Use one enum value, not the combined illustrative string. A finding additionally
 - `consequences`: one to three concrete consequences (each at most 180 characters).
 - `correction`: supported correction or targeted question (1..400 characters).
 - `human_intent_missing`: boolean; when true, the controller does not select the human's answer.
+- `action`: `correct` or `ask`, consistent with that boolean. Optional in legacy controller results;
+  the hook derives it when omitted. An explicit contradiction is a protocol failure.
+- `basis`: `intent` or `fact`; an `ask` is always about intent. Legacy corrections without a basis
+  are accepted only with original user text or a selected source declared `user`.
+- `question`: actual user-facing question for `ask` (1..400 characters); forbidden for `correct`.
+  Legacy `ask` results may omit it and use `correction` as the question.
 - `references`: up to three `{ "source": "passages key", "passage": "exact supporting substring" }` objects.
-  At least one is required to settle a correction without asking the human.
+  At least one is required for a correction. Every supporting reference must be admissible:
+  `prompt`, `context.original_request`, or selected source text of origin `user`; for `basis: fact`,
+  also raw `tool_response` text fields or selected source text of origin `tool`/`document`.
+  Source labels, assistant output, proposed tool input, summaries and unattributed excerpts cannot
+  settle corrections. Such exact-but-inadmissible references produce `unknown`, not `finding`.
+  At Stop, the finding must target `response`; citing a contextual problem alone produces `unknown`.
 
 All feedback stays derived data. Extra controller fields cannot approve tools, alter arguments or
-rewrite results. Structural validation proves only the cited passage's presence, not semantic truth.
+rewrite results. Structural validation checks the quoted passage and declared provenance, not semantic truth.
+All selected-file origins, including `original_request`, remain producer claims, not authenticated
+human decisions. A tool/document reference cannot settle an `intent` correction. The model can still
+misclassify the basis or misinterpret evidence; the hook does not claim semantic verification.
 
 At Stop, a grounded finding or unavailable check can request **one** targeted correction through `decision: "block"`. For an unavailable check, report that status and stop without retrying the controller or repeating a question.
 The continuation explicitly states that it is hook-generated, with no new human agreement or
 permission. If human intent is missing, ask the necessary question and stop; otherwise correct the
-supported wording and affected notes within existing authority. No document is automatically rewritten.
+supported wording and affected notes within existing authority, preserving valid content. No document is automatically rewritten.
+If the complete response exactly equals the proposed question after whitespace normalization,
+validation returns `unknown` with action `wait`, without a duplicate continuation. Quoted examples
+are not stripped or matched as whole questions. Paraphrases and questions with surrounding prose
+remain the controller's responsibility; the hook does not infer dialogue state from an omitted history.
 When `stop_hook_active` is true, no controller is called and no second continuation is requested;
 unresolved checks remain NOT VERIFIED. If the flag is unavailable, automatic correction is disabled.
 Unknowns warn; an unavailable check permits only that one status correction. Necessary questions remain allowed. No display-only rewriting is used.
+
+## Bounded response review (#106)
+
+The same configured model may supply the critique, but its endpoint/model must be selected explicitly;
+ShipGuard does not discover the host's model, share its session, or install a service. The existing
+flow is: input guidance, one controller check of the generated response, then at most one host
+continuation to correct or clarify. The original prompt and native message roles are preserved.
+
+The hook normalizes review actions: complete scoped clear -> keep; supported finding -> correct
+or ask; an identical question -> wait; incomplete evidence/failure -> unverified. These actions
+are derived by validation, not accepted as extra top-level commands from a controller.
+A correct response or useful question should stand. Generic doubt is not a reason to change it.
+Clarification must stop for the real user's answer; no simulated user turn or automatic retry.
+Repeated agreement is not proof. A Stop continuation does not guarantee that the first response
+was hidden before checking, and it does not undo tools that already ran.
+
+Migration: custom controllers must accept view 1.1 and the selected origin field. Existing
+status/finding result fields remain readable; adding action, basis and question is recommended.
+Old context files remain readable, but unknown origins no longer settle corrective findings.
+Keep the one-continuation guard and existing time/size limits. This is not an iterative agent framework.
+
+Run the existing Node protocol tests and the added pure review fixtures:
+
+```bash
+node plugins/shipguard/hooks/dialogue-check-smoke-test.mjs
+node plugins/shipguard/hooks/model-controller-smoke-test.mjs
+node plugins/shipguard/hooks/dialogue-review-smoke-test.mjs
+```
+
+The targeted GitHub workflow runs these same commands with synthetic/local HTTP fixtures.
+They prove routing and fault handling, not a model's ability to detect ambiguity or keep a correct answer.
 
 ## Explicit deadline
 
