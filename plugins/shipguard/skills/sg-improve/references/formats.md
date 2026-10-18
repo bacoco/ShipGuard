@@ -18,7 +18,7 @@ last_updated: "2026-04-14T07:00:00Z"
 zone_hints:
   # Directories where the default zone sizing caused overflow.
   # sg-code-audit reads these to cap files-per-zone during zone discovery.
-  - path: "apps/uranus/src/hooks/"
+  - path: "apps/app-service/src/hooks/"
     max_files: 80
     reason: "172 files overflowed Sonnet context (2026-04-13)"
     last_seen: "2026-04-14"
@@ -27,9 +27,9 @@ zone_hints:
 infra_hints:
   # Service-specific knowledge that helps with rebuild timing,
   # post-audit verification, and Docker dependency ordering.
-  - service: "api-synthesia"
+  - service: "api-service"
     startup_time_seconds: 240
-    note: "Needs (healthy) before uranus can start"
+    note: "Needs (healthy) before app-service can start"
     last_seen: "2026-04-14"
 
 audit_hints:

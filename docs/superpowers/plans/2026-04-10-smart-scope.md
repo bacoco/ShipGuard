@@ -136,7 +136,7 @@ After the existing Phase 3 introduction ("Split the codebase into non-overlappin
 
 Zone discovery operates on the `scope_files` list instead of the full repo. Since these files may be scattered across many directories, use a simplified zone strategy:
 
-1. Group `scope_files` by their parent directory (first 2 path segments, e.g. `src/routes/` or `apps/api-synthesia/`)
+1. Group `scope_files` by their parent directory (first 2 path segments, e.g. `src/routes/` or `apps/api-service/`)
 2. Each group becomes a zone candidate
 3. If a group has ≤30 files → 1 zone
 4. If a group has >30 files → split by subdirectory (same rules as full mode)

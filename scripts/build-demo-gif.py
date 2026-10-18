@@ -111,7 +111,7 @@ frame3 = load_and_fit(SCREENSHOTS / "code-audit-dark.png")
 add_label(frame3, "234 bugs found — 19 critical, 128 high", RED)
 
 # === FRAME 4: Critical bugs list ===
-frame4 = load_and_fit(SCREENSHOTS / "bugs-critical.png")
+frame4 = load_and_fit(SCREENSHOTS / "code-audit-bugs.png")
 add_label(frame4, "Every bug traced to exact file:line — auto-fixed where possible", YELLOW)
 
 # === FRAME 5: Visual tests grid ===
@@ -119,7 +119,7 @@ frame5 = load_and_fit(SCREENSHOTS / "visual-tests-grid.png")
 add_label(frame5, "50 routes tested — screenshots captured automatically", CYAN)
 
 # === FRAME 6: Annotations ===
-frame6 = load_and_fit(SCREENSHOTS / "annotation-with-note.png")
+frame6 = load_and_fit(SCREENSHOTS / "smart-annotations.jpg")
 add_label(frame6, "Annotate bugs on screenshots → AI traces to source → auto-fix", GREEN)
 
 # === FRAME 7: Verdict ===

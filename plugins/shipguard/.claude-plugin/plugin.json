@@ -3,7 +3,7 @@
   "description": "AI-assisted interfaces-first pre-review, code and logic audit, process simulation, visual E2E review, mission guardrails, and optional dialogue checks.",
   "version": "2.16.0",
   "author": {
-    "name": "bacoco"
+    "name": "ShipGuard contributors"
   },
   "homepage": "https://github.com/bacoco/shipguard",
   "repository": "https://github.com/bacoco/shipguard",
