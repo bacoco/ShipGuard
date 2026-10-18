@@ -322,10 +322,10 @@ INSTRUCTIONS:
    c. The described impact is plausible given the surrounding code
 4. Score the finding 0-100:
    - 0-20: FALSE POSITIVE — file/line doesn't exist, or code doesn't match description at all
-   - 21-40: UNLIKELY — code exists but description is inaccurate, or issue is already guarded
-   - 41-60: UNCERTAIN — pattern exists but impact unclear (dead path, handled upstream)
-   - 61-80: LIKELY — pattern matches, appears real, but some context unclear
-   - 81-100: CONFIRMED — code clearly exhibits the described problem
+   - 21-39: UNLIKELY — code exists but description is inaccurate, or issue is already guarded
+   - 40-60: UNCERTAIN — pattern exists but impact unclear (dead path, handled upstream)
+   - 61-79: LIKELY — pattern matches, appears real, but some context unclear
+   - 80-100: CONFIRMED — code clearly exhibits the described problem
 
 Reply with EXACTLY this format (two lines):
 BUG_ID: {bug.id}
@@ -340,13 +340,48 @@ SCORE: {number 0-100}
 
 ### Step 3: Collect scores and apply
 
-As each verification agent completes, parse its output:
+Use the shipped deterministic consumer; do not extract a convenient score line or invent a
+neutral score. Bind each callback to the original unverified finding saved for that dispatch,
+not to a finding selected by the reply's `BUG_ID`. Preserve the raw callback in the current run's
+private artifacts before processing; never consume an old run's reply.
 
-1. Find the line matching `^SCORE: (\d{1,3})$` — extract the number
-2. If no matching line found, assign score `50` (neutral — don't penalize agent parsing issues)
-3. Match the `BUG_ID` line to find which bug this score belongs to
+Serialize one input object with exactly `finding` (that original object) and `reply` (the raw
+response string, or `null` when no response was delivered). Do not interpolate model text into
+shell syntax. Write this input to a fresh run-scoped JSON file, then invoke:
 
-**Apply scores to bugs:**
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-code-audit/verification-result.mjs" \
+  < "{run_dir}/verification-{agent_id}.input.json"
+```
+
+Capture stdout, stderr and exit status through the host tool. Keep the JSON receipt beside its
+input; do not overwrite the canonical audit directly with this single-finding result.
+
+- Exit `0`: a strictly formed reply for the expected finding was parsed. Use the returned
+  `finding` and `disposition` once. This says nothing about correctness or permission to ship.
+- Exit `3`: a JSON receipt was produced, but the reply is unavailable (missing, malformed,
+  duplicated, foreign, oversized or outside the integer 0–100 range). **Consume this receipt**:
+  retain the finding in `bugs` at its original severity, with `verification_score: null` and
+  `verified: null`. Do not discard it because the processor exit is nonzero.
+- Exit `2`, missing processor, host timeout, absent/invalid stdout or another process failure:
+  retain the original finding unchanged, mark verification unavailable in the run diagnostics,
+  and report the processor failure. Never fall back to 50 or relaunch a verifier automatically.
+
+The processor accepts the exact two-line protocol, LF/CRLF and terminal newlines. A valid input
+may contain at most 1 MiB; a verifier reply at most 4 KiB. Oversized replies are unavailable, not
+truncated into apparently valid answers. The receipt fingerprints the original reply and retains
+its exact text when within the bound. These artifacts stay local; do not post them to GitHub.
+
+Use the original input when replaying receipt generation. Feeding an already projected result
+back into the processor is refused, preventing a second severity downgrade. Existing deterministic
+negative-evidence rejections bypass this step as before.
+
+`verification_protocol` is additive per-finding metadata: `status`, `reason`, `raw_reply`,
+`raw_reply_bytes`, `raw_reply_sha256`, and `semantic_verification: "not_verified"`. Retain it
+through aggregation. It proves parsing/provenance only, not the truth of the model's judgment.
+The broader evidence-backed replacement of numeric judgments remains in issue #101.
+
+**Apply scores to bugs (only strictly parsed replies):**
 
 | Score Range | Action | `verified` field |
 |-------------|--------|-----------------|
@@ -354,13 +389,17 @@ As each verification agent completes, parse its output:
 | 40-79 | **Downgrade severity** — `critical` → `high`, `high` → `medium`. Keep in results. | `"uncertain"` |
 | 0-39 | **Move to unverified** — remove from main `bugs` array, add to `unverified_bugs` array | `false` |
 
-Add these fields to each verified bug:
+The processor returns these existing fields; do not apply the score table a second time:
 - `verification_score`: the 0-100 score from the verification agent
-- `verified`: `true`, `"uncertain"`, or `false`
+- `verified`: `true`, `"uncertain"`, or `false` for parsed replies; `null` when unavailable
 
 **Medium and low severity bugs** are NOT verified (too many, too cheap to be worth it). They get: `verification_score: null, verified: null`.
 
 ### Step 4: Update summary counts
+
+Count unavailable replies separately from valid scores and cap-skipped verifiers in the run diagnostics.
+`verification.checked` counts parsed replies, not dispatch attempts. Keep unavailable findings in
+`bugs` and in severity/category totals; unavailable does not mean rejected or fixed.
 
 After filtering, recompute `summary.by_severity` and `summary.by_category` counts to reflect any downgrades and removals. Update `summary.total_bugs` to exclude unverified bugs.
 
@@ -373,5 +412,6 @@ Finding verification: {N} critical/high bugs checked
   Confirmed (≥80):  {count} — kept as-is
   Uncertain (40-79): {count} — severity downgraded
   Rejected (<40):   {count} — moved to unverified_bugs
+  Unavailable (protocol): {count} — severity unchanged; inspect run diagnostics
   Skipped (cap):    {count} — not verified (over 50 cap)
 ```

@@ -13,4 +13,4 @@ dependencies:
       description: "Resolve the audit scope and changed files."
     - type: "shell"
       value: "node"
-      description: "Build or serve the optional review dashboard."
+      description: "Process Phase 5.7 replies with verification-result.mjs; build or serve the optional review dashboard."

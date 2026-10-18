@@ -1,0 +1,38 @@
+name: Issue 101 isolated integration baseline
+on:
+  push:
+    branches: [agent/101-verifier-protocol-hardening]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export exact source and execute baseline smoke tests
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/shipguard-101-baseline"
+          git bundle create "$RUNNER_TEMP/shipguard-101-baseline/source.bundle" --all HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/shipguard-101-baseline/HEAD.txt"
+          node --version > "$RUNNER_TEMP/shipguard-101-baseline/node-version.txt"
+          for name in code-audit-contract review monitor; do
+            case "$name" in
+              code-audit-contract) script=plugins/shipguard/skills/sg-code-audit/code-audit-contract-smoke-test.mjs ;;
+              *) script="plugins/shipguard/skills/sg-visual-review/$name-smoke-test.mjs" ;;
+            esac
+            status=0
+            timeout 90s node "$script" > "$RUNNER_TEMP/shipguard-101-baseline/$name.log" 2>&1 || status=$?
+            printf '%s %s\n' "$name" "$status" >> "$RUNNER_TEMP/shipguard-101-baseline/statuses.txt"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: shipguard-101-exact-baseline
+          path: ${{ runner.temp }}/shipguard-101-baseline/
+          retention-days: 2
+          if-no-files-found: error
