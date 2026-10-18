@@ -1,0 +1,6 @@
+interface:
+  display_name: "ShipGuard Communication Memory"
+  short_description: "Study jargon, friction and dialogue progress privately"
+  default_prompt: "Use $sg-communication-memory to review communication since the last study, assess human and AI changes separately, and propose practical improvements and shared vocabulary."
+policy:
+  allow_implicit_invocation: true

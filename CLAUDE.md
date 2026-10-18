@@ -19,9 +19,10 @@ plugins/shipguard/                   # The plugin itself
 ├── hooks/hooks.json                 # Mission-lock + opt-in dialogue checks
 ├── docs/                            # sandbox.md, codex-migration.md
 ├── examples/                        # e.g. client-validation-report.html
-└── skills/                          # 18 canonical skills + 1 deprecated alias
+└── skills/                          # 19 canonical skills + 1 deprecated alias
     ├── grill-goal/                  # Human interview → confirmed synthesis → standalone Markdown goal
     ├── sg-pre-review/               # Explicit interfaces-first review before coding
+    ├── sg-communication-memory/      # Private contextual jargon and on-demand dialogue study
     ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
     ├── sg-model-scope-test/         # Read-only model/effort scope probes + scorer
     ├── sg-beat-reference/           # Paste-ready compare/improve loop against a named reference

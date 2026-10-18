@@ -34,6 +34,14 @@ You can also ask Claude or Codex to test one or several model/effort combination
 
 ShipGuard replies in the chat with `PASS`, `FAIL`, or `UNAVAILABLE` for each configuration.
 
+## Private communication memory
+
+Ask ShipGuard to study your authorized conversations and update a private contextual lexicon.
+When an expression remains ambiguous, the mission hook points the agent to that local memory.
+Personal profiles stay outside the plugin; updating ShipGuard distributes the method, while
+profile distribution remains separate. No automatic transcript collection or permission inference.
+See [communication memory](plugins/shipguard/docs/communication-memory.md).
+
 ## How it works
 
 ![ShipGuard Demo](docs/screenshots/demo.gif)
