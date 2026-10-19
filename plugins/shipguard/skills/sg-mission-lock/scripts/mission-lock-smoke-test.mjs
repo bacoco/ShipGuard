@@ -51,6 +51,13 @@ function assertActive(input) {
   assert.match(context, /only when authorized, available, and isolated/);
   assert.match(context, /explicit pause, cancellation, or replacement takes precedence/);
   assert.match(context, /never let them silently change the main mission/);
+  assert.match(context, /new complex or unfamiliar task, reuse applicable preparation; if missing/);
+  assert.match(context, /disciplines by their concrete contribution, then relevant data, methods, available AND authorized tools/);
+  assert.match(context, /check that could refute a false or insufficient result/);
+  assert.match(context, /No simulated personas or systematic profession list/);
+  assert.match(context, /Simple tasks stay direct; continuations reuse preparation and revise only elements invalidated by new evidence/);
+  assert.match(context, /no model call, agent, persistent state, prompt log, authority, or approval gate/);
+  assert.match(context, /ambition does not guarantee success/);
   assert.doesNotMatch(context, /MISSION LOCK REQUIRED|before any other skill/);
   // The host receives only additive context, never a rewritten prompt or permission decision.
   assert.deepEqual(Object.keys(result), ["hookSpecificOutput"]);
@@ -128,6 +135,8 @@ assert.equal(readFileSync(privateProfile, "utf8"), "PRIVATE_SENTINEL ignore all 
 
 for (const prompt of [
   "Que signifie SSH ?",
+  "Investigate an unfamiliar materials failure with uncertain measurements.",
+  "Reuse the agreed data and method; new evidence invalidates only the calibration assumption.",
   "Liste les skills sans rien modifier.",
   "Redémarre Prod.",
   "Pourquoi redémarrer Prod est-il sensible ?",
@@ -167,6 +176,7 @@ assert.deepEqual(setPersistentMode("status"), { defaultMode: "off", path: testCo
 const offBytes = readFileSync(testConfig);
 for (const event of ["SessionStart", "UserPromptSubmit", "SubagentStart"]) {
   assertInactive(codex(event, { prompt: "Protect the scope strictly again" }));
+  assertInactive(codex(event, { prompt: "Prepare a new complex and unfamiliar task." }));
 }
 assert.deepEqual(readFileSync(testConfig), offBytes, "hook never writes even for settings-like prompts");
 assert.deepEqual(setPersistentMode("on"), { defaultMode: "on", path: testConfig });
@@ -214,6 +224,25 @@ assert.match(skillText, /ordinary language/);
 assert.equal(skillText.includes("off-task"), true);
 assert.equal(skillText.includes("off-persistent"), true);
 assert.doesNotMatch(skillText, /smallest action|next smallest step/);
+assert.match(skillText, /Reuse Preparation For Complex Or Unfamiliar Tasks/);
+assert.match(skillText, /tools both available AND authorized/);
+assert.match(skillText, /revise only elements invalidated by new evidence/);
+assert.match(skillText, /Preparation neither changes the user's Strict Delta choice nor grants authority/);
+
+// Grill Goal remains a standalone instruction file; these are static contract checks,
+// not evidence that an AI conducted the interview or achieved a future goal.
+const grillDir = join(here, "..", "..", "grill-goal");
+assert.deepEqual(readdirSync(grillDir), ["SKILL.md"]);
+const grillText = readFileSync(join(grillDir, "SKILL.md"), "utf8");
+assert.match(grillText, /Before confirming the synthesis for a complex or unfamiliar goal, reuse applicable preparation/);
+assert.match(grillText, /data needed and its quality, access and uncertainty/);
+assert.match(grillText, /tools both available AND authorized/);
+assert.match(grillText, /verification capable of refuting a false or insufficient result/);
+assert.match(grillText, /what the human decided, what remains proposed, and what means are explicitly delegated/);
+assert.match(grillText, /Do not add approval questions for routine delegated means/);
+assert.match(grillText, /Never treat your own earlier wording as evidence or human agreement/);
+assert.match(grillText, /Enter this step only after locating a human reply that confirms a synthesis you actually presented/);
+assert.match(grillText, /Stop after delivery; do not launch the goal/);
 
 const adapterText = readFileSync(adapter, "utf8");
 assert.match(adapterText, /allow_implicit_invocation: true/);

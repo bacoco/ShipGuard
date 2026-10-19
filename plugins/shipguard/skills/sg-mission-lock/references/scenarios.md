@@ -66,6 +66,24 @@ event produces no output. Test JSON event passthrough, settings preservation, an
 - Keep the level-2 and level-3 behavior and authorization rules unchanged. Assess the actual reply;
   matching policy text alone does not demonstrate concise behavior.
 
+## Conditional Preparation
+
+These cases assess actual replies separately from the smoke test's static policy checks. Do not
+call another model or start agents just to run this preparation; no new test runtime is required.
+
+| Situation | Expected preparation |
+|---|---|
+| New complex or unfamiliar task with no preparation | Briefly identify useful disciplinary contributions, then relevant data, methods, available AND authorized tools, and a check capable of refuting a false or insufficient result; no simulated personas or systematic profession list. |
+| Same task with applicable preparation already supplied | Reuse it; no new ritual, tool-only inventory, or extra approval for routine delegated means. |
+| Simple definition or settled small edit | Stay direct; no preparation interview. |
+| Continuation; new evidence invalidates one assumption | Revise only the affected elements; preserve the other preparation, scope, and active Strict Delta mode. |
+| Persistent protection off, even for an unfamiliar task | Hook emits nothing; no settings writes or new state. |
+| Grill Goal before synthesis confirmation | Explore proportionately; retain only useful choices, distinguishing human decisions, proposals and explicitly delegated means; preserve confirmation and the full fundamental rule, and do not execute the goal. |
+
+Preparation does not grant access or authorize methods, agents, publication, or relaxed protection.
+Ambition alone is not evidence of feasibility or success. Static text assertions demonstrate policy
+delivery and structure, not better reasoning or successful outcomes across models.
+
 ## Behavior Matrix
 
 ### Review is complete, then “do all”

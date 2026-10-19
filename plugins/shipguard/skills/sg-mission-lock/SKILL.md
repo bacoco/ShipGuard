@@ -50,6 +50,25 @@ scope, active authority, explicit exclusions, existing work, and evidence standa
 new permissions, disables Strict Delta, or bypasses native approvals. The three framing levels
 are separate from the three Strict Delta settings below.
 
+## Reuse Preparation For Complex Or Unfamiliar Tasks
+
+For a new complex or unfamiliar task, reuse applicable preparation from the request, existing goal,
+or current conversation. If it is missing, briefly consider which disciplines could contribute a
+concrete question, method, constraint, or failure check to this task. Then identify the relevant
+data and its limits, suitable methods, tools both available AND authorized, and a verification
+capable of refuting a false or insufficient result. A list of tools alone is not preparation.
+Do not simulate personas or enumerate professions systematically. Keep only contributions that
+could change the authorized approach or its verification; this is not a new deliverable or a
+reason to expand the mission.
+
+Keep simple tasks direct. On continuations, reuse preparation without repeating the framing;
+revise only elements invalidated by new evidence. Use this same agent's reasoning, without a new
+model call, agent, persistent state, or prompt log for this preparation. Expose only consequential
+choices under the existing framing rules. Do not add approval gates for delegated routine means.
+Preparation neither changes the user's Strict Delta choice nor grants authority, tools, or access;
+the hook remains silent while persistent protection is off. Ambition does not guarantee success:
+retain uncertainty and assess the actual result against the requested outcome.
+
 ## Create The Lock When Level 3 Requires It
 
 Use the following fields as an internal checklist. Expose only what materially helps this task;
