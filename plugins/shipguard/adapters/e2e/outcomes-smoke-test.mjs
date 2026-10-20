@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { normalizeReport } from './outcomes.mjs';
 import { mergeExit, sourceExit } from './contract.mjs';
-import { fixture, failure, recount } from './fixture.mjs';
+import { fixture, agentFixture, failure, recount } from './fixture.mjs';
 let count = 0;
 function check(name, fn) { fn(); console.log(`ok ${++count} - ${name}`); }
 function rejects(edit, code = 'INVALID_REPORT') {
@@ -54,8 +54,58 @@ check('no recorded assertion cannot pass', () => {
   const d = fixture(); d.run.results[0].attempts[0].steps = []; assert.equal(normalizeReport(d).exit_code, 3);
 });
 check('agent assertion is recognized, not claimed as independent visual review', () => {
-  const d = fixture(); Object.assign(d.run.results[0].attempts[0].steps[0], { kind: 'agent', api: 'agent.assert' });
-  assert.equal(normalizeReport(d).exit_code, 0); assert.equal(normalizeReport(d).visual_review, 'not-performed');
+  const d = agentFixture(); const r = normalizeReport(d);
+  assert.equal(r.exit_code, 0); assert.equal(r.visual_review, 'not-performed');
+  assert.equal(r.ship_ready, false); assert.equal(r.tests[0].screenshot, null);
+  assert.equal(r.tests[0].recorded_checks, 1);
+  assert.deepEqual(r.tests[0].source_attempts, d.run.results[0].attempts);
+});
+check('passing agent assertion without its observation or explanation is refused', () => {
+  for (const field of ['observationRevision', 'explanation']) {
+    const d = agentFixture(); delete d.run.results[0].attempts[0].steps[0][field];
+    assert.throws(() => normalizeReport(d), e => e.code === 'INVALID_REPORT', field);
+  }
+});
+check('agent assertion requires valid recorded metrics', () => {
+  for (const field of ['modelCalls', 'actionSteps', 'observationBytes', 'contextBytes', 'ledgerBytes']) {
+    for (const value of [undefined, -1, 0.5, '0', null]) {
+      const d = agentFixture(); d.run.results[0].attempts[0].steps[0].metrics[field] = value;
+      assert.throws(() => normalizeReport(d), e => e.code === 'INVALID_REPORT', field);
+    }
+  }
+  for (const metrics of [undefined, null, [], 0]) {
+    const d = agentFixture(); d.run.results[0].attempts[0].steps[0].metrics = metrics;
+    assert.throws(() => normalizeReport(d), e => e.code === 'INVALID_REPORT');
+  }
+  const d = agentFixture(); d.run.results[0].attempts[0].steps[0].metrics.pixelBytes = -1;
+  assert.throws(() => normalizeReport(d), e => e.code === 'INVALID_REPORT');
+});
+check('agent assertion evidence obeys report-1 string bounds', () => {
+  for (const [field, values] of Object.entries({
+    observationRevision: ['', null, 1, 'x'.repeat(257)], explanation: [null, 1, 'x'.repeat(8193)],
+  })) for (const value of values) {
+    const d = agentFixture(); d.run.results[0].attempts[0].steps[0][field] = value;
+    assert.throws(() => normalizeReport(d), e => e.code === 'INVALID_REPORT', field);
+  }
+  const d = agentFixture(); const s = d.run.results[0].attempts[0].steps[0];
+  s.observationRevision = '😀'.repeat(256); s.explanation = '😀'.repeat(8192);
+  assert.equal(normalizeReport(d).exit_code, 0);
+  s.explanation = ''; // report-1 allows an empty explanation, but requires the field.
+  assert.equal(normalizeReport(d).exit_code, 0);
+});
+check('failed evaluated agent assertion also requires its evidence', () => {
+  for (const field of ['observationRevision', 'explanation']) {
+    const d = agentFixture('failed', failure()); const s = d.run.results[0].attempts[0].steps[0];
+    s.metrics.modelCalls = 1; delete s[field];
+    assert.throws(() => normalizeReport(d), e => e.code === 'INVALID_REPORT', field);
+  }
+  assert.equal(normalizeReport(agentFixture('failed', failure())).exit_code, 1);
+});
+check('unavailable agent with no model call needs no fabricated observation', () => {
+  const d = agentFixture('failed', failure('infrastructure', 'MODEL_UNAVAILABLE'));
+  const s = d.run.results[0].attempts[0].steps[0];
+  delete s.observationRevision; delete s.explanation;
+  assert.equal(normalizeReport(d).exit_code, 2);
 });
 check('failed cleanup overrides passing assertions', () => {
   const d = fixture(); d.run.results[0].attempts[0].cleanup = 'failed'; assert.equal(normalizeReport(d).exit_code, 2);

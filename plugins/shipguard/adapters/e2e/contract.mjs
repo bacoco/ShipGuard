@@ -25,6 +25,18 @@ function errors(owner) {
   need(array(owner.secondaryErrors), 'secondaryErrors');
   owner.secondaryErrors.forEach(error);
 }
+function agentAssertion(s) {
+  if (s.api !== 'agent.assert') return;
+  // report-1 requires metrics on agent steps and evidence once an assertion was evaluated.
+  if (s.kind === 'agent') {
+    need(object(s.metrics) && ['modelCalls', 'actionSteps', 'observationBytes', 'contextBytes', 'ledgerBytes']
+      .every(key => count(s.metrics[key])) && (s.metrics.pixelBytes === undefined || count(s.metrics.pixelBytes)),
+    'agent.assert metrics');
+  }
+  if (s.status !== 'passed' && !(s.metrics?.modelCalls >= 1)) return;
+  need(text(s.observationRevision) && [...s.observationRevision].length <= 256, 'agent.assert observationRevision');
+  need(typeof s.explanation === 'string' && [...s.explanation].length <= 8192, 'agent.assert explanation');
+}
 function attempt(attemptData) {
   const a = attemptData;
   need(object(a) && text(a.id) && RESULT.filter(x => x !== 'flaky').includes(a.status), 'attempt');
@@ -36,6 +48,7 @@ function attempt(attemptData) {
       STEP.includes(s.status) && count(s.durationMs), 'step'); ids.add(s.id);
     if (s.error !== undefined) error(s.error);
     need(array(s.artifacts) && s.artifacts.every(text), 'step artifact IDs');
+    agentAssertion(s);
   }
   const artifacts = new Set();
   for (const a of attemptData.artifacts) {
