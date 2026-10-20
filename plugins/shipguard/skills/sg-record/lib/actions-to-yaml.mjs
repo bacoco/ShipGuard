@@ -114,8 +114,10 @@ export function actionsToYaml(actions, opts) {
     switch (action.type) {
       case 'open': {
         const relativePath = stripBase(action.url, baseUrl);
+        // stripBase keeps unmatched absolute URLs (including different ports).
+        const url = /^https?:\/\//i.test(relativePath) ? relativePath : `{base_url}${relativePath}`;
         lines.push(`  - action: open`);
-        lines.push(`    url: "{base_url}${relativePath}"`);
+        lines.push(`    url: "${url}"`);
         lastWasCheck = false;
         break;
       }

@@ -191,8 +191,34 @@ describe('actionsToYaml', () => {
     const actions = [{ type: 'open', url: 'http://localhost:6969/x' }];
     const yaml = actionsToYaml(actions, { name: 'test-boundary', baseUrl: 'http://localhost:69' });
     // base is a string prefix but NOT a path boundary — must keep the full URL
-    assert.ok(yaml.includes('url: "{base_url}http://localhost:6969/x"'));
+    assert.ok(yaml.includes('url: "http://localhost:6969/x"'));
     assert.ok(!yaml.includes('url: "{base_url}69/x"'));
+  });
+
+  test('open URLs preserve relative paths and unmatched absolute destinations (#122)', () => {
+    const base = 'http://example.test:4100';
+    const cases = [
+      [base, `${base}/form?q=1#fin`, '{base_url}/form?q=1#fin', `${base}/form?q=1#fin`],
+      [base, base, '{base_url}/', `${base}/`],
+      [base, `${base}?q=1`, '{base_url}/?q=1', `${base}/?q=1`],
+      [base, `${base}#fin`, '{base_url}/#fin', `${base}/#fin`],
+      [base, 'http://example.test:4200/form?q=1#fin'],
+      [base, 'http://example.test:41000/form'],
+      [base, 'http://other.example.test:4100/form'],
+      [base, 'https://example.test:4100/form'],
+      ['https://app.example.test', 'https://other.example.test/form?q=1#fin'],
+      [`${base}/app`, `${base}/app/form?q=1#fin`, '{base_url}/form?q=1#fin', `${base}/app/form?q=1#fin`],
+      [`${base}/app`, `${base}/apple/form`],
+      [`${base}/app`, `${base}/other/form`],
+    ];
+    for (const [baseUrl, url, expected = url, resolved = url] of cases) {
+      const yaml = actionsToYaml([{ type: 'open', url }], { name: 'test-url', baseUrl });
+      const line = yaml.split('\n').find(line => line.trim().startsWith('url:'));
+      const generated = unescapeYamlDoubleQuoted(extractQuotedValue(line));
+      assert.equal(generated, expected, `generated URL for ${url} with base ${baseUrl}`);
+      assert.equal(generated.replaceAll('{base_url}', baseUrl), resolved,
+        `interpolated destination for ${url} with base ${baseUrl}`);
+    }
   });
 
   test('stripBase yields /?q=1 for query-only URLs', () => {
