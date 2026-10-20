@@ -10,7 +10,7 @@ dependencies:
   tools:
     - type: "shell"
       value: "node"
-      description: "Run the recording helper script (requires the `playwright` npm package installed in the target project)."
+      description: "Check project copies before recording; refresh with backup only on explicit request. Recording requires the project's playwright package."
     - type: "shell"
       value: "npx playwright install chromium"
       description: "Install the Playwright Chromium browser that drives the headed recorder."

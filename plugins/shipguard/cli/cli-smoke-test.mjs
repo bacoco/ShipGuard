@@ -5,7 +5,7 @@ import {
   tolerantJson, normalizeConsole, validateScreenshot, matchSnapshotRef, buildRunJson,
   loadManifests, MECHANICAL_ACTIONS, AGENT_ACTIONS, executeManifest,
 } from './shipguard.mjs';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync, symlinkSync, copyFileSync, chmodSync } from 'fs';
@@ -367,14 +367,11 @@ function runFixture({ files = {}, flags = [], env = {}, builder = 'process.exit(
     mkdirSync(dirname(join(root, 'visual-tests', rel)), { recursive: true });
     wf(join(root, 'visual-tests', rel), body);
   }
-  let code = 0;
-  try {
-    execFileSync('node', [CLI, 'run', ...flags], { cwd: root, encoding: 'utf8', stdio: 'pipe',
-      env: { ...process.env, SHIPGUARD_AGENT_BROWSER: FAKE_F, ...env } });
-  } catch (e) { code = e.status; }
+  const ran = spawnSync('node', [CLI, 'run', ...flags], { cwd: root, encoding: 'utf8',
+    env: { ...process.env, SHIPGUARD_AGENT_BROWSER: FAKE_F, ...env } });
   const rd = join(root, 'visual-tests', '_results');
   const load = (f) => (ex(join(rd, f)) ? JSON.parse(rf(join(rd, f), 'utf8')) : null);
-  return { code, run: load('run.json'), visual: load('visual-results.json') };
+  return { code: ran.status, err: ran.stderr, run: load('run.json'), visual: load('visual-results.json') };
 }
 
 // a scope that selects nothing while the suite exists: the run asserted nothing
@@ -453,6 +450,7 @@ assert(fGapBad.status === 'FAIL' && !!fGapBad.screenshot_error,
 // non-regression: the four documented codes on their own paths
 const fClean = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'] });
 assert(fClean.code === EXIT.CLEAN, 'exit: a healthy suite still exits 0');
+assert(/copy differs: build-review\.mjs/.test(fClean.err), 'copies: run warns about a pinned builder without changing the clean verdict');
 assert(Object.values(fClean.run?.lanes || {}).every((l) => !l.remedy), 'exit: a clean run declares no remedy anywhere');
 assert(fClean.run?.lanes?.review?.status === 'ran', 'exit: a built dashboard is declared as a ran review lane');
 assert(fClean.run?.exit_code === EXIT.CLEAN, 'exit: run.json records the code on the success path too');

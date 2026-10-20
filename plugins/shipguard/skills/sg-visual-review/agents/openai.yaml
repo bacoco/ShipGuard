@@ -10,7 +10,7 @@ dependencies:
   tools:
     - type: "shell"
       value: "node"
-      description: "Build or serve the review dashboard."
+      description: "Compare project copies before building or serving; refresh with backup only on explicit request."
     - type: "shell"
       value: "agent-browser"
       description: "Optionally open the dashboard."

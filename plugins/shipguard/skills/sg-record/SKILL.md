@@ -170,6 +170,26 @@ The recorder runtime files ship with this plugin. They must be copied to the tar
 
 **Determine the plugin skill directory.** This is the directory containing THIS SKILL.md file. It is shown in the "Base directory for this skill" header when the skill loads. Store it as `SKILL_DIR`.
 
+**Compare existing copies before bootstrap** (read-only; includes review files and recorder libraries):
+
+```bash
+node "${SKILL_DIR}/../../cli/shipguard.mjs" init --check-copies
+```
+
+Report any advisory difference or missing companion and preserve the current copies. Do not infer
+that a different file is older: projects may pin or customize their tools. Only if the user explicitly
+requests a refresh, run the printed command, equivalent to:
+
+```bash
+node "${SKILL_DIR}/../../cli/shipguard.mjs" init --refresh-copies
+```
+
+The refresh covers installed tool groups, backs up replaced files under the printed
+`visual-tests/.copies-backup-*` directory and records old/new hashes in `copies.json` (`null` means
+previously absent). It does not alter scenarios, config, authentication state, results or dependencies.
+When using a copied CLI instead, supply `--plugin-root=/path/to/plugins/shipguard`; an unavailable
+source is not proof that the copies are current.
+
 **Check if recorder is already installed:**
 
 ```bash
@@ -183,12 +203,12 @@ test -f visual-tests/sg-record.mjs && echo "INSTALLED" || echo "NOT_INSTALLED"
 mkdir -p visual-tests/lib visual-tests/manifests
 
 # Copy from this skill's directory (SKILL_DIR)
-cp "${SKILL_DIR}/sg-record.mjs" visual-tests/
-cp "${SKILL_DIR}/lib/actions-to-yaml.mjs" visual-tests/lib/
-cp "${SKILL_DIR}/lib/recorder-toolbar.js" visual-tests/lib/
-cp "${SKILL_DIR}/lib/recorder-toolbar.css" visual-tests/lib/
-cp "${SKILL_DIR}/lib/actions-to-yaml.test.mjs" visual-tests/lib/
-cp "${SKILL_DIR}/lib/integration-test.mjs" visual-tests/lib/
+cp -n "${SKILL_DIR}/sg-record.mjs" visual-tests/
+cp -n "${SKILL_DIR}/lib/actions-to-yaml.mjs" visual-tests/lib/
+cp -n "${SKILL_DIR}/lib/recorder-toolbar.js" visual-tests/lib/
+cp -n "${SKILL_DIR}/lib/recorder-toolbar.css" visual-tests/lib/
+cp -n "${SKILL_DIR}/lib/actions-to-yaml.test.mjs" visual-tests/lib/
+cp -n "${SKILL_DIR}/lib/integration-test.mjs" visual-tests/lib/
 ```
 
 **Also check the review page files** (needed for the Recorded Tests tab):
@@ -201,10 +221,10 @@ If REVIEW_NOT_INSTALLED, copy from the sg-visual-review skill:
 
 ```bash
 REVIEW_DIR="${SKILL_DIR}/../sg-visual-review"
-cp "${REVIEW_DIR}/build-review.mjs" visual-tests/
-cp "${REVIEW_DIR}/_review-template.html" visual-tests/
-cp "${REVIEW_DIR}/review-smoke-test.mjs" visual-tests/
-cp "${REVIEW_DIR}/monitor-smoke-test.mjs" visual-tests/
+cp -n "${REVIEW_DIR}/build-review.mjs" visual-tests/
+cp -n "${REVIEW_DIR}/_review-template.html" visual-tests/
+cp -n "${REVIEW_DIR}/review-smoke-test.mjs" visual-tests/
+cp -n "${REVIEW_DIR}/monitor-smoke-test.mjs" visual-tests/
 ```
 
 Print: `Recorder files installed to visual-tests/`

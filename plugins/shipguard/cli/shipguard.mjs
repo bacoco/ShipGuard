@@ -32,10 +32,11 @@
  * a complete one. Incomplete is never clean.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync } from 'fs';
-import { join, dirname, relative, sep } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync, lstatSync, mkdtempSync, renameSync, rmSync } from 'fs';
+import { join, dirname, relative, sep, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import net from 'net';
 
 export const EXIT = { CLEAN: 0, FINDINGS: 1, INFRA: 2, CONFIG: 3 };
@@ -636,6 +637,9 @@ Usage: node shipguard.mjs <subcommand> [flags]
 
 Subcommands:
   init                       Scaffold visual-tests/_config.yaml, _results/, .gitignore guard-rails
+         --check-copies      Compare installed project tools without writing anything
+         --refresh-copies    Explicitly refresh installed tools, backing up replaced files
+  --plugin-root=PATH         Source plugin for copy checks/refresh (needed by a copied CLI)
   serve   [--port=N]         Start the app under test (config app.start), wait for healthcheck
   stop    [--all]            Stop the app server started by serve (--all: also the review server)
   crawl   [--base-url=URL] [--max-pages=N]
@@ -676,11 +680,24 @@ export function main(argv) {
     console.error(`Unknown subcommand "${cmd}". Run with --help.`);
     return EXIT.CONFIG;
   }
+  if (['init', 'run', 'review'].includes(cmd)) {
+    if (args.flags['plugin-root'] === true || args.flags['plugin-root'] === '') {
+      console.error('config: --plugin-root needs a value (--plugin-root=/path/to/plugins/shipguard)');
+      return EXIT.CONFIG;
+    }
+    if (args.flags['check-copies'] && args.flags['refresh-copies']) {
+      console.error('config: choose --check-copies or --refresh-copies');
+      return EXIT.CONFIG;
+    }
+  }
   return fn(args);
 }
 
-function cmdInit() {
+function cmdInit(args) {
   const root = process.cwd();
+  // These modes do not scaffold or change configuration, results, or gitignore.
+  if (args.flags['refresh-copies']) return refreshProjectCopies(root, args.flags);
+  if (args.flags['check-copies']) { checkProjectCopies(root, args.flags); return EXIT.CLEAN; }
   mkdirSync(join(root, 'visual-tests', '_results'), { recursive: true });
   const cfgPath = join(root, 'visual-tests', '_config.yaml');
   if (!existsSync(cfgPath)) {
@@ -691,6 +708,7 @@ function cmdInit() {
   }
   console.log(ensureGitignore(root) ? 'updated .gitignore guard-rails' : '.gitignore guard-rails already present');
   console.log('init done.');
+  checkProjectCopies(root, args.flags);
   return EXIT.CLEAN;
 }
 
@@ -990,17 +1008,153 @@ export async function executeManifest(entry, ctx) {
 }
 
 // ── run / review subcommands ─────────────────────────────────────────────────
-function resolveBuildReview(projectRoot) {
+// Closed lists: never sync visual-tests/ wholesale. Tests are checked/refreshed
+// only if installed; the CLI's original bootstrap installs just the review pair.
+const COPY_GROUPS = [
+  { skill: 'sg-visual-review', required: ['build-review.mjs', '_review-template.html'], optional: ['review-smoke-test.mjs', 'monitor-smoke-test.mjs'] },
+  { skill: 'sg-record', required: ['sg-record.mjs', 'lib/actions-to-yaml.mjs', 'lib/recorder-toolbar.js', 'lib/recorder-toolbar.css'], optional: ['lib/actions-to-yaml.test.mjs', 'lib/integration-test.mjs'] },
+];
+function copyStat(path) {
+  try { return lstatSync(path); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+}
+function installedCopies(root) {
+  const entries = [];
+  for (const group of COPY_GROUPS) {
+    const present = file => copyStat(join(root, 'visual-tests', file));
+    if (![...group.required, ...group.optional].some(present)) continue;
+    for (const file of [...group.required, ...group.optional.filter(present)]) entries.push({ skill: group.skill, file });
+  }
+  return entries;
+}
+function copySource(flags) {
+  const root = flags['plugin-root'] ? resolve(flags['plugin-root']) : join(dirname(fileURLToPath(import.meta.url)), '..');
+  return existsSync(join(root, 'skills', 'sg-visual-review', 'build-review.mjs')) ? root : null;
+}
+const copyHash = bytes => createHash('sha256').update(bytes).digest('hex');
+const shellQuote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
+function checkProjectCopies(root, flags = {}) {
+  try {
+    const entries = installedCopies(root);
+    if (!entries.length) return;
+    const source = copySource(flags);
+    if (!source) {
+      console.warn('WARN: cannot compare project copies: plugin source unavailable; use --plugin-root=/path/to/plugins/shipguard with the current CLI.');
+      return;
+    }
+    let different = false;
+    for (const { skill, file } of entries) {
+      try {
+        const sourceBytes = readFileSync(join(source, 'skills', skill, file));
+        const target = join(root, 'visual-tests', file);
+        if (!copyStat(target)) { console.warn(`WARN: copy missing: ${file}`); different = true; continue; }
+        const localHash = copyHash(readFileSync(target));
+        const sourceHash = copyHash(sourceBytes);
+        if (localHash !== sourceHash) {
+          console.warn(`WARN: copy differs: ${file} (local sha256 ${localHash}; source sha256 ${sourceHash})`);
+          different = true;
+        }
+      } catch (e) {
+        console.warn(`WARN: cannot compare project copy ${file}: ${e.message}`);
+        different = true;
+      }
+    }
+    if (different) {
+      let version = 'unknown version';
+      try { version = JSON.parse(readFileSync(join(source, '.claude-plugin', 'plugin.json'), 'utf8')).version || version; } catch { /* content hashes remain authoritative */ }
+      console.warn(`Copies left untouched. Source: ShipGuard ${version} at ${source}. To refresh with backup: node ${shellQuote(fileURLToPath(import.meta.url))} init --refresh-copies --plugin-root=${shellQuote(source)}`);
+    }
+  } catch (e) {
+    // Advisory only: a comparison failure must not change a run/review verdict.
+    console.warn(`WARN: cannot compare project copies: ${e.message}`);
+  }
+}
+function assertCopyDestination(root, file) {
+  let target = join(root, 'visual-tests');
+  for (const part of ['', ...file.split('/')]) {
+    if (part) target = join(target, part);
+    const st = copyStat(target);
+    if (st && (st.isSymbolicLink() || (target === join(root, 'visual-tests', file) ? !st.isFile() : !st.isDirectory()))) {
+      throw new Error(`refusing non-regular copy destination: ${target}`);
+    }
+  }
+}
+function refreshProjectCopies(root, flags) {
+  const entries = installedCopies(root);
+  if (!entries.length) { console.log('copies: no installed project tools to refresh'); return EXIT.CLEAN; }
+  const source = copySource(flags);
+  if (!source) { console.error('copies: plugin source unavailable; use --plugin-root=/path/to/plugins/shipguard with the current CLI'); return EXIT.INFRA; }
+  // Read and validate the whole set before writing any destination or backup.
+  const changes = [];
+  for (const { skill, file } of entries) {
+    assertCopyDestination(root, file);
+    const target = join(root, 'visual-tests', file);
+    const src = join(source, 'skills', skill, file);
+    const bytes = readFileSync(src);
+    const st = copyStat(target);
+    const previous = st ? readFileSync(target) : null;
+    if (previous && previous.equals(bytes)) continue;
+    changes.push({ file, target, bytes, previous, mode: (st || statSync(src)).mode & 0o777 });
+  }
+  if (!changes.length) { console.log('copies: already match the source'); return EXIT.CLEAN; }
+  const backup = mkdtempSync(join(root, 'visual-tests', '.copies-backup-'));
+  console.log(`copies backup: ${backup}`);
+  writeFileSync(join(backup, 'copies.json'), JSON.stringify({
+    source, files: changes.map(({ file, previous, bytes, mode }) => ({
+      file, mode, previous_sha256: previous === null ? null : copyHash(previous), source_sha256: copyHash(bytes),
+    })),
+  }, null, 2) + '\n');
+  // Back up every old file and stage every replacement before the first rename.
+  for (const change of changes) {
+    const old = join(backup, change.file);
+    const staged = join(backup, '.new', change.file);
+    mkdirSync(dirname(staged), { recursive: true });
+    if (change.previous !== null) {
+      mkdirSync(dirname(old), { recursive: true });
+      writeFileSync(old, change.previous, { mode: change.mode });
+    }
+    writeFileSync(staged, change.bytes, { mode: change.mode });
+  }
+  const written = [];
+  try {
+    for (const change of changes) {
+      mkdirSync(dirname(change.target), { recursive: true });
+      renameSync(join(backup, '.new', change.file), change.target);
+      written.push(change);
+    }
+  } catch (e) {
+    const errors = [];
+    for (const change of written.reverse()) {
+      try {
+        if (change.previous === null) unlinkSync(change.target);
+        else {
+          const restore = join(backup, '.restore');
+          writeFileSync(restore, change.previous, { mode: change.mode });
+          renameSync(restore, change.target);
+        }
+      } catch (rollback) { errors.push(`${change.file}: ${rollback.message}`); }
+    }
+    throw new Error(`copy refresh failed: ${e.message}; ${errors.length ? `restore from ${backup}: ${errors.join('; ')}` : 'previous copies restored; backup kept'}`);
+  }
+  rmSync(join(backup, '.new'), { recursive: true, force: true });
+  console.log(`copies: refreshed ${changes.length} file(s) from ${source}; previous files kept in ${backup}`);
+  return EXIT.CLEAN;
+}
+
+function resolveBuildReview(projectRoot, flags = {}) {
+  checkProjectCopies(projectRoot, flags);
   const project = join(projectRoot, 'visual-tests', 'build-review.mjs');
   if (existsSync(project)) return project;
   // build-review.mjs resolves everything relative to its own directory, so it
   // must live in the project's visual-tests/ — copy it there from the plugin.
-  const sibling = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'sg-visual-review', 'build-review.mjs');
-  if (existsSync(sibling) && existsSync(join(projectRoot, 'visual-tests'))) {
+  const source = copySource(flags);
+  const sibling = source && join(source, 'skills', 'sg-visual-review', 'build-review.mjs');
+  if (sibling && existsSync(sibling) && existsSync(join(projectRoot, 'visual-tests'))) {
     copyFileSync(sibling, project);
     const template = join(dirname(sibling), '_review-template.html');
-    if (existsSync(template)) copyFileSync(template, join(projectRoot, 'visual-tests', '_review-template.html'));
-    console.log('copied build-review.mjs (+ template) from the plugin into visual-tests/');
+    const projectTemplate = join(projectRoot, 'visual-tests', '_review-template.html');
+    const copyTemplate = existsSync(template) && !existsSync(projectTemplate);
+    if (copyTemplate) copyFileSync(template, projectTemplate);
+    console.log(`copied build-review.mjs (${copyTemplate ? '+ template' : 'kept project template'}) from the plugin into visual-tests/`);
     return project;
   }
   return null;
@@ -1220,7 +1374,7 @@ async function cmdRun(args) {
     writeRun();
 
     // 4. dashboard
-    const builder = resolveBuildReview(root);
+    const builder = resolveBuildReview(root, args.flags);
     if (builder) {
       // logic-016: a dashboard that never built was silently logged and left
       // out of every lane, so a run whose review artifact does not exist could
@@ -1292,7 +1446,7 @@ async function cmdRun(args) {
 }
 
 function cmdReview(args) {
-  const builder = resolveBuildReview(process.cwd());
+  const builder = resolveBuildReview(process.cwd(), args.flags);
   if (!builder) { console.error('review: build-review.mjs not found in visual-tests/ or plugin'); return EXIT.INFRA; }
   const extra = [];
   if (args.flags.serve) extra.push('--serve');
