@@ -193,7 +193,11 @@ function createFixture() {
   });
   writeJson(join(root, '_results', 'audit-results.json'), {
     summary: { total_bugs: 1, files_audited: 1, by_severity: { critical: 1, high: 0, medium: 0, low: 0 }, by_category: {} },
-    bugs: [{ id: 'r1-z01-001', severity: 'critical', category: 'security', file: 'app.py', line: 12, title: 'Missing ownership check', description: 'Any user can read any doc.' }],
+    bugs: [{ id: 'r1-z01-001', severity: 'critical', category: 'security', file: 'app.py', line: 12,
+      title: 'Missing ownership check', description: 'Any user can read any doc.',
+      verification_score: 90, verified: true,
+      verification_protocol: { status: 'parsed', reason: null, semantic_verification: 'not_verified',
+        raw_reply: 'PRIVATE VERIFIER RESPONSE', raw_reply_bytes: 25, raw_reply_sha256: 'private-digest' } }],
     impacted_ui_routes: [{ route: '/', severity: 'low', reason: 'Smoke route', bug_count: 0 }],
     agents: [{ id: 'z1', label: 'Zone 1', status: 'completed', files_audited: 1, bugs_found: 0, duration_ms: 10, paths: ['pages/root-index.yaml'] }],
   });
@@ -280,6 +284,7 @@ async function main() {
   try {
     root = createFixture();
     const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
+    const auditBefore = readFileSync(join(root, '_results', 'audit-results.json'), 'utf8');
     const firstBuild = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
     assert(firstBuild.status === 0, `build-review.mjs exited ${firstBuild.status}: ${firstBuild.stderr}`);
     assert(existsSync(join(root, '_results', 'review.html')), 'review.html was not generated');
@@ -345,6 +350,15 @@ async function main() {
     assert(findings.findings[0].id === 'SG-001' && findings.findings[0].severity === 'critical', 'findings: not severity-sorted with SG ids');
     const f = findings.findings;
     assert(f.some(x => x.source === 'audit' && x.evidence === 'reasoned' && x.file === 'app.py'), 'findings: audit -> reasoned');
+    const auditFinding = f.find(x => x.source === 'audit');
+    assert(auditFinding.verification_score === 90 && auditFinding.verified === true,
+      'findings: audit review score and assessment were dropped');
+    assert(eq(auditFinding.verification_protocol, { status: 'parsed', reason: null, semantic_verification: 'not_verified' }),
+      'findings: verification scope was dropped or private response metadata leaked');
+    assert(!JSON.stringify(findings).includes('PRIVATE VERIFIER RESPONSE') && !JSON.stringify(findings).includes('private-digest'),
+      'findings: private verifier response was projected into the public report');
+    assert(readFileSync(join(root, '_results', 'audit-results.json'), 'utf8') === auditBefore,
+      'dashboard changed the canonical audit producer document');
     assert(f.some(x => x.source === 'process' && x.evidence === 'measured'), 'findings: process w/ measured action -> measured');
     assert(f.some(x => x.source === 'logic' && x.evidence === 'reasoned' && x.file === 'worker.py'), 'findings: logic -> reasoned');
     assert(f.some(x => x.source === 'browser' && x.evidence === 'measured' && x.title.includes('FAIL')), 'findings: visual FAIL -> measured');
@@ -399,6 +413,76 @@ async function main() {
       createElement: element,
       getElementById(id) { if (!htmlIds.has(id)) return null; if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); },
     };
+    // Exercise the actual audit row renderer and the unified Findings consumer.
+    const auditStart = builtHtml.indexOf('function auditVerificationInfo(');
+    const auditEnd = builtHtml.indexOf('// ── Auto-load on page open:', auditStart);
+    assert(auditStart >= 0 && auditEnd > auditStart, 'audit verification renderer boundaries missing');
+    const auditContext = { document };
+    runInNewContext(builtHtml.slice(auditStart, auditEnd), auditContext);
+    const cases = [
+      [{ verification_score: 90, verified: true }, 'Review 90/100', 'Static review assessment'],
+      [{ verification_score: 55, verified: 'uncertain' }, 'Review 55/100', 'severity downgrade'],
+      [{ verification_score: 12, verified: false }, 'Review 12/100', 'unverified'],
+      [{ verification_score: null, verification_protocol: { status: 'unavailable', reason: 'finding_id_mismatch' } },
+        'Unavailable', 'another finding'],
+      [{ verification_score: null, verification_protocol: { status: 'unavailable', reason: 'reply_not_text' } },
+        'Unavailable', 'No text response'],
+      [{ verification_score: null }, 'Not verified', 'Reason not recorded'],
+      [{}, 'Not verified', 'Reason not recorded'],
+      [{ verification_score: null, verification_protocol: { status: 'unavailable', reason: '<script>not markup</script>' } },
+        'Unavailable', '<script>not markup</script>'],
+      [{ verification_score: null, verification_protocol: { status: 'unavailable', reason: 'constructor' } },
+        'Unavailable', 'constructor'],
+    ];
+    for (const [verification, label, detail] of cases) {
+      const bug = { id: 'r1-z01-001', severity: 'high', category: 'security', title: 'Sample', ...verification };
+      const before = JSON.stringify(bug);
+      const row = auditContext.makeBugRow(bug);
+      const cell = row.children[7];
+      assert(cell.textContent === label, `audit verification label: expected ${label}, got ${cell.textContent}`);
+      assert(cell.title.includes(detail), `audit verification detail missing: ${detail}`);
+      assert(!cell.title.includes('Confirmed'), 'model assessment was called confirmed');
+      assert(JSON.stringify(bug) === before, 'audit renderer changed the source assessment');
+    }
+    const findingsStart = builtHtml.indexOf('function renderFindingsTab(');
+    const findingsEnd = builtHtml.indexOf('// backward-compat alias', findingsStart);
+    runInNewContext(builtHtml.slice(findingsStart, findingsEnd) + '\nrenderFindingsTab();', {
+      document, __FINDINGS_DATA__: findings, __RUN_DATA__: null,
+      auditVerificationInfo: auditContext.auditVerificationInfo,
+    });
+    const auditRow = nodes.get('findings-tbody').children.find(row => row.children[3].textContent === 'audit');
+    assert(auditRow.children[2].textContent === 'reasoned · Review 90/100',
+      'Findings tab did not preserve reasoned evidence and the static review assessment');
+    assert(auditRow.children[2].title.includes('not an observed result'),
+      'Findings tab did not explain the review scope');
+    {
+      const audit = JSON.parse(auditBefore);
+      audit.bugs = cases.map(([verification], i) => ({
+        id: `r1-z01-${String(i + 1).padStart(3, '0')}`, severity: 'high', category: 'security',
+        file: 'app.py', line: i + 1, title: `Verification case ${i + 1}`, ...verification,
+      }));
+      writeJson(join(root, '_results', 'audit-results.json'), audit);
+      const original = readFileSync(join(root, '_results', 'audit-results.json'), 'utf8');
+      execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+      const projected = JSON.parse(readFileSync(join(root, '_results', 'findings.json'), 'utf8')).findings.filter(x => x.source === 'audit');
+      assert(projected.length === audit.bugs.length, 'verification projection changed finding selection');
+      for (const item of projected) {
+        const input = audit.bugs.find(x => x.id === item.origin.id);
+        assert(input && item.severity === input.severity && item.evidence === 'reasoned',
+          'verification projection changed origin, severity or evidence type');
+        assert(item.verification_score === (input.verification_score ?? null) && item.verified === (input.verified ?? null),
+          'verification projection changed the original assessment');
+        for (const field of ['status', 'reason', 'semantic_verification']) {
+          assert((item.verification_protocol?.[field] ?? null) === (input.verification_protocol?.[field] ?? null),
+            `verification projection lost ${field}`);
+        }
+        if (!input.verification_protocol) assert(item.verification_protocol === null,
+          'verification projection invented a protocol for a legacy finding');
+      }
+      assert(readFileSync(join(root, '_results', 'audit-results.json'), 'utf8') === original,
+        'verification projection mutated the canonical audit input');
+      writeFileSync(join(root, '_results', 'audit-results.json'), auditBefore);
+    }
     const start = builtHtml.indexOf('function logicEntries(');
     const end = builtHtml.indexOf('function procAsText(', start);
     assert(start >= 0 && end > start, 'logic renderer boundaries missing');

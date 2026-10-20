@@ -1126,6 +1126,14 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
       line: Number.isFinite(bug.line) ? bug.line : null,
       detail: bug.description || '',
       origin: { lane: 'audit', id: bug.id || null },
+      verification_score: bug.verification_score ?? null,
+      verified: bug.verified ?? null,
+      // Preserve review scope, but keep private verifier responses out of the projection.
+      verification_protocol: bug.verification_protocol && typeof bug.verification_protocol === 'object' ? {
+        status: bug.verification_protocol.status ?? null,
+        reason: bug.verification_protocol.reason ?? null,
+        semantic_verification: bug.verification_protocol.semantic_verification ?? null,
+      } : null,
     });
   }
   for (const candidate of (logicResults && Array.isArray(logicResults.candidates) ? logicResults.candidates : [])) {
