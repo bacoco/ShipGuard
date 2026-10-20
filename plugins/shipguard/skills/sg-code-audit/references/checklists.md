@@ -30,7 +30,7 @@ Find what R1+R2 missed. Think like a security auditor + QA tester.
 ## Python Checklist
 
 - `except Exception: pass` or `except: pass` — must log at minimum
-- `except Exception:` that catches too broadly (catching SystemExit, KeyboardInterrupt)
+- `except Exception:` that catches too broadly
 - `list[0]` / `dict["key"]` on data from external sources without length/existence check
 - Direct filesystem access (open(), Path()) where storage abstraction should be used
 - Flag `asyncio.get_event_loop()` when called inside an `async def` or when a loop is already running — use `asyncio.get_running_loop()` instead.
