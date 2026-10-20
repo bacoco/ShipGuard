@@ -5,13 +5,18 @@
  * The skill is an instruction artifact rather than a CLI implementation. This test therefore
  * checks both sides of its contract: required instructions remain present, and small executable
  * policy fixtures exercise the decisions those instructions require without launching agents.
+ * Artifact retention also uses real temporary Git worktrees with modeled cleanup, not Agent.
  */
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
+  copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   statSync,
@@ -171,6 +176,9 @@ function assertInstructionContract() {
     'sh, bash, zsh',
     'paused_quota',
     'SHIPGUARD_CAPACITY_OK',
+    'incomplete_artifact_transport',
+    'retain-zone-artifact.mjs',
+    'Never reconstruct it from the agent\'s output text',
     'Never glob `{results_dir}`',
     'Negative-evidence gate applied to absence claims at every severity',
   ]);
@@ -180,6 +188,9 @@ function assertInstructionContract() {
     'human-only`: never edit',
     'set -euo pipefail',
     'test_path',
+    'node "{artifact_retention_script}" --run-id "{run_id}"',
+    'artifact_retention_failed',
+    'git commit -a',
   ]);
   requireText('checklists.md', files.checklists, [
     'Shell Checklist (`.sh`, `.bash`, `.zsh`)',
@@ -199,6 +210,8 @@ function assertInstructionContract() {
     'accepted_artifacts',
     'by_fix_tier',
     'broad result-file globs are forbidden',
+    'incomplete_artifact_transport',
+    'artifact_retention_failed',
   ]);
   requireText('monitor.md', files.monitor, ['"run_id": "{run_id}"', '"status": "paused_quota"']);
   requireText('sg-ship/SKILL.md', files.ship, [
@@ -359,11 +372,116 @@ function assertSevenAbsenceFixtures() {
   }
 }
 
+function assertWorktreeArtifactTransport() {
+  // Real Git worktrees with a model of clean-worktree cleanup. This is NOT a native Agent test.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'shipguard-artifact-transport-')));
+  const main = join(root, 'main');
+  const git = (cwd, ...args) => {
+    const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const script = join(skillDir, 'retain-zone-artifact.mjs');
+  try {
+    mkdirSync(main);
+    git(main, 'init', '-q');
+    writeFileSync(join(main, '.gitignore'), 'visual-tests/\n');
+    writeFileSync(join(main, 'source.js'), 'export const unchanged = true;\n');
+    writeFileSync(join(main, 'README.md'), 'Sources and contract must remain unchanged.\n');
+    git(main, 'add', '.gitignore', 'source.js', 'README.md');
+    git(main, '-c', 'user.name=Smoke', '-c', 'user.email=smoke@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture');
+    const base = git(main, 'rev-parse', 'HEAD');
+    const relativePath = 'visual-tests/_results/runs/audit-transport/zone-z1-r1-a1.json';
+    const artifact = { run_id: 'audit-transport', base_sha: base, zone_id: 'z1', round: 1,
+      agent_id: 'a1', zone: 'source.js', bugs: [] };
+    const bytes = `${JSON.stringify(artifact)}\n`;
+    const writeArtifact = worktree => {
+      const path = join(worktree, relativePath);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, bytes);
+      return path;
+    };
+    const cleanupIfClean = worktree => {
+      if (!git(worktree, 'status', '--porcelain', '--untracked-files=all')) {
+        git(main, 'worktree', 'remove', '--force', worktree);
+      }
+    };
+
+    const control = join(root, 'ignored-control');
+    git(main, 'worktree', 'add', '--detach', control, base);
+    const controlFile = writeArtifact(control);
+    assert.equal(git(control, 'check-ignore', relativePath), relativePath);
+    cleanupIfClean(control);
+    assert.equal(existsSync(controlFile), false, 'unretained ignored JSON is lost at cleanup');
+
+    const worktree = join(root, 'retained');
+    git(main, 'worktree', 'add', '--detach', worktree, base);
+    const sourceFile = writeArtifact(worktree);
+    const parentIndex = readFileSync(join(main, '.git', 'index'));
+    const trackedBefore = ['source.js', 'README.md', '.gitignore'].map(path => readFileSync(join(main, path)));
+    const oldCanonical = join(main, 'visual-tests', '_results', 'audit-results.json');
+    mkdirSync(dirname(oldCanonical), { recursive: true });
+    writeFileSync(oldCanonical, '{"run_id":"previous","bugs":[]}\n');
+    const oldBytes = readFileSync(oldCanonical);
+    const retain = (cwd, overrides = {}) => spawnSync(process.execPath, [script,
+      '--run-id', artifact.run_id, '--base-sha', base, '--zone-id', artifact.zone_id,
+      '--round', '1', '--agent-id', artifact.agent_id], { cwd, encoding: 'utf8', ...overrides });
+    const result = retain(worktree);
+    assert.equal(result.status, 0, `ignored zone JSON must be retained before completion: ${result.stderr}`);
+    assert.equal(JSON.parse(result.stdout).artifact, relativePath);
+    assert.equal(git(worktree, 'diff', '--cached', '--name-only'), '', 'artifact content must not be staged');
+    assert.equal(git(worktree, 'write-tree'), git(main, 'rev-parse', 'HEAD^{tree}'), 'commit tree remains unchanged');
+    assert.equal(git(worktree, 'diff', '--name-only'), relativePath, 'only the artifact is made Git-visible');
+    cleanupIfClean(worktree);
+    assert.equal(readFileSync(sourceFile, 'utf8'), bytes, 'exact JSON survives modeled cleanup');
+    const destination = join(main, relativePath);
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(sourceFile, destination);
+    assert.equal(readFileSync(destination, 'utf8'), bytes, 'parent copies the exact original file');
+    const dispatch = { run_id: artifact.run_id, base_sha: base,
+      entries: [{ ...artifact, status: 'completed' }], accepted_artifacts: [relativePath] };
+    assert.deepEqual(collectAcceptedArtifacts(main, dispatch), [artifact]);
+
+    const indexPath = git(worktree, 'rev-parse', '--git-path', 'index');
+    const childIndex = readFileSync(resolve(worktree, indexPath));
+    for (const field of ['run_id', 'base_sha', 'zone_id', 'round', 'agent_id']) {
+      writeFileSync(sourceFile, JSON.stringify({ ...artifact, [field]: field === 'round' ? 2 : 'foreign' }));
+      assert.notEqual(retain(worktree).status, 0, `reject foreign ${field}`);
+      assert.deepEqual(readFileSync(resolve(worktree, indexPath)), childIndex, 'rejection leaves index unchanged');
+    }
+    writeFileSync(sourceFile, bytes);
+    assert.equal(retain(worktree).status, 0, 'retention can be repeated safely');
+    writeFileSync(sourceFile, '{invalid');
+    assert.notEqual(retain(worktree).status, 0, 'reject malformed JSON without substituting text');
+    rmSync(sourceFile);
+    assert.notEqual(retain(worktree).status, 0, 'reject a missing artifact');
+    assert.deepEqual(readFileSync(resolve(worktree, indexPath)), childIndex, 'failed retention never rewrites the index');
+    writeFileSync(sourceFile, bytes);
+    assert.notEqual(retain(main).status, 0, 'never mutate the parent index');
+    assert.notEqual(retain(worktree, { env: { ...process.env, GIT_INDEX_FILE: join(main, '.git', 'index') } }).status,
+      0, 'reject alternate index redirection');
+    assert.deepEqual(readFileSync(oldCanonical), oldBytes, 'previous canonical result remains intact');
+    assert.deepEqual(readFileSync(join(main, '.git', 'index')), parentIndex, 'parent index is byte-identical');
+    for (const [i, path] of ['source.js', 'README.md', '.gitignore'].entries()) {
+      assert.deepEqual(readFileSync(join(main, path)), trackedBefore[i]);
+      assert.deepEqual(readFileSync(join(worktree, path)), trackedBefore[i]);
+    }
+    assert.equal(git(main, 'rev-parse', 'HEAD'), base);
+    assert.equal(git(worktree, 'rev-parse', 'HEAD'), base);
+    assert.equal(git(main, 'status', '--porcelain'), '');
+    console.log('artifact transport: real Git worktrees passed (modeled cleanup; native Agent NOT VERIFIED)');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 try {
   assertInstructionContract();
   assertFixSafetyFixtures();
   assertRunIntegrityFixtures();
   assertSevenAbsenceFixtures();
+  assertWorktreeArtifactTransport();
   console.log('code-audit contract smoke test passed (safety, run integrity, quota, tracer, 7 absence fixtures)');
 } catch (error) {
   console.error(`code-audit contract smoke test failed: ${error.message}`);

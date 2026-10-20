@@ -20,6 +20,10 @@ for (const lane of ["audit", "logic", "process"]) {
 assert.match(skill, /switch it to `running` immediately before invoking the lane/);
 assert.match(skill, /use `ran` only after its\s+declared result exists and can be read/);
 assert.match(skill, /never leave a completed\s+run with `pending` or `running`/);
+assert.match(skill, /canonical JSON has that exact `run_id` and `base_sha`/,
+  'a readable historical audit must not count as the new invocation');
+assert.match(skill, /dispatch\.json` has `status: "completed"`/);
+assert.match(skill, /do not pass\s+`--from-audit` to later lanes after this failure/);
 assert.doesNotMatch(
   phase[1],
   /"(?:audit|logic|process)"\s*:\s*\{\s*"status"\s*:\s*"ran"/,

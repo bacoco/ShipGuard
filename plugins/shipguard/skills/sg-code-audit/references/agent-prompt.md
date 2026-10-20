@@ -17,6 +17,9 @@ Referenced from SKILL.md Phase 4 ("Build Prompts + Dispatch Agents"). Load this 
   own worktree. The orchestrator copies and identity-validates that file at completion. Never point
   agents at an absolute path outside their worktree.
 - `{base_sha}` is the repository HEAD recorded once at dispatch time (SKILL.md Phase 4, "Note on worktrees").
+- `{artifact_retention_script}` is the absolute path of the installed skill's
+  `retain-zone-artifact.mjs`, resolved by the orchestrator. The helper only changes the exact
+  artifact's intent-to-add entry in the agent's own linked-worktree index.
 - Retry handling for malformed zone JSON is the orchestrator's job and lives in SKILL.md Phase 5 ("On agent completion") — it is intentionally NOT part of this template.
 - In multi-round mode, rounds 2+ additionally receive the applicable context block from § "Round 2+ context blocks" at the end of this file.
 
@@ -268,6 +271,26 @@ Do NOT modify any source files or create source commits. Still classify every fi
 bugs with `"fix_applied": false`, `"fix_commit": ""`, and `"fix_evidence": null`.
 {END IF}
 
+## Retain The Artifact Before Completing (REQUIRED)
+
+After all auditing, any source commits, and JSON validation, run from the root of your own worktree:
+
+```bash
+node "{artifact_retention_script}" --run-id "{run_id}" --base-sha "{base_sha}" --zone-id "{zone.id}" --round "{round_number}" --agent-id "{agent_id}"
+```
+
+Check its exit status. The helper makes only your exact JSON Git-visible with intent-to-add,
+including under ignored directories; it does not stage its contents or create a commit. This
+prevents a clean-worktree cleanup from discarding an ignored-only result before the parent can
+collect it. Keep the file at its prescribed path. Do not modify ignore rules, create a dummy
+source change, write outside your worktree, or commit anything after this step. Never use a broad
+`git add` or `git commit -a` to retain results.
+
+If retention fails, report `artifact_retention_failed` with the observed error instead of claiming
+success. Do not replace the file with JSON in your completion message. On success, include the
+helper receipt and your worktree path with the one-line summary; the parent must still collect
+and validate the actual file.
+
 {IF round_number > 1}
 ## Previous Round Context
 
@@ -320,9 +343,10 @@ For these patterns, report ONE summary entry with the total count instead of ind
 2. For each file, apply ALL checks: round focus + language-specific + application-level + skeptical heuristics
 3. For critical flows, read files OUTSIDE your scope (read-only) to verify caller/callee contracts
 4. Record every bug found in the JSON output
-5. {IF fix_mode} Fix bugs using Edit, then commit {ELSE} Do NOT edit any files {END IF}
+5. {IF fix_mode} Fix bugs using Edit, then commit {ELSE} Do NOT edit any source files {END IF}
 6. Write the JSON output file
-7. Report completion with a one-line summary: "Zone {zone.id}: {N} bugs found, {M} fixed"
+7. Validate the JSON, then run the required artifact-retention helper and check its exit status
+8. Only after successful retention, report completion: "Zone {zone.id}: {N} bugs found, {M} fixed", with the receipt and worktree path
 ````
 
 ## Round 2+ context blocks
