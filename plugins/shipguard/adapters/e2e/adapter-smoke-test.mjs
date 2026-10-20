@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { main, parseArgs } from './adapter.mjs';
-import { fixture } from './fixture.mjs';
+import { fixture, agentFixture } from './fixture.mjs';
 import { digest, evidencePath } from './artifacts.mjs';
 const root = mkdtempSync(join(tmpdir(), 'sg-e2e-'));
 let count = 0;
@@ -101,6 +101,16 @@ try {
     const p = project('bad'); const file = save(p); writeFileSync(file, '{');
     assert.equal((await runImport(p, file)).exitCode, 3);
     assert.equal((await runImport(p, join(p, 'absent'))).exitCode, 2);
+  });
+  await check('incomplete agent assertion cannot become a successful import', async () => {
+    const p = project('agent-evidence'); const doc = agentFixture();
+    delete doc.run.results[0].attempts[0].steps[0].observationRevision;
+    const file = save(p, doc); const original = readFileSync(file, 'utf8');
+    const r = await runImport(p, file);
+    assert.equal(r.exitCode, 3); assert.equal(r.error, 'INVALID_REPORT');
+    assert.equal(existsSync(join(r.bundle, 'e2e-results.json')), false);
+    assert.equal(read(r.bundle, 'adapter-error.json').ship_ready, false);
+    assert.equal(readFileSync(file, 'utf8'), original);
   });
   await check('unknown flags and widening empty scope are refused', () => {
     assert.throws(() => parseArgs(['run', '--config', 'e2e.config.ts', '--target', 'web']));

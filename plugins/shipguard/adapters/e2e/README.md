@@ -97,6 +97,11 @@ new measurement. All assertions, selectors, model verdicts and redaction claims 
 review. An execution with no recorded assertion is incomplete; use explicit locator assertions
 or `agent.assert`, not an unobservable custom check, for this first adapter.
 
+An evaluated `agent.assert` must retain its `observationRevision` and `explanation`, plus the
+required metrics when recorded as an agent step, as defined by the supported report-1 schema.
+Missing or invalid evidence is rejected with exit 3. An assertion that failed before any model
+call can lack an observation; its infrastructure error remains visible rather than inventing one.
+
 ## Confidentiality and trust
 
 Tests/configs and the installed runner execute with the host user's privileges. They can call

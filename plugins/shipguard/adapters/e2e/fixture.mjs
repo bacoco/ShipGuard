@@ -28,6 +28,14 @@ export function fixture(status = 'passed', err = null) {
     serialGroups: [], results: [result], errors: [], summary: {}, usage: { modelTokens: 0 } } };
   return recount(doc);
 }
+export function agentFixture(status = 'passed', err = null) {
+  const doc = fixture(status, err);
+  Object.assign(doc.run.results[0].attempts[0].steps[0], {
+    kind: 'agent', api: 'agent.assert', observationRevision: 'screen-1', explanation: 'The status is Ready.',
+    metrics: { modelCalls: 0, actionSteps: 0, observationBytes: 32, contextBytes: 64, ledgerBytes: 0 },
+  });
+  return doc;
+}
 export function recount(doc) {
   const r = doc.run;
   r.summary = { discovered: r.results.length, selected: 0, executed: 0, passed: 0,
