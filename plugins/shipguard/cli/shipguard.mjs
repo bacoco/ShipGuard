@@ -32,7 +32,7 @@
  * a complete one. Incomplete is never clean.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync, lstatSync, mkdtempSync, renameSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync, lstatSync, mkdtempSync, renameSync, rmSync, chmodSync } from 'fs';
 import { join, dirname, relative, sep, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execFileSync } from 'child_process';
@@ -1111,8 +1111,10 @@ function refreshProjectCopies(root, flags) {
     if (change.previous !== null) {
       mkdirSync(dirname(old), { recursive: true });
       writeFileSync(old, change.previous, { mode: change.mode });
+      chmodSync(old, change.mode); // Creation mode is filtered by the process umask.
     }
     writeFileSync(staged, change.bytes, { mode: change.mode });
+    chmodSync(staged, change.mode);
   }
   const written = [];
   try {
@@ -1129,6 +1131,7 @@ function refreshProjectCopies(root, flags) {
         else {
           const restore = join(backup, '.restore');
           writeFileSync(restore, change.previous, { mode: change.mode });
+          chmodSync(restore, change.mode);
           renameSync(restore, change.target);
         }
       } catch (rollback) { errors.push(`${change.file}: ${rollback.message}`); }

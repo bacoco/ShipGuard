@@ -2,7 +2,7 @@
 // Project-copy upgrade regressions. Every write stays in temporary fixtures.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,11 @@ const groups = {
 };
 const put = (path, bytes) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, bytes); };
 const read = path => readFileSync(path, 'utf8');
+const permissionFailures = [];
+const checkMode = (path, label) => {
+  const actual = statSync(path).mode & 0o777;
+  if (actual !== 0o664) permissionFailures.push(`${label}: expected 0664, got ${actual.toString(8)}`);
+};
 const run = (root, ...args) => spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8' });
 const fixture = name => {
   const root = join(temp, name);
@@ -36,6 +41,7 @@ try {
   const pinned = '// Deliberate project customization.\nprocess.exit(0);\n';
   put(join(vt, 'build-review.mjs'), pinned);
   put(join(vt, '_review-template.html'), 'custom template');
+  for (const file of ['build-review.mjs', '_review-template.html']) chmodSync(join(vt, file), 0o664);
   const review = run(root, 'review');
   assert.equal(review.status, 0, review.stderr);
   assert.match(review.stderr, /copy differs.*build-review\.mjs/i, 'an existing old/custom copy must warn before review');
@@ -55,12 +61,16 @@ try {
   put(join(vt, '_results', 'logic-results.json'), logic);
   const remedy = review.stderr.match(/To refresh with backup: (.+)/)?.[1];
   assert.ok(remedy, review.stderr);
-  const refreshed = spawnSync('/bin/sh', ['-c', remedy], { cwd: root, encoding: 'utf8' });
+  const refreshed = spawnSync('/bin/sh', ['-c', `umask 0022; ${remedy}`], { cwd: root, encoding: 'utf8' });
   assert.equal(refreshed.status, 0, refreshed.stderr);
   const backup = refreshed.stdout.match(/^copies backup: (.+)$/m)?.[1];
   assert.ok(backup, refreshed.stdout);
   assert.equal(read(join(backup, 'build-review.mjs')), pinned);
   assert.equal(read(join(backup, '_review-template.html')), 'custom template');
+  for (const file of ['build-review.mjs', '_review-template.html']) {
+    checkMode(join(vt, file), `successful refresh ${file}`);
+    checkMode(join(backup, file), `successful refresh backup ${file}`);
+  }
   assert.equal(read(join(vt, 'build-review.mjs')), read(join(source, 'skills', 'sg-visual-review', 'build-review.mjs')));
   assert.equal(read(join(vt, '_review-template.html')), read(join(source, 'skills', 'sg-visual-review', '_review-template.html')));
   assert.ok(!existsSync(join(vt, 'sg-record.mjs')), 'refresh must not install an unused recorder');
@@ -130,9 +140,10 @@ try {
   const rollbackVt = join(rollbackRoot, 'visual-tests');
   put(join(rollbackVt, 'build-review.mjs'), pinned);
   put(join(rollbackVt, '_review-template.html'), 'old rollback template');
+  for (const file of ['build-review.mjs', '_review-template.html']) chmodSync(join(rollbackVt, file), 0o664);
   const preload = join(temp, 'fail-rename.mjs');
   put(preload, `import fs from 'node:fs';\nimport { syncBuiltinESMExports } from 'node:module';\n`
-    + `const original = fs.renameSync; let failed = false;\n`
+    + `process.umask(0o022);\nconst original = fs.renameSync; let failed = false;\n`
     + `fs.renameSync = (from, to) => { if (!failed && to === ${JSON.stringify(realpathSync(join(rollbackVt, '_review-template.html')))}) { failed = true; throw new Error('injected rename failure'); } return original(from, to); };\nsyncBuiltinESMExports();\n`);
   const rollback = spawnSync(process.execPath, ['--import', preload, cli, 'init', '--refresh-copies'], { cwd: rollbackRoot, encoding: 'utf8' });
   assert.equal(rollback.status, 2, rollback.stderr);
@@ -141,7 +152,13 @@ try {
   assert.equal(read(join(rollbackVt, '_review-template.html')), 'old rollback template');
   const rollbackBackup = rollback.stdout.match(/^copies backup: (.+)$/m)?.[1];
   assert.equal(read(join(rollbackBackup, 'build-review.mjs')), pinned);
+  for (const file of ['build-review.mjs', '_review-template.html']) {
+    checkMode(join(rollbackVt, file), `rollback ${file}`);
+    checkMode(join(rollbackBackup, file), `rollback backup ${file}`);
+  }
   console.log('PASS a mid-refresh filesystem failure restores the old set and keeps backups');
+  assert.deepEqual(permissionFailures, [], 'refresh, backup and rollback must preserve permissions despite umask 0022');
+  console.log('PASS refresh, backups and rollback preserve mode 0664 under umask 0022');
   console.log('copies-smoke-test: ALL PASS');
 } finally {
   rmSync(temp, { recursive: true, force: true });
