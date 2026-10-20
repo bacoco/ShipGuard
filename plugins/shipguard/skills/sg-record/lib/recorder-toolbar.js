@@ -404,7 +404,12 @@
     if (isToolbarElement(e.target)) return;
 
     // Find nearest interactive element
-    var el = e.target.closest('a, button, [role=button], input[type=submit], [onclick]') || e.target;
+    var el = e.target.closest('a, button, [role=button], input[type=submit], [onclick]');
+    // Bare document/background clicks produce page-wide text absent from the
+    // interactive replay tree. Keep explicit interactive roots and the existing
+    // fallback for custom controls elsewhere in the page.
+    if (!el && (e.target === document.documentElement || e.target === document.body)) return;
+    el = el || e.target;
 
     // Skip input/textarea/select — fill/change handlers cover those
     var tag = el.tagName.toLowerCase();
