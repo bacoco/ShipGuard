@@ -158,6 +158,29 @@ profiles:
   await clickPoint({ x: 5, y: 5 });
   check('explicitly interactive document root is still captured',
     await evaluate('window.__sgEvents.filter(e=>e.type==="step").map(e=>e.step.tagName)'), ['html']);
+
+  // A bare body click can still be useful without an onclick attribute or role.
+  await inject();
+  await evaluate(`window.__bodyClicks=0;
+    const panel=document.createElement('section');panel.id='panel';panel.textContent='Open panel';
+    document.body.appendChild(panel);
+    document.body.addEventListener('click',event=>{
+      if(event.target!==document.body)return;
+      window.__bodyClicks++;panel.style.display='none';
+    });`);
+  check('panel dismissal targets bare body',
+    await evaluate(`document.elementFromPoint(${bodyPoint.x},${bodyPoint.y}).tagName`), 'BODY');
+  await clickPoint(bodyPoint);
+  const bodyHandler = await evaluate(`({
+    clicks:window.__bodyClicks,
+    hidden:document.querySelector('#panel').style.display==='none',
+    steps:window.__sgEvents.filter(e=>e.type==='step').map(e=>({type:e.step.type,tag:e.step.tagName}))
+  })`);
+  check('background handler actually closes the panel',
+    { clicks: bodyHandler.clicks, hidden: bodyHandler.hidden }, { clicks: 1, hidden: true });
+  check('useful body listener click is retained', bodyHandler.steps, [{ type: 'click', tag: 'body' }]);
+  writeFileSync(join(root, 'body-handler-evidence.json'), JSON.stringify(bodyHandler, null, 2));
+  await ab('screenshot', join(root, 'body-handler.png'), '--full');
 } finally {
   try { await ab('close'); } catch (error) { console.error(`Browser cleanup: ${error.message}`); failures++; }
   await new Promise((done) => server.close(done));
