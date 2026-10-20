@@ -138,9 +138,9 @@ stable checkout. The explicitly selected root is resolved (including platform al
 
 ```bash
 node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-improve/prompt-audit-smoke-test.mjs"
-node "$SHIPGUARD_PLUGIN_ROOT/skills/sg-improve/prompt-audit-runner-smoke-test.mjs"
 ```
 
-The runner tests call the real helper. Git patch application in those tests touches disposable
-fixtures only. Neither suite invokes a live model. Actual Claude/Codex mode selection and semantic
-review quality require separate host testing; successful mechanical tests are not that evidence.
+The smoke test calls the real helper for inventory and malformed-input rejection, and checks the
+review functions using temporary sources. It does not apply patches with Git or invoke a live model.
+Actual Claude/Codex mode selection and semantic review quality require separate host testing;
+successful mechanical tests are not that evidence.
