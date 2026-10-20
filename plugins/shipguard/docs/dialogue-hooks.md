@@ -112,8 +112,11 @@ The continuation explicitly states that it is hook-generated, with no new human 
 permission. If human intent is missing, ask the necessary question and stop; otherwise correct the
 supported wording and affected notes within existing authority, preserving valid content. No document is automatically rewritten.
 If the complete response exactly equals the proposed question after whitespace normalization,
-validation returns `unknown` with action `wait`, without a duplicate continuation. Quoted examples
-are not stripped or matched as whole questions. Paraphrases and questions with surrounding prose
+validation returns `unknown` with action `wait`, without a duplicate continuation.
+If the response reaches the 4096-character string cap and coverage reports truncation, apparent
+equality instead remains `unknown` with action `unverified`: aggregate coverage cannot establish
+that the response has no unseen suffix. Shorter complete questions can still wait when only context
+is truncated. Quoted examples are not stripped or matched as whole questions. Paraphrases and questions with surrounding prose
 remain the controller's responsibility; the hook does not infer dialogue state from an omitted history.
 When `stop_hook_active` is true, no controller is called and no second continuation is requested;
 unresolved checks remain NOT VERIFIED. If the flag is unavailable, automatic correction is disabled.

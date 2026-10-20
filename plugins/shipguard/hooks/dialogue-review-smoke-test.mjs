@@ -79,6 +79,46 @@ test('the complete response already asks the question: wait without duplicate bl
   assert.equal(check.status, 'unknown'); assert.equal(check.action, 'wait');
   assert.equal(outputFor(pending, pendingView, check).decision, undefined);
 });
+test('a truncated response cannot establish that the complete response is the question', () => {
+  const pending = { ...input, last_assistant_message: question + ' '.repeat(4096) + 'I will use 47 without waiting.' };
+  const pendingView = makeView(pending, ambiguousContext);
+  assert.equal(pendingView.coverage.truncated, true);
+  assert.equal(pendingView.response.trim(), question);
+  const check = classify({ ...ask, finding: { ...ask.finding, passage: 'active' } }, pendingView);
+  assert.equal(check.status, 'unknown'); assert.equal(check.action, 'unverified');
+  assert.doesNotMatch(check.message, /exactly the proposed question/);
+  assert.equal(outputFor(pending, pendingView, check).decision, undefined);
+});
+test('a short complete question still waits when only selected context is truncated', () => {
+  const pending = { ...input, last_assistant_message: question };
+  const pendingView = makeView(pending, { ...ambiguousContext,
+    sources: [{ reference: 'long source', text: 'x'.repeat(5000), origin: 'document' }] });
+  assert.equal(pendingView.coverage.truncated, true);
+  const check = classify({ ...ask, finding: { ...ask.finding, passage: 'active' } }, pendingView);
+  assert.equal(check.action, 'wait');
+  assert.equal(outputFor(pending, pendingView, check).decision, undefined);
+});
+test('a complete question at the string cap still waits without reported truncation', () => {
+  const pending = { ...input, last_assistant_message: question.padEnd(4096) };
+  const pendingView = makeView(pending, ambiguousContext);
+  assert.equal(pendingView.coverage.truncated, false);
+  assert.equal(classify({ ...ask, finding: { ...ask.finding, passage: 'active' } }, pendingView).action, 'wait');
+});
+test('aggregate truncation cannot prove completeness of a response at the string cap', () => {
+  const pending = { ...input, last_assistant_message: question.padEnd(4096) };
+  const pendingView = makeView(pending, { ...ambiguousContext,
+    sources: [{ reference: 'long source', text: 'x'.repeat(5000), origin: 'document' }] });
+  assert.equal(pendingView.coverage.truncated, true);
+  assert.equal(classify({ ...ask, finding: { ...ask.finding, passage: 'active' } }, pendingView).action, 'unverified');
+});
+test('a nonmatching truncated response can still receive one grounded clarification', () => {
+  const pending = { ...input, last_assistant_message: '65 active clients.' + ' '.repeat(4096) };
+  const pendingView = makeView(pending, ambiguousContext);
+  assert.equal(pendingView.coverage.truncated, true);
+  const check = classify(ask, pendingView);
+  assert.equal(check.action, 'ask');
+  assert.equal(outputFor(pending, pendingView, check).decision, 'block');
+});
 test('a quoted example is not mistaken for the whole question', () => {
   const quoted = { ...input, last_assistant_message: 'Example only: "' + question + '"' };
   const quotedView = makeView(quoted, ambiguousContext);
