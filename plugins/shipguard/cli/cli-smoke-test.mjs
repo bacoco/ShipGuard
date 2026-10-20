@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync, symlinkSync, copyFileSync, chmodSync } from 'fs';
 import { tmpdir } from 'os';
+import { actionsToYaml } from '../skills/sg-record/lib/actions-to-yaml.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = join(HERE, 'shipguard.mjs');
@@ -326,6 +327,41 @@ try {
 } finally {
   if (savedBrowser === undefined) delete process.env.SHIPGUARD_AGENT_BROWSER;
   else process.env.SHIPGUARD_AGENT_BROWSER = savedBrowser;
+}
+
+// ── recorded open URLs reach the real interpolator intact (#122) ──
+// Capture the browser arguments; no browser or network is involved.
+const URL_BIN = join(projU, 'recorded-url-browser');
+const URL_LOG = join(projU, 'recorded-url-args.jsonl');
+wf(URL_BIN, '#!/usr/bin/env node\n'
+  + `require('node:fs').appendFileSync(${JSON.stringify(URL_LOG)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`);
+chmodSync(URL_BIN, 0o755);
+const savedUrlBrowser = process.env.SHIPGUARD_AGENT_BROWSER;
+process.env.SHIPGUARD_AGENT_BROWSER = URL_BIN;
+try {
+  const baseUrl = 'http://example.test:4100';
+  const replayBase = 'http://example.test:4300';
+  for (const [recorded, expected] of [
+    [`${baseUrl}/form?q=1#fin`, `${replayBase}/form?q=1#fin`],
+    ['http://example.test:4200/form?q=1#fin', 'http://example.test:4200/form?q=1#fin'],
+    ['http://example.test:41000/form', 'http://example.test:41000/form'],
+    ['https://other.example.test/form?q=1#fin', 'https://other.example.test/form?q=1#fin'],
+  ]) {
+    wf(URL_LOG, '');
+    const manifest = yamlParse(actionsToYaml([{ type: 'open', url: recorded }],
+      { name: 'recorded-url', baseUrl }));
+    // This contract concerns open; omit the generated trailing screenshot.
+    manifest.steps = manifest.steps.filter(step => step.action === 'open');
+    const result = await executeManifest(
+      { id: 'pages/recorded-url', url: '', manifest },
+      { baseUrl: replayBase, config: {}, checks: [], screenshotsDir: join(projU, 'visual-tests', '_results') });
+    const calls = rf(URL_LOG, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert(result.status === 'PASS' && deepEq(calls.filter(call => call[0] === 'open'), [['open', expected]]),
+      `recorded URL: real interpolator opens ${expected}`);
+  }
+} finally {
+  if (savedUrlBrowser === undefined) delete process.env.SHIPGUARD_AGENT_BROWSER;
+  else process.env.SHIPGUARD_AGENT_BROWSER = savedUrlBrowser;
 }
 
 // ── run without agent-browser -> exit 2 (infra), run.json declares it ──
