@@ -91,6 +91,68 @@ writeFileSync(join(proj2, 'visual-tests', '_config.yaml'), 'base_url: "http://12
 const code2 = await runCli([CLI, 'crawl'], proj2);
 assert(code2 === EXIT.INFRA, 'cmdCrawl: unreachable base_url -> exit 2');
 
+// ── #117: a linked HTTP error is neither a second finding nor a crawled page ──
+writeFileSync(join(site, 'missing-link.html'), '<html><a href="absent.html">missing</a></html>');
+const missingBase = `${base}missing-link.html`;
+const missing = await crawl(missingBase);
+const expectedMissing = [{ url: `${base}absent.html`, status: 404, found_on: missingBase, tag: 'a' }];
+assert(missing.pages === 1, 'crawl: linked HTTP 404 is not counted as crawled');
+assert(missing.assets_checked === 1 && JSON.stringify(missing.broken) === JSON.stringify(expectedMissing),
+  'crawl: linked HTTP 404 has one finding with the original link provenance');
+
+const projH = mkdtempSync(join(tmpdir(), 'sg-http404-'));
+mkdirSync(join(projH, 'visual-tests'), { recursive: true });
+writeFileSync(join(projH, 'visual-tests', '_config.yaml'), `base_url: "${missingBase}"\n`);
+const codeH = await runCli([CLI, 'crawl'], projH);
+const artH = JSON.parse(readFileSync(join(projH, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
+assert(codeH === EXIT.FINDINGS, 'cmdCrawl: linked HTTP 404 still exits 1');
+assert(artH.schema_version === '1.0' && artH.pages === 1 && JSON.stringify(artH.broken) === JSON.stringify(expectedMissing),
+  'cmdCrawl: HTTP 404 artifact preserves schema, count and a single finding');
+
+writeFileSync(join(site, 'two-sources.html'), '<html><a href="absent.html">missing</a><a href="missing-link.html">other source</a></html>');
+const shared = await crawl(`${base}two-sources.html`);
+assert(shared.pages === 2 && shared.broken.length === 2
+  && shared.broken.every((b) => b.tag === 'a' && b.url === `${base}absent.html`)
+  && new Set(shared.broken.map((b) => b.found_on)).size === 2,
+  'crawl: a shared HTTP 404 retains both source pages without a page duplicate');
+const missingRoot = await crawl(`${base}absent.html`);
+assert(missingRoot.pages === 0 && missingRoot.broken.length === 1 && missingRoot.broken[0].tag === 'page',
+  'crawl: HTTP 404 at base_url remains a finding, not a crawled page');
+writeFileSync(join(site, 'missing-frame.html'), '<html><iframe src="absent.html"></iframe></html>');
+const frame = await crawl(`${base}missing-frame.html`);
+assert(frame.pages === 1 && frame.broken.length === 1 && frame.broken[0].tag === 'iframe',
+  'crawl: linked iframe HTTP 404 preserves its original finding only');
+
+// HEAD and GET can disagree: retain the visit and any distinct GET failure.
+let headStatus = 200;
+let getStatus = 404;
+const serverH = http.createServer((req, res) => {
+  res.setHeader('content-type', 'text/html');
+  if (req.url === '/') return res.end('<html><a href="method.html">next</a></html>');
+  if (req.url === '/method.html') {
+    res.statusCode = req.method === 'HEAD' ? headStatus : getStatus;
+    return res.end('<html><a href="leaf.html">leaf</a></html>');
+  }
+  res.end('<html>leaf</html>');
+});
+await new Promise((r) => serverH.listen(0, '127.0.0.1', r));
+const baseH = `http://127.0.0.1:${serverH.address().port}/`;
+const getMissing = await crawl(baseH);
+assert(getMissing.pages === 1 && getMissing.broken.length === 1
+  && getMissing.broken[0].status === 404 && getMissing.broken[0].tag === 'page',
+  'crawl: GET-only HTTP failure is still reported and excluded from coverage');
+headStatus = 404;
+getStatus = 200;
+const headMissing = await crawl(baseH);
+assert(headMissing.pages === 3 && headMissing.broken.length === 1 && headMissing.broken[0].tag === 'a',
+  'crawl: failed HEAD does not prevent a successful GET or following its links');
+getStatus = 500;
+const differentFailure = await crawl(baseH);
+assert(differentFailure.pages === 1 && differentFailure.broken.length === 2
+  && differentFailure.broken.some((b) => b.status === 500 && b.tag === 'page'),
+  'crawl: a distinct GET failure is not hidden by the HEAD finding');
+serverH.close();
+
 // ── logic-007: reaching the page cap is DECLARED, never silent ──
 // A site larger than the cap is not defective, so truncation is a fact in the
 // artifact (reason-carrying, like a non-"ran" lane in run.json) and not a

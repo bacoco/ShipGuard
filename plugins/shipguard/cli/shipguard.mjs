@@ -472,7 +472,15 @@ export async function crawl(baseUrl, opts = {}) {
       continue;
     }
     first = false;
-    if (!res.ok) { broken.push({ url: pageUrl, status: res.status, found_on: pageUrl, tag: 'page' }); continue; }
+    if (!res.ok) {
+      unreachable++;
+      // The link check may already have reported this exact HTTP failure with
+      // its source page. Keep GET-only or different-status failures visible.
+      if (!broken.some((b) => b.url === pageUrl && b.status === res.status)) {
+        broken.push({ url: pageUrl, status: res.status, found_on: pageUrl, tag: 'page' });
+      }
+      continue;
+    }
     const type = res.headers.get('content-type') || '';
     if (!type.includes('html')) continue;
     const html = await res.text();
