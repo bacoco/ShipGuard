@@ -101,8 +101,11 @@ export function validateController(result, view) {
   }
   const question = action === 'ask' ? f.question ?? f.correction : null;
   if (action === 'ask' && view.event === 'Stop') {
-    if (normalized(view.response) === normalized(question)) return {
-      status: 'unknown', action: 'wait', message: 'The supplied response is exactly the proposed question. Do not repeat it; human intent remains unconfirmed.' };
+    if (normalized(view.response) === normalized(question)) {
+      // Coverage is aggregate: a response at sanitize's string cap may have an unseen suffix.
+      if (view.coverage.truncated && view.response.length === 4096) return unverified('The supplied response may be truncated; equality with the complete response is not established.');
+      return { status: 'unknown', action: 'wait', message: 'The supplied response is exactly the proposed question. Do not repeat it; human intent remains unconfirmed.' };
+    }
     if (!view.context?.original_request) return unverified('Original request is missing; a new clarification cannot be grounded from the response alone.');
   }
   return { status: 'finding', action, message: result.message, finding: { action, basis, passage: f.passage, source: f.source,
