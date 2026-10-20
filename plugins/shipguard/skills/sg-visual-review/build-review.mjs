@@ -1549,6 +1549,13 @@ if (process.argv.includes('--serve')) {
     if (auditState) writeFileSync(MONITOR_PATH, JSON.stringify(auditState, null, 2), 'utf8');
   }
 
+  function monitorIdentityMismatch(data) {
+    // Legacy clients may omit identity; reject only an explicit conflict with
+    // the current run, before changing either memory or the persisted monitor.
+    return ['run_id', 'base_sha'].some(field =>
+      auditState?.[field] && data[field] && auditState[field] !== data[field]);
+  }
+
   function normalizeMonitorId(value) {
     if (value === undefined || value === null) return null;
     const raw = String(value).trim();
@@ -1702,6 +1709,11 @@ if (process.argv.includes('--serve')) {
     if (req.method === 'POST' && req.url === '/api/monitor/agent-update') {
       try {
         const data = await readBody(req);
+        if (monitorIdentityMismatch(data)) {
+          res.writeHead(409, { 'Content-Type': 'application/json', ...CORS });
+          res.end(JSON.stringify({ error: 'monitor event does not match the current audit' }));
+          return;
+        }
         if (!auditState) {
           auditState = { agents: {}, status: 'running', started_at: new Date().toISOString() };
         }
@@ -1741,6 +1753,16 @@ if (process.argv.includes('--serve')) {
     if (req.method === 'POST' && req.url === '/api/monitor/audit-complete') {
       try {
         const data = await readBody(req);
+        if (monitorIdentityMismatch(data)) {
+          res.writeHead(409, { 'Content-Type': 'application/json', ...CORS });
+          res.end(JSON.stringify({ error: 'monitor event does not match the current audit' }));
+          return;
+        }
+        if (data.status !== undefined && data.status !== 'completed' && data.status !== 'paused_quota') {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...CORS });
+          res.end(JSON.stringify({ error: 'audit completion status must be completed or paused_quota' }));
+          return;
+        }
         const status = data.status === 'paused_quota' ? 'paused_quota' : 'completed';
         if (!auditState) {
           auditState = { agents: {}, started_at: data.timestamp || new Date().toISOString() };

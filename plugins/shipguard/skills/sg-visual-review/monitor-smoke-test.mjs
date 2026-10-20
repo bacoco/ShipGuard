@@ -106,6 +106,18 @@ function request(port, method, path, body = null) {
   });
 }
 
+async function assertRejectedEvent(port, root, path, body, expectedStatus) {
+  const before = await request(port, 'GET', '/api/monitor/status');
+  const persistedPath = join(root, '_results', 'audit-monitor.json');
+  const persistedBefore = readFileSync(persistedPath, 'utf8');
+  const response = await request(port, 'POST', path, body);
+  assert(response.status === expectedStatus,
+    `${path} should reject ${JSON.stringify(body)} with ${expectedStatus}, got ${response.status}`);
+  const after = await request(port, 'GET', '/api/monitor/status');
+  assert(JSON.stringify(after.json) === JSON.stringify(before.json), 'rejected event changed monitor state');
+  assert(readFileSync(persistedPath, 'utf8') === persistedBefore, 'rejected event changed persisted monitor');
+}
+
 async function waitForServer(port) {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
@@ -244,6 +256,61 @@ async function main() {
     const reviewHtml = readFileSync(join(root, '_results', 'review.html'), 'utf8');
     assert(reviewHtml.includes("monitor.status === 'paused_quota'"), 'dashboard does not recognize quota pause');
     assert(reviewHtml.includes('AUDIT PAUSED'), 'dashboard does not render a paused audit state');
+
+    // A new run reuses zone IDs; late events from the previous run must not
+    // overwrite its agents, complete it, or resume it from a quota pause.
+    const currentIdentity = {
+      run_id: 'audit-monitor-next',
+      base_sha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    };
+    res = await request(port, 'POST', '/api/monitor/audit-start', {
+      ...currentIdentity,
+      zones: [{ zone_id: 'z1', paths: ['src/next.js'], file_count: 1 }],
+    });
+    assert(res.status === 200, 'next audit-start failed');
+
+    for (const foreignIdentity of [
+      { run_id: 'audit-monitor-fixture', base_sha: currentIdentity.base_sha },
+      { run_id: currentIdentity.run_id, base_sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    ]) {
+      await assertRejectedEvent(port, root, '/api/monitor/agent-update', {
+        ...foreignIdentity, agent_id: 'z1', status: 'completed', bugs_found: 99,
+      }, 409);
+      await assertRejectedEvent(port, root, '/api/monitor/audit-complete', {
+        ...foreignIdentity, status: 'completed',
+      }, 409);
+    }
+    await assertRejectedEvent(port, root, '/api/monitor/audit-complete', {
+      ...currentIdentity, status: 'cancelled',
+    }, 400);
+
+    res = await request(port, 'POST', '/api/monitor/audit-complete', {
+      ...currentIdentity, status: 'paused_quota',
+    });
+    assert(res.status === 200, 'next audit quota pause failed');
+    await assertRejectedEvent(port, root, '/api/monitor/agent-update', {
+      run_id: 'audit-monitor-fixture', agent_id: 'z1', status: 'started',
+    }, 409);
+
+    res = await request(port, 'POST', '/api/monitor/agent-update', {
+      ...currentIdentity, agent_id: 'z1', status: 'started',
+    });
+    assert(res.status === 200, 'matching next-run update failed');
+    res = await request(port, 'GET', '/api/monitor/status');
+    assert(res.json.status === 'running', 'matching update did not resume the next run');
+
+    // Preserve legacy clients that omit run identity and completion status.
+    res = await request(port, 'POST', '/api/monitor/agent-update', {
+      agent_id: 'z1', status: 'completed', bugs_found: 2,
+    });
+    assert(res.status === 200, 'legacy next-run update failed');
+    res = await request(port, 'POST', '/api/monitor/audit-complete', {});
+    assert(res.status === 200, 'legacy completion without status failed');
+    res = await request(port, 'GET', '/api/monitor/status');
+    assert(res.json.status === 'completed', 'legacy completion no longer defaults to completed');
+    assert(res.json.run_id === currentIdentity.run_id, 'legacy completion changed current run identity');
+    assert(res.json.base_sha === currentIdentity.base_sha, 'legacy completion changed current base');
+    assert(res.json.agents.z1.bugs_found === 2, 'legacy update was not applied');
     passed = true;
     console.log('monitor smoke test passed');
     if (options.debug) console.error(log.tail());
