@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * Integration test — verifies the full sg-record pipeline:
+ * Integration test — verifies manifest conversion and review HTML generation:
  * 1. Generates a manifest via actionsToYaml
  * 2. Rebuilds the review page
  * 3. Checks the manifest appears in embedded data
+ * Run the bootstrapped copy in a disposable project with _config.yaml present:
+ *   node visual-tests/lib/integration-test.mjs
+ * This writes review results and does not exercise browser recording or replay.
  */
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -49,6 +52,8 @@ try {
   execFileSync('node', [join(ROOT, 'build-review.mjs')], { cwd: ROOT, stdio: 'pipe' });
   check('Review page rebuilt', existsSync(REVIEW));
 } catch (e) {
+  const diagnostic = e.stderr?.toString().trim() || e.message;
+  console.error(`  Review generator failed (exit ${e.status ?? 'unknown'}): ${diagnostic}`);
   check('Review page rebuilt', false);
 }
 

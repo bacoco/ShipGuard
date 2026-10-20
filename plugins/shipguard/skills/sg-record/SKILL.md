@@ -297,3 +297,30 @@ visual-tests/
   monitor-smoke-test.mjs       # Monitor endpoint smoke test
   _config.yaml                # Project config (base_url, credentials)
 ```
+
+## Integration Smoke Test
+
+Use a disposable project prepared with the recorder and review files from Step 2,
+including `visual-tests/lib/actions-to-yaml.mjs`, `visual-tests/lib/integration-test.mjs`,
+`visual-tests/build-review.mjs`, and `visual-tests/_review-template.html`.
+Create `visual-tests/_config.yaml` as described in Step 5; for this test, a minimal
+`base_url: "http://localhost:6969"` is sufficient. From that project's root, run:
+
+```bash
+node visual-tests/lib/integration-test.mjs
+```
+
+The expected result is `11 pass, 0 fail`. The test checks conversion of synthetic
+actions into a manifest and its inclusion in the generated review HTML. It requires
+Node.js, without Playwright or a running application; browser recording, replay,
+and the rendered review interface are not covered.
+
+Run the copied test in the prepared project: its paths are relative to the test
+file, so changing the working directory does not make the plugin-source copy use
+the project's generator or configuration. Generator failures print their exit
+status and diagnostic, and the test exits with code 1.
+
+The test writes `visual-tests/manifests/recorded-integration-test.yaml`, then removes it, and
+rebuilds files under `visual-tests/_results/`. Use only a disposable project: an
+existing manifest with that name would be overwritten and removed, and generated
+review results are not restored.
