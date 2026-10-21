@@ -34,11 +34,12 @@ You can also ask Claude or Codex to test one or several model/effort combination
 
 ShipGuard replies in the chat with `PASS`, `FAIL`, or `UNAVAILABLE` for each configuration.
 
-## Version 2.17.0
+## Version 2.18.0
 
-Since 2.16.1: conditional preparation for complex tasks, native back/forward recording and replay,
-project tool-copy checks and refresh, and fixes to evidence validation, CLI outcomes and recordings.
-See the [changelog](CHANGELOG.md#2170--2026-10-21) for the complete release notes.
+Since 2.17.0: an explicit Codex report-only dispatch contract for `sg-code-audit`, safer review-server
+PID validation and preservation of quoted YAML strings with explicit refusal of unsupported forms.
+Codex `--fix` is refused; native Codex acceptance testing remains to be done after installation.
+See the [changelog](CHANGELOG.md#2180--2026-10-21) for the complete release notes.
 
 ## Consolidated release 2.16.0
 
