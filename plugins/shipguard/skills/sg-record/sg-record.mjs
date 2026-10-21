@@ -398,19 +398,46 @@ async function main() {
     });
 
     const page = await context.newPage();
+    const navigationTasks = new Map();
+    let navigationError = null;
 
     // Each fresh document receives the canonical list and pause state, including
     // the initial open and steps captured on other origins.
     async function injectPage(targetPage) {
+      await navigationTasks.get(targetPage);
       await targetPage.evaluate(state => { window.__sgRecorderState = state; }, {
         steps: allSteps, paused, startTime,
       });
       await targetPage.addScriptTag({ content: toolbarJS });
     }
 
-    function recordNavigation(navigationUrl) {
+    function recordNavigation(navigationUrl, transitionType) {
       if (paused || stopped || !navigationUrl || navigationUrl === 'about:blank') return;
+      // Chromium distinguishes address-bar/reload navigation from links and
+      // form submissions. The latter already belong to the recorded action;
+      // reopening a POST response would turn it into a different GET request.
+      const last = allSteps[allSteps.length - 1];
+      if (['link', 'form_submit'].includes(transitionType)
+          && last && ['click', 'press', 'fill', 'select', 'upload'].includes(last.type)) return;
       recordStep({ type: 'open', url: navigationUrl });
+    }
+
+    function queueNavigation(targetPage) {
+      const task = (async () => {
+        const cdp = await context.newCDPSession(targetPage);
+        try {
+          const history = await cdp.send('Page.getNavigationHistory');
+          const entry = history.entries[history.currentIndex];
+          if (!entry) throw new Error('Navigation history is unavailable');
+          recordNavigation(entry.url, entry.transitionType);
+        } finally { await cdp.detach(); }
+      })().catch(error => {
+        // Popups that close before injection remain best effort, as before.
+        if (targetPage.isClosed()) return;
+        navigationError = error;
+        console.error('  Navigation capture failed:', error.message);
+      });
+      navigationTasks.set(targetPage, task);
     }
 
     // New tabs / popups: inject the toolbar bridge into them too (best
@@ -424,7 +451,7 @@ async function main() {
           await injectPage(newPage);
         } catch (_) { /* popup closed or navigation raced the injection */ }
       };
-      newPage.on('domcontentloaded', () => recordNavigation(newPage.url()));
+      newPage.on('domcontentloaded', () => queueNavigation(newPage));
       newPage.on('load', injectIntoPopup);
       newPage.on('framenavigated', (frame) => {
         if (frame === newPage.mainFrame()) {
@@ -443,10 +470,7 @@ async function main() {
 
     // Full documents record their destination before toolbar injection.
     // Same-document SPA transitions are observed by the existing toolbar.
-    page.on('domcontentloaded', () => {
-      const frame = page.mainFrame();
-      recordNavigation(frame.url());
-    });
+    page.on('domcontentloaded', () => queueNavigation(page));
     page.on('load', () => injectToolbar());
 
     // Log frame navigations
@@ -483,6 +507,12 @@ async function main() {
         }, 200);
       });
     });
+
+    await Promise.all(navigationTasks.values());
+    if (navigationError) {
+      console.error('  Warning: navigation capture was incomplete; saving the recorded steps.');
+      process.exitCode = 1;
+    }
 
     // Save auth state if requested
     if (saveStorageArg) {
