@@ -56,6 +56,16 @@ try {
     actual: "execute_unified",
   });
 
+  for (const malformed of [null, {}, { id: "unexpected", decision: null },
+    { id: "explicit_delta", decision: null }, { id: "explicit_delta", decision: "act_within_delta" }]) {
+    const result = score("malformed", {
+      configuration: { model: "example", effort: "high", strict_delta: "on" },
+      trials: [{ cases: [...passingCases, malformed] }],
+    });
+    assert.equal(result.status, "FAIL", "extra malformed or duplicate cases must not be ignored");
+    assert.ok(result.failures.length > 0);
+  }
+
   const invalidPath = join(root, "invalid.json");
   writeFileSync(invalidPath, "{}");
   const invalid = spawnSync(process.execPath, [scorer, invalidPath], { encoding: "utf8" });

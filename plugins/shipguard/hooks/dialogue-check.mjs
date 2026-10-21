@@ -9,15 +9,15 @@ import { EVENTS, SOURCE_ORIGINS, enabled, makeView, validateController, outputFo
 const env = process.env;
 if (!enabled(env.SHIPGUARD_DIALOGUE_HOOKS) || enabled(env.SHIPGUARD_DIALOGUE_CONTROLLER_ACTIVE)) process.exit(0);
 async function readInput() {
-  let raw = '', bytes = 0;
+  const chunks = []; let bytes = 0;
   const timer = setTimeout(() => { process.stdin.destroy(new Error('input deadline')); }, 1500);
   try {
     for await (const chunk of process.stdin) {
       bytes += Buffer.byteLength(chunk);
       if (bytes > 256 * 1024) throw new Error('hook input exceeds 256 KiB');
-      raw += chunk;
+      chunks.push(chunk);
     }
-    return JSON.parse(raw);
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } finally { clearTimeout(timer); }
 }
 async function readContext(path) {
@@ -48,7 +48,7 @@ async function runController(path, view, timeout) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], { stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
       env: { ...env, SHIPGUARD_DIALOGUE_CONTROLLER_ACTIVE: '1' } });
-    let stdout = '', bytes = 0, finished = false;
+    const chunks = []; let bytes = 0, finished = false;
     function kill() {
       try { if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch {}
     }
@@ -66,14 +66,14 @@ async function runController(path, view, timeout) {
     child.stdout.on('data', chunk => {
       bytes += chunk.length;
       if (bytes > 8192) finish(new Error('controller output exceeds 8 KiB'));
-      else stdout += chunk;
+      else chunks.push(chunk);
     });
     // Never reproduce controller stderr, which can contain provider credentials.
     child.stderr.resume();
     child.on('close', code => {
       if (finished) return;
       if (code !== 0) return finish(new Error('controller failed'));
-      try { finish(null, JSON.parse(stdout)); } catch { finish(new Error('controller returned invalid JSON')); }
+      try { finish(null, JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { finish(new Error('controller returned invalid JSON')); }
     });
     child.stdin.end(JSON.stringify(view));
   });

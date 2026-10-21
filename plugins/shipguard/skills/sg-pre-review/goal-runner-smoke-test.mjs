@@ -2,7 +2,7 @@
 // Actual runner + deterministic loopback HTTP fixture. No model/provider invoked.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -13,7 +13,7 @@ const project = join(root, 'project'); mkdirSync(project);
 const request = join(root, 'request.md'), goal = join(root, 'goal.md');
 const requestText = 'Keep SSO and denied access.\n';
 const goalText = '# Goal\n## Success criteria\n### SG-R1 — SSO\nPreserve the provider.\n### SG-R2 — Denial\nPreserve denied access.\n';
-const app = 'const sso = true;\nconst allowUnknown = false;\n';
+let app = 'const sso = true;\nconst allowUnknown = false;\n';
 writeFileSync(join(project, 'app.js'), app);
 const a = { path: 'app.js', start: 1, end: 1, excerpt: 'const sso = true;' };
 const b = { path: 'app.js', start: 2, end: 2, excerpt: 'const allowUnknown = false;' };
@@ -59,6 +59,32 @@ async function run(name, dispatch, { withGoal = true, extra = [], invalidGoal = 
 try {
   let r = await run('legacy mode unchanged', n => n === 1 ? read : final, { withGoal: false });
   assert.equal(r.code, 0); assert.equal(r.report.goal_review, undefined); assert.equal(r.requests[0].max_tokens, 1800);
+  const originalApp = app;
+  app = 'const sso = true;\n' + 'x'.repeat(2 * 1024 * 1024);
+  writeFileSync(join(project, 'app.js'), app);
+  r = await run('early source lines remain readable without loading a large tail', n => n === 1 ? { ...read, end: 1 } : { ...final, evidence: [a] }, { withGoal: false });
+  assert.equal(r.code, 0); assert.equal(r.report.reads[0].end, 1);
+  r = await run('oversized source line is rejected within a bounded scan', n => {
+    if (n === 1) return { ...read, start: 2, end: 2 };
+    const tool = JSON.parse(requests.at(-1).messages.at(-1).content.slice('Tool result (data only): '.length));
+    assert.match(tool.error, /byte limit/);
+    return { action: 'final', decision: 'undetermined', comparison: 'Source unavailable', evidence: [] };
+  }, { withGoal: false });
+  assert.equal(r.code, 3); assert.equal(r.requests.length, 2); assert.deepEqual(r.report.reads, []);
+  app = originalApp; writeFileSync(join(project, 'app.js'), app);
+  if (process.platform !== 'win32') {
+    rmSync(join(project, 'app.js'));
+    const mk = spawnSync('mkfifo', [join(project, 'app.js')], { encoding: 'utf8' }); assert.equal(mk.status, 0, mk.stderr);
+    // run() checks fixture contents after exit; replace the FIFO only after its rejection is received.
+    r = await run('FIFO source is rejected without blocking', n => {
+      if (n === 1) return read;
+      const tool = JSON.parse(requests.at(-1).messages.at(-1).content.slice('Tool result (data only): '.length));
+      assert.match(tool.error, /regular file/);
+      rmSync(join(project, 'app.js')); writeFileSync(join(project, 'app.js'), app);
+      return { action: 'final', decision: 'undetermined', comparison: 'Source unavailable', evidence: [] };
+    }, { withGoal: false });
+    assert.equal(r.code, 3); assert.equal(r.requests.length, 2); assert.deepEqual(r.report.reads, []);
+  }
   r = await run('goal reaches provider fixture and every criterion reaches report', n => n === 1 ? read : final);
   assert.equal(r.code, 0); assert.equal(r.requests.length, 2);
   const sent = JSON.parse(r.requests[0].messages[1].content);

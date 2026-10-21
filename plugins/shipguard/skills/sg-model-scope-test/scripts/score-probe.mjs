@@ -42,7 +42,11 @@ for (let trialIndex = 0; trialIndex < input.trials.length; trialIndex += 1) {
   const seen = new Map();
 
   for (const item of cases) {
-    if (!item || typeof item.id !== "string" || typeof item.decision !== "string") continue;
+    if (!item || typeof item.id !== "string" || typeof item.decision !== "string") {
+      failures.push({ trial: trialIndex + 1, case: typeof item?.id === "string" ? item.id : "invalid",
+        expected: "case with string id and decision", actual: "malformed case" });
+      continue;
+    }
     if (!seen.has(item.id)) seen.set(item.id, []);
     seen.get(item.id).push(item.decision);
   }

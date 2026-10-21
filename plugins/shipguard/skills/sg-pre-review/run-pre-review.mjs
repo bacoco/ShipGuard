@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { guardGoalDecision, GOAL_PROTOCOL } from './goal-coverage.mjs';
 import { loadGoalInputs, inputChanges } from './goal-input.mjs';
+import { sourceLines } from './source-lines.mjs';
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 2) {
   if (!process.argv[i]?.startsWith('--') || !process.argv[i + 1]) throw new Error('Use --root PATH --request FILE --endpoint URL --model NAME [--goal FILE] [--trace NEW_FILE]');
@@ -73,8 +74,8 @@ for (let turn = 0; turn < 12; turn++) {
         const file = realpathSync(resolve(root, parsed[1]));
         const rel = relative(root, file);
         if (rel === '..' || rel.startsWith('../') || isAbsolute(rel)) continue;
-        const lines = readFileSync(file, 'utf8').split(/\r?\n/);
-        const start = Math.max(1, Number(parsed[2]) - 8), end = Math.min(lines.length, Number(parsed[2]) + 8);
+        const start = Math.max(1, Number(parsed[2]) - 8);
+        const lines = sourceLines(file, Number(parsed[2]) + 8), end = lines.length;
         const section = { path: rel, start, end, lines: lines.slice(start - 1, end).map((line, i) => `${start + i}: ${line}`).join('\n') };
         output.sections.push(section);
         reads.push({ path: rel, start, end });
@@ -88,7 +89,7 @@ for (let turn = 0; turn < 12; turn++) {
       const rel = relative(root, file);
       if (rel === '..' || rel.startsWith('../') || isAbsolute(rel)) throw new Error('Path outside repository');
       if (!Number.isInteger(action.start) || !Number.isInteger(action.end) || action.start < 1 || action.end < action.start || action.end - action.start >= 120) throw new Error('Read 1..120 lines');
-      const lines = readFileSync(file, 'utf8').split(/\r?\n/);
+      const lines = sourceLines(file, action.end);
       if (action.start > lines.length) throw new Error('Read begins after end of file');
       output = { path: rel, lines: lines.slice(action.start - 1, action.end).map((line, i) => `${action.start + i}: ${line}`).join('\n') };
       reads.push({ path: rel, start: action.start, end: Math.min(action.end, lines.length) });
