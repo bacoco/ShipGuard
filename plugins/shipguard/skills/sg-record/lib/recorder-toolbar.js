@@ -404,7 +404,9 @@
     if (isToolbarElement(e.target)) return;
 
     // Find nearest interactive element
-    var el = e.target.closest('a, button, [role=button], input[type=submit], [onclick]') || e.target;
+    var el = e.target.closest('a, button, [role=button], input[type=submit], [onclick]');
+    var isDocumentBackground = !el && (e.target === document.documentElement || e.target === document.body);
+    el = el || e.target;
 
     // Skip input/textarea/select — fill/change handlers cover those
     var tag = el.tagName.toLowerCase();
@@ -412,12 +414,32 @@
 
     var text = (el.textContent || '').trim().slice(0, 80);
 
-    addStep({
+    var step = {
       type: 'click',
       text: text,
       selector: cssSelector(el),
       tagName: el.tagName.toLowerCase()
+    };
+    if (!isDocumentBackground) {
+      addStep(step);
+      return;
+    }
+
+    // A bare root can have addEventListener handlers (e.g. dismiss a panel).
+    // Observe their DOM effects during this event instead of assuming that the
+    // absence of an HTML interaction marker makes the click inert. Ignore the
+    // recorder's own updates, and disconnect before recording to avoid echoes.
+    var clickObserver = new MutationObserver(function (mutations) {
+      if (!mutations.some(function (mutation) { return !toolbar.contains(mutation.target); })) return;
+      clickObserver.disconnect();
+      addStep(step);
     });
+    clickObserver.observe(document.documentElement, {
+      subtree: true, childList: true, attributes: true, characterData: true
+    });
+    // End observation after the current dispatch; an unrelated later update
+    // must not turn an inert margin click into a recorded action.
+    setTimeout(function () { clickObserver.disconnect(); }, 0);
   }
   document.addEventListener('click', onDocumentClick, true);
 
