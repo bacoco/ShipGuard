@@ -6,6 +6,7 @@
  * checks both sides of its contract: required instructions remain present, and small executable
  * policy fixtures exercise the decisions those instructions require without launching agents.
  * Artifact retention also uses real temporary Git worktrees with modeled cleanup, not Agent.
+ * Codex preflight/dispatch checks inspect instructions; they do not execute a native Codex run.
  */
 
 import assert from 'node:assert/strict';
@@ -47,6 +48,58 @@ function requireText(name, text, fragments) {
   for (const fragment of fragments) {
     assert.ok(text.includes(fragment), `${name} is missing contract text: ${fragment}`);
   }
+}
+
+function assertHostDispatchContract() {
+  const preflight = files.skill.split('## Host preflight — before Phase 0')[1]?.split('## Phase 0')[0];
+  assert.ok(preflight, 'Codex needs an explicit host preflight before monitor/setup or dispatch');
+  assert.ok(files.skill.indexOf('## Host preflight') < files.skill.indexOf('## Phase 0'));
+  requireText('Codex preflight', preflight, [
+    'Codex --fix is not supported',
+    'Codex --model=sonnet/opus/haiku is not supported',
+    'inherit the already authorized Codex model',
+    'delegation AND native completion tracking',
+    'permission to create or use a linked worktree',
+    'incomplete_artifact_transport',
+    'accepted_artifacts: []',
+    'previous canonical JSON/TOON unchanged',
+    'no agent or worktree',
+    'system confinement',
+  ]);
+  const codex = files.skill.split('### Codex dispatch (report-only)')[1]?.split('### Shared dispatch tracking')[0];
+  assert.ok(codex, 'Codex needs a dispatch route distinct from Claude Agent parameters');
+  requireText('Codex dispatch', codex, [
+    'git worktree add --detach',
+    'realpath',
+    'native_agent_id',
+    'worktree_path',
+    'before launching',
+    'collaboration.spawn_agent',
+    'does not change the child working directory',
+    'every shell command and file operation',
+    'Do not pass Claude-only',
+    'Do not launch another CLI',
+    'native terminal completion',
+    'creation acknowledgement is not completion',
+    'five identities',
+    'retention receipt',
+    'no reset',
+  ]);
+  requireText('Codex collection', files.skill, [
+    'preassigned real `worktree_path`',
+    'real path stays inside that worktree',
+    'same inherited Codex model and native completion tracking',
+  ]);
+  requireText('Codex adapter', files.adapter, [
+    'host preflight', 'report-only', 'linked worktree', 'native completion', '--fix', '--model=auto',
+  ]);
+  // Preserve Claude's existing launch/model contract rather than translating its parameters.
+  const claude = files.skill.split('### Claude Code dispatch')[1]?.split('### Codex dispatch')[0];
+  assert.ok(claude, 'Claude launch contract must remain explicit');
+  requireText('Claude dispatch', claude, [
+    '**Tool:** Agent', '**isolation:** worktree', '**run_in_background:** true',
+    '`auto`/`opus`', '`sonnet` → sonnet',
+  ]);
 }
 
 function parseMutationFlags(args) {
@@ -224,7 +277,7 @@ function assertInstructionContract() {
     'Never glob the shared results directory',
   ]);
   requireText('Codex adapter', files.adapter, [
-    'report-only unless fixes are explicit',
+    'Codex audit: report-only; --fix awaits native validation.',
     'Use $sg-code-audit',
     'without changing source files',
   ]);
@@ -417,6 +470,7 @@ function assertWorktreeArtifactTransport() {
 
     const worktree = join(root, 'retained');
     git(main, 'worktree', 'add', '--detach', worktree, base);
+    assert.equal(git(worktree, 'branch', '--show-current'), '', 'report-only transport needs no branch');
     const sourceFile = writeArtifact(worktree);
     const parentIndex = readFileSync(join(main, '.git', 'index'));
     const trackedBefore = ['source.js', 'README.md', '.gitignore'].map(path => readFileSync(join(main, path)));
@@ -477,6 +531,7 @@ function assertWorktreeArtifactTransport() {
 }
 
 try {
+  assertHostDispatchContract();
   assertInstructionContract();
   assertFixSafetyFixtures();
   assertRunIntegrityFixtures();
