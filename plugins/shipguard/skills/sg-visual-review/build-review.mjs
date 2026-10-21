@@ -20,14 +20,51 @@ import { execFileSync } from 'child_process';
 
 // Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
 // No external dependency needed.
-function yamlParse(text) {
+function yamlParse(text, source = 'YAML input') {
   const result = {};
   let currentKey = null;
   let currentArray = null;
   let currentObj = null;
   let inArray = false;   // true when current top-level key holds an array
 
+  let lineNumber = 0;
+  function unsupported(form) {
+    const error = new Error(`Unsupported YAML ${form} in ${source} at line ${lineNumber}`);
+    error.code = 'UNSUPPORTED_YAML';
+    throw error;
+  }
+  function scalar(raw) {
+    const value = raw.trim();
+    const quote = value[0];
+    if (quote === '"' || quote === "'") {
+      // As in the CLI reader, identify quotes before any scalar conversion.
+      // Quoted whitespace and # belong to the string, not YAML syntax.
+      let end = 1;
+      for (; end < value.length; end++) {
+        if (quote === '"' && value[end] === '\\') { end++; continue; }
+        if (value[end] !== quote) continue;
+        if (quote === "'" && value[end + 1] === "'") { end++; continue; }
+        break;
+      }
+      const tail = value.slice(end + 1);
+      if (end >= value.length || !/^(?:\s*|\s+#.*)$/.test(tail)) unsupported('quoted scalar');
+      let decoded;
+      if (quote === "'") decoded = value.slice(1, end).replace(/''/g, "'");
+      else {
+        try { decoded = JSON.parse(value.slice(0, end + 1)); }
+        catch { unsupported('quoted escape'); }
+      }
+      return { value: decoded, quoted: true };
+    }
+    // These forms cannot be represented by this inline-only subset. Refuse
+    // before any output is written, including inside steps or nested maps.
+    if (/^[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:\s+#.*)?$/.test(value)) unsupported('block scalar');
+    if (/^[&*]/.test(value)) unsupported('anchor or alias');
+    return { value, quoted: false };
+  }
+
   for (const rawLine of text.split('\n')) {
+    lineNumber++;
     const line = rawLine.replace(/\r$/, '');
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
@@ -38,17 +75,16 @@ function yamlParse(text) {
       currentArray = null;
       currentObj = null;
       const [, key, rawVal] = kvMatch;
-      const val = rawVal.replace(/^["']|["']$/g, '').trim();
+      const { value: val, quoted } = scalar(rawVal);
+      if (quoted) { result[key] = val; currentKey = key; continue; }
 
       if (key === 'tags' && val.startsWith('[')) {
-        result[key] = val.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+        result[key] = val.slice(1, -1).split(',').map(s => scalar(s).value);
         currentKey = key;
         continue;
       }
-      if (val === '' || val === '|' || val === '>') {
+      if (val === '') {
         // Empty value — could be an array or a nested object; decide on next line
-        // Known limitation: block scalars (| and >) are not supported.
-        // ShipGuard manifests don't use them — all values are inline.
         currentKey = key;
         result[key] = null; // placeholder; will be set to [] or {} on first child line
         continue;
@@ -82,9 +118,9 @@ function yamlParse(text) {
         // Check if item leads with a key (e.g. "- action: foo" or "- test: bar")
         const leadKeyMatch = rest.match(/^([a-z_][a-z0-9_-]*):\s*(.*)/i);
         if (leadKeyMatch) {
-          const propVal = leadKeyMatch[2].replace(/^["']|["']$/g, '').trim();
+          const { value: propVal, quoted } = scalar(leadKeyMatch[2]);
           currentObj = {};
-          currentObj[leadKeyMatch[1]] = propVal === '' ? null
+          currentObj[leadKeyMatch[1]] = quoted ? propVal : propVal === '' ? null
             : propVal === 'true' ? true
             : propVal === 'false' ? false
             : /^-?\d+(\.\d+)?$/.test(propVal) ? parseFloat(propVal)
@@ -92,7 +128,7 @@ function yamlParse(text) {
           currentArray.push(currentObj);
         } else {
           // Plain scalar array item (e.g. "- foo")
-          const scalarVal = rest.replace(/^["']|["']$/g, '').trim();
+          const scalarVal = scalar(rest).value;
           currentArray.push(scalarVal);
           currentObj = null;
         }
@@ -103,8 +139,9 @@ function yamlParse(text) {
       if (inArray && currentObj && typeof currentObj === 'object') {
         const propMatch = line.match(/^\s+([a-z_][a-z0-9_-]*):\s*(.+)/i);
         if (propMatch) {
-          const val = propMatch[2].replace(/^["']|["']$/g, '').trim();
-          if (val === 'true') currentObj[propMatch[1]] = true;
+          const { value: val, quoted } = scalar(propMatch[2]);
+          if (quoted) currentObj[propMatch[1]] = val;
+          else if (val === 'true') currentObj[propMatch[1]] = true;
           else if (val === 'false') currentObj[propMatch[1]] = false;
           else if (/^-?\d+(\.\d+)?$/.test(val)) currentObj[propMatch[1]] = parseFloat(val);
           else currentObj[propMatch[1]] = val;
@@ -118,7 +155,7 @@ function yamlParse(text) {
         if (typeof result[currentKey] === 'object' && !Array.isArray(result[currentKey])) {
           const nestedMatch = line.match(/^\s+([a-z_][a-z0-9_-]*):\s*(.+)/i);
           if (nestedMatch) {
-            const val = nestedMatch[2].replace(/^["']|["']$/g, '').trim();
+            const val = scalar(nestedMatch[2]).value;
             result[currentKey][nestedMatch[1]] = val;
           }
         }
@@ -190,7 +227,7 @@ if (!existsSync(CONFIG_PATH)) {
   // every non-zero code here is infra. Every other exit stays 1.
   process.exit(3);
 }
-const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'));
+const config = yaml.load(readFileSync(CONFIG_PATH, 'utf8'), CONFIG_PATH);
 
 const KNOWN_STATUSES = ['PASS', 'FAIL', 'ERROR', 'STALE', 'SKIPPED'];
 
@@ -340,7 +377,7 @@ function mergeStatusSources(visualResults, markdownReport) {
 // ── 3. Parse regressions ──
 function parseRegressions() {
   if (!existsSync(REGRESSIONS_PATH)) return {};
-  const data = yaml.load(readFileSync(REGRESSIONS_PATH, 'utf8'));
+  const data = yaml.load(readFileSync(REGRESSIONS_PATH, 'utf8'), REGRESSIONS_PATH);
   const map = {};
   // Support both `regressions:` and `tests:` as the top-level array key
   const regs = Array.isArray(data?.regressions) ? data.regressions
@@ -370,11 +407,12 @@ function walkDir(dir, category, tests) {
     } else if (entry.name.endsWith('.yaml')) {
       try {
         const fullPath = join(dir, entry.name);
-        const manifest = yaml.load(readFileSync(fullPath, 'utf8'));
+        const manifest = yaml.load(readFileSync(fullPath, 'utf8'), fullPath);
         if (!manifest || manifest.deprecated) continue;
         const relPath = relative(ROOT, fullPath).replace('.yaml', '');
         tests.push(buildEntry(relPath, category, manifest));
       } catch (e) {
+        if (e.code === 'UNSUPPORTED_YAML') throw e;
         console.warn(`  WARN: Failed to parse ${join(dir, entry.name)}: ${e.message}`);
       }
     }
