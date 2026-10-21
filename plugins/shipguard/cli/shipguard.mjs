@@ -36,7 +36,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSy
 import { join, dirname, relative, sep, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execFileSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import net from 'net';
 
 export const EXIT = { CLEAN: 0, FINDINGS: 1, INFRA: 2, CONFIG: 3 };
@@ -108,7 +108,7 @@ export function yamlParse(text) {
       const raw = lines[pos];
       const ind = indentOf(raw);
       if (ind < indent) break;
-      if (ind > indent) { pos++; continue; } // stray deeper line — skip defensively
+      if (ind > indent) throw new Error(`unexpected indentation: ${raw.trim()}`);
       const m = raw.trim().match(/^([^:#][^:]*?):(?:\s+(.*)|\s*)$/);
       if (!m) break;
       const key = m[1].trim().replace(/^["']|["']$/g, '');
@@ -152,13 +152,9 @@ export function yamlParse(text) {
                && !lines[pos].trim().startsWith('- ')) {
           const before = pos;
           Object.assign(obj, parseMap(itemIndent));
-          // parseMap stops at a line it cannot read as `key: value` and leaves
-          // `pos` on it, so an outer parser can claim it. Here there is no outer
-          // parser, and the same line came back forever: one manifest line
-          // without a colon spun `shipguard run` at 100% CPU with no output and
-          // no timeout to end it. Skip the line the way parseMap already skips a
-          // stray deeper one, rather than re-offering it.
-          if (pos === before) { pos++; }
+          // A mapping line must be consumed or rejected; never retry it or
+          // silently drop a declaration from the rest of the manifest.
+          if (pos === before) throw new Error(`invalid mapping: ${lines[pos].trim()}`);
         }
         arr.push(obj);
       } else {
@@ -169,7 +165,9 @@ export function yamlParse(text) {
     return arr;
   }
 
-  return parseMap(0);
+  const parsed = parseMap(0);
+  if (pos !== lines.length) throw new Error(`invalid YAML or indentation: ${lines[pos].trim()}`);
+  return parsed;
 }
 
 // ── Config v2 ────────────────────────────────────────────────────────────────
@@ -331,12 +329,13 @@ export async function startApp(config, projectRoot) {
   const port = needsPort ? await findFreePort() : (config.base_url ? Number(new URL(config.base_url).port || 80) : 80);
   const cmd = app.start.replaceAll('{port}', String(port));
   const baseUrl = needsPort || !config.base_url ? `http://127.0.0.1:${port}` : config.base_url;
+  // Validate before spawning: a malformed health URL must not leak a child.
+  const health = new URL(app.healthcheck || '/', baseUrl).href;
 
   const cwd = app.root && existsSync(join(projectRoot, app.root)) ? join(projectRoot, app.root) : projectRoot;
   const child = spawn(cmd, { cwd, shell: true, detached: true, stdio: 'ignore' });
   child.unref();
 
-  const health = new URL(app.healthcheck || '/', baseUrl).href;
   const timeout = Number.isFinite(app.startup_timeout_ms) ? app.startup_timeout_ms : 30000;
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -354,7 +353,7 @@ export async function startApp(config, projectRoot) {
   return { ok: false, error: `healthcheck ${health} not answering after ${timeout} ms (infrastructure error, not a product finding)` };
 }
 
-export function stopApp(projectRoot) {
+export async function stopApp(projectRoot) {
   const info = readAppPid(projectRoot);
   if (!info) {
     // A pidfile that exists but carries no usable PID is not the same as no
@@ -367,8 +366,18 @@ export function stopApp(projectRoot) {
     }
     return { stopped: false, message: 'no app server pidfile — nothing to stop' };
   }
-  if (pidAlive(info.pid)) {
-    try { process.kill(-info.pid); } catch { try { process.kill(info.pid); } catch { /* gone */ } }
+  const stillRunning = () => pidAlive(info.pid) || pidAlive(-info.pid);
+  if (stillRunning()) {
+    try { process.kill(-info.pid); }
+    catch {
+      try { process.kill(info.pid); }
+      catch (e) {
+        if (e.code !== 'ESRCH') return { stopped: false, error: true, message: `app server stop failed (PID ${info.pid}): ${e.message}; pidfile kept` };
+      }
+    }
+    const deadline = Date.now() + 2000;
+    while (stillRunning() && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
+    if (stillRunning()) return { stopped: false, error: true, message: `app server still running (PID/group ${info.pid}) after SIGTERM; pidfile kept` };
   }
   try { unlinkSync(info.file); } catch { /* ignore */ }
   return { stopped: true, message: `app server stopped (PID ${info.pid})` };
@@ -382,15 +391,24 @@ export function resolveBaseUrl(config, projectRoot) {
 
 // ── Static crawler (measured evidence: real HTTP checks, no LLM) ────────────
 const ASSET_TAG_RE = /<(img|script|link|video|audio|source|iframe|track|a)\b([^>]*)>/gi;
-const ATTR_URL_RE = /\s(?:src|href|poster)\s*=\s*["']([^"']+)["']/gi;
-const ATTR_SRCSET_RE = /\ssrcset\s*=\s*["']([^"']+)["']/gi;
+const ATTR_URL_RE = /\s(?:src|href|poster)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+const ATTR_SRCSET_RE = /\ssrcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+
+function decodeAttribute(value) {
+  const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' };
+  return value.replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt);/gi, (entity, code) => {
+    if (code[0] !== '#') return named[code.toLowerCase()];
+    const n = code[1].toLowerCase() === 'x' ? parseInt(code.slice(2), 16) : Number(code.slice(1));
+    return n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : '\uFFFD';
+  });
+}
 
 export function extractAssets(html, pageUrl) {
   const page = new URL(pageUrl);
   const out = [];
   const seen = new Set();
   const push = (rawUrl, tag) => {
-    const v = String(rawUrl).trim();
+    const v = decodeAttribute(String(rawUrl)).trim();
     if (!v || v.startsWith('#') || /^(mailto:|tel:|javascript:|data:)/i.test(v)) return;
     let abs;
     try { abs = new URL(v, page); } catch { return; }
@@ -406,9 +424,9 @@ export function extractAssets(html, pageUrl) {
   for (const tagMatch of String(html).matchAll(ASSET_TAG_RE)) {
     const tag = tagMatch[1].toLowerCase();
     const attrs = tagMatch[2];
-    for (const m of attrs.matchAll(ATTR_URL_RE)) push(m[1], tag);
+    for (const m of attrs.matchAll(ATTR_URL_RE)) push(m[1] ?? m[2] ?? m[3], tag);
     for (const m of attrs.matchAll(ATTR_SRCSET_RE)) {
-      for (const candidate of m[1].split(',')) push(candidate.trim().split(/\s+/)[0] || '', tag);
+      for (const candidate of (m[1] ?? m[2] ?? m[3]).split(',')) push(candidate.trim().split(/\s+/)[0] || '', tag);
     }
   }
   return out;
@@ -485,7 +503,7 @@ export async function crawl(baseUrl, opts = {}) {
     const type = res.headers.get('content-type') || '';
     if (!type.includes('html')) continue;
     const html = await res.text();
-    for (const { url, tag } of extractAssets(html, pageUrl)) {
+    for (const { url, tag } of extractAssets(html, res.url || pageUrl)) {
       const isPageLink = tag === 'a' || tag === 'iframe';
       if (isPageLink && isFollowablePage(url) && !visitedPages.has(url)) queue.push(url);
       if (!checkedAssets.has(url)) {
@@ -576,11 +594,16 @@ export function matchSnapshotRef(snapshotText, target) {
   return substringHit;
 }
 
+const browserSession = `shipguard-${process.pid}-${randomUUID()}`;
+let browserStarted = false;
+
 export function browser(cmdArgs, opts = {}) {
   // SHIPGUARD_AGENT_BROWSER overrides the binary (alternate install path, tests)
   const bin = process.env.SHIPGUARD_AGENT_BROWSER || 'agent-browser';
+  if (!['--version', 'close'].includes(cmdArgs[0])) browserStarted = true;
   try {
-    const stdout = execFileSync(bin, cmdArgs, { encoding: 'utf8', timeout: opts.timeout ?? 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout = execFileSync(bin, cmdArgs, { encoding: 'utf8', timeout: opts.timeout ?? 60000,
+      env: { ...process.env, AGENT_BROWSER_SESSION: browserSession }, stdio: ['ignore', 'pipe', 'pipe'] });
     return { ok: true, stdout, stderr: '', code: 0 };
   } catch (e) {
     if (e.code === 'ENOENT') return { ok: false, stdout: '', stderr: 'agent-browser not installed', code: -1 };
@@ -730,8 +753,8 @@ async function cmdServe(args) {
   return EXIT.CLEAN;
 }
 
-function cmdStop(args) {
-  const r = stopApp(process.cwd());
+async function cmdStop(args) {
+  const r = await stopApp(process.cwd());
   console.log(r.message);
   if (args.flags.all) {
     const br = join(process.cwd(), 'visual-tests', 'build-review.mjs');
@@ -739,7 +762,7 @@ function cmdStop(args) {
       try { execFileSync('node', [br, '--stop'], { stdio: 'inherit' }); } catch { /* reported by the script */ }
     }
   }
-  return EXIT.CLEAN;
+  return r.error ? EXIT.INFRA : EXIT.CLEAN;
 }
 
 function cmdStatus() {
@@ -786,7 +809,7 @@ async function cmdCrawl(args) {
   return result.broken.length ? EXIT.FINDINGS : EXIT.CLEAN;
 }
 // ── Manifest loading + mechanical execution ──────────────────────────────────
-export const MECHANICAL_ACTIONS = ['open', 'click', 'fill', 'press', 'wait', 'assert_url', 'assert_text', 'screenshot', 'select', 'upload'];
+export const MECHANICAL_ACTIONS = ['open', 'back', 'forward', 'click', 'fill', 'press', 'wait', 'assert_url', 'assert_text', 'screenshot', 'select', 'upload'];
 
 // Actions the declared grammar defines but this deterministic layer does not
 // execute — the agent lane (/sg-visual-run) owns them. Listed so a manifest
@@ -845,6 +868,33 @@ function interpolate(value, ctx) {
 // Per-step cap: a manifest may not park the recette for longer than this.
 const WAIT_CAP_MS = 30000;
 
+function durationMs(raw) {
+  const m = /^(\d+)\s*(ms|s)?$/.exec(String(raw).trim());
+  return m ? Number(m[1]) * (m[2] === 's' ? 1000 : 1) : NaN;
+}
+
+function captureScreenshot(file, ctx, full = false) {
+  mkdirSync(dirname(file), { recursive: true });
+  // The result must belong to this attempt, including when the bridge fails.
+  if (existsSync(file)) unlinkSync(file);
+  const r = browser(['screenshot', file, ...(full ? ['--full'] : [])],
+    { timeout: Math.max(1, Math.min(60000, (ctx.deadline ?? Infinity) - Date.now())) });
+  const v = validateScreenshot(file);
+  return r.ok && v.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `screenshot invalid (${r.ok ? v.reason : r.stderr || r.stdout})` };
+}
+
+function screenshotReference(file, ctx) {
+  return relative(ctx.resultsDir || dirname(ctx.screenshotsDir), file).split(sep).join('/');
+}
+
+function resolveStepTarget(step, ctx, runBrowser, interactive = true) {
+  if (typeof step.selector === 'string' && step.selector.trim()) return { ok: true, ref: interpolate(step.selector, ctx) };
+  const snap = runBrowser(['snapshot', ...(interactive ? ['-i'] : [])]);
+  if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr}` };
+  const ref = matchSnapshotRef(snap.stdout, interpolate(step.target, ctx));
+  return ref ? { ok: true, ref } : { ok: false, kind: 'stale', reason: `target not found in accessibility tree: "${step.target}"` };
+}
+
 // A failed step reports WHY it failed, not only that it failed. Every
 // {ok:false} return carries the marker `kind`, and executeManifest maps it to
 // one of the declared statuses:
@@ -859,64 +909,86 @@ const WAIT_CAP_MS = 30000;
 // Absence of evidence is never reported as evidence of absence.
 async function runStep(step, ctx) {
   const action = step.action;
+  const runBrowser = args => browser(args,
+    { timeout: Math.max(1, Math.min(60000, (ctx.deadline ?? Infinity) - Date.now())) });
   switch (action) {
     case 'open': {
-      const r = browser(['open', interpolate(step.url, ctx)]);
+      const r = runBrowser(['open', interpolate(step.url, ctx)]);
       if (!r.ok) return { ok: false, kind: 'tool', reason: `open failed: ${r.stderr || r.stdout}`.trim() };
       return { ok: true };
+    }
+    case 'back':
+    case 'forward': {
+      const r = runBrowser([action]);
+      return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
     }
     case 'click':
     case 'fill':
     case 'select':
     case 'upload': {
-      const snap = browser(['snapshot', '-i']);
-      if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr}` };
-      const ref = matchSnapshotRef(snap.stdout, interpolate(step.target, ctx));
-      if (!ref) return { ok: false, kind: 'stale', reason: `target not found in accessibility tree: "${step.target}"` };
+      const target = resolveStepTarget(step, ctx, runBrowser);
+      if (!target.ok) return target;
       const extra = action === 'fill' ? [interpolate(step.value ?? step.text ?? '', ctx)]
         : action === 'select' ? [interpolate(step.option ?? step.value ?? '', ctx)]
         : action === 'upload' ? [interpolate(step.file ?? '', ctx)]
         : [];
-      const r = browser([action, ref, ...extra]);
+      const r = runBrowser([action, target.ref, ...extra]);
       return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
     }
     case 'press': {
-      const r = browser(['press', step.key || interpolate(step.target ?? '', ctx)]);
+      // Older manifests use target as the key when key is absent.
+      if (step.selector || (step.key && step.target)) {
+        const target = resolveStepTarget(step, ctx, runBrowser);
+        if (!target.ok) return target;
+        const focus = runBrowser(['focus', target.ref]);
+        if (!focus.ok) return { ok: false, kind: 'tool', reason: `focus failed: ${focus.stderr}` };
+      }
+      const r = runBrowser(['press', step.key || interpolate(step.target ?? '', ctx)]);
       return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `press failed: ${r.stderr}` };
     }
     case 'wait': {
       // A declared duration is honoured or reported — never silently replaced
       // by a default or clipped to the cap. An absent one keeps the 1s default.
       const raw = step.duration ?? step.value;
-      if (raw == null) { await new Promise((r) => setTimeout(r, 1000)); return { ok: true }; }
-      const m = /^(\d+)\s*(ms|s)?$/.exec(String(raw).trim());
-      if (!m) return { ok: false, reason: `unsupported duration ${JSON.stringify(String(raw))} (use "1500ms", "2s", or a number of ms)` };
-      const ms = m[2] === 's' ? Number(m[1]) * 1000 : Number(m[1]);
-      if (ms > WAIT_CAP_MS) return { ok: false, reason: `duration ${raw} exceeds the ${WAIT_CAP_MS / 1000}s per-step cap` };
-      await new Promise((r) => setTimeout(r, ms));
+      const ms = raw == null ? 1000 : durationMs(raw);
+      if (!Number.isFinite(ms)) return { ok: false, kind: 'declaration', reason: `unsupported duration ${JSON.stringify(String(raw))} (use "1500ms", "2s", or a number of ms)` };
+      if (ms > WAIT_CAP_MS) return { ok: false, kind: 'declaration', reason: `duration ${raw} exceeds the ${WAIT_CAP_MS / 1000}s per-step cap` };
+      const remaining = (ctx.deadline ?? Infinity) - Date.now();
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(ms, remaining))));
+      if (ms >= remaining) return { ok: false, kind: 'tool', reason: 'manifest timeout exceeded' };
       return { ok: true };
     }
     case 'assert_url': {
       const expected = interpolate(step.expected ?? step.url ?? step.value ?? '', ctx);
       if (!expected.trim()) return { ok: false, kind: 'declaration', reason: 'expected must resolve to a non-empty URL or path' };
-      const r = browser(['get', 'url']);
+      const r = runBrowser(['get', 'url']);
       if (!r.ok) return { ok: false, kind: 'tool', reason: `get url failed: ${r.stderr || r.stdout}`.trim() };
-      return r.stdout.trim().includes(expected === '/' ? expected : expected.replace(/\/$/, ''))
-        ? { ok: true } : { ok: false, reason: `url is "${r.stdout.trim()}", expected to include "${expected}"` };
+      let actualPath, expectedPath;
+      try {
+        actualPath = new URL(r.stdout.trim(), ctx.baseUrl).pathname;
+        expectedPath = new URL(expected, ctx.baseUrl).pathname;
+      } catch { return { ok: false, kind: 'declaration', reason: `invalid expected URL or path: "${expected}"` }; }
+      const normalize = path => path === '/' ? path : path.replace(/\/$/, '');
+      return normalize(actualPath) === normalize(expectedPath)
+        ? { ok: true } : { ok: false, reason: `url is "${r.stdout.trim()}", expected path "${expectedPath}"` };
     }
     case 'assert_text': {
       const expected = interpolate(step.expected ?? step.text ?? step.value ?? '', ctx);
       if (!expected.trim()) return { ok: false, kind: 'declaration', reason: 'expected must resolve to non-empty text' };
-      const snap = browser(['snapshot']);
+      let snap;
+      if (step.target || step.selector) {
+        const target = resolveStepTarget(step, ctx, runBrowser, false);
+        if (!target.ok) return target;
+        snap = runBrowser(['get', 'text', target.ref]);
+      } else snap = runBrowser(['snapshot']);
       if (!snap.ok) return { ok: false, kind: 'tool', reason: `snapshot failed: ${snap.stderr || snap.stdout}`.trim() };
       return snap.stdout.toLowerCase().includes(expected.toLowerCase())
         ? { ok: true } : { ok: false, reason: `text not found on page: "${expected}"` };
     }
     case 'screenshot': {
-      const file = join(ctx.screenshotsDir, step.screenshot || step.file || `${ctx.slug}-step.png`);
-      const r = browser(['screenshot', file]);
-      const v = validateScreenshot(file);
-      if (!r.ok || !v.ok) return { ok: false, kind: 'tool', reason: `screenshot invalid (${v.reason || r.stderr})` };
+      const file = join(ctx.screenshotsDir, step.filename || step.screenshot || step.file || `${ctx.slug}-step.png`);
+      const r = captureScreenshot(file, ctx);
+      if (!r.ok) return r;
       ctx.lastScreenshot = file;
       return { ok: true };
     }
@@ -927,7 +999,8 @@ async function runStep(step, ctx) {
 
 export async function executeManifest(entry, ctx) {
   const t0 = Date.now();
-  const slug = entry.id.split('/').pop();
+  const leaf = entry.id.split('/').pop().replace(/[^a-zA-Z0-9._-]/g, '-');
+  const slug = entry.id === leaf ? leaf : `${leaf}-${createHash('sha256').update(entry.id).digest('hex').slice(0, 12)}`;
   const local = { ...ctx, slug, data: entry.manifest.data || {}, lastScreenshot: null };
   const result = {
     id: entry.id,
@@ -941,13 +1014,59 @@ export async function executeManifest(entry, ctx) {
     browser_errors: [],
     llm_steps_pending: 0,
   };
-  browser(['console', '--clear']);
+  if (entry.manifest.timeout != null) {
+    const timeout = durationMs(entry.manifest.timeout);
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      result.status = 'ERROR';
+      result.manifest_error = result.failure_reason = 'timeout must be a positive duration (ms or s)';
+      result.duration_ms = Date.now() - t0;
+      return result;
+    }
+    local.deadline = t0 + timeout;
+  }
+  let steps = entry.manifest.steps;
+  if (entry.manifest.requires_auth === true) {
+    const loginFile = ctx.projectRoot && join(ctx.projectRoot, 'visual-tests', '_shared', 'login.yaml');
+    let login;
+    try {
+      if (!loginFile) throw new Error('project root unavailable');
+      login = yamlParse(readFileSync(loginFile, 'utf8'));
+      if (!Array.isArray(login.steps)) throw new Error('no steps list');
+    } catch (e) {
+      result.status = 'ERROR';
+      result.manifest_error = result.failure_reason = `requires_auth login prerequisite unavailable: ${e.message}`;
+      result.duration_ms = Date.now() - t0;
+      return result;
+    }
+    if (login.steps.some(step => AGENT_ACTIONS.includes(step?.action))) {
+      result.status = 'SKIPPED';
+      result.llm_steps_pending = login.steps.filter(step => AGENT_ACTIONS.includes(step?.action)).length;
+      result.failure_reason = 'requires_auth login prerequisite needs the agent lane before this manifest can run';
+      result.duration_ms = Date.now() - t0;
+      return result;
+    }
+    steps = [...login.steps, ...steps];
+  }
+  const localBrowser = args => browser(args,
+    { timeout: Math.max(1, Math.min(60000, (local.deadline ?? Infinity) - Date.now())) });
+  const needsBrowser = steps.some(step => step && MECHANICAL_ACTIONS.includes(step.action) && step.action !== 'wait')
+    || ctx.checks.some(check => check === 'browser-errors' || check === 'screenshots');
+  if (needsBrowser) localBrowser(['console', '--clear']);
   // Counted, never inspected for a verdict: this only records whether THIS
   // layer evaluated anything at all, which is what separates PASS from SKIPPED
   // below. No classification here depends on it.
   let mechanicalSteps = 0;
-  for (const step of entry.manifest.steps) {
-    if (!step || !step.action) continue;
+  for (const step of steps) {
+    if (!step || typeof step !== 'object' || typeof step.action !== 'string' || !step.action.trim()) {
+      result.status = 'ERROR';
+      result.manifest_error = result.failure_reason = 'each step must declare an action';
+      break;
+    }
+    if (Date.now() >= (local.deadline ?? Infinity)) {
+      result.status = 'ERROR';
+      result.failure_reason = 'manifest timeout exceeded';
+      break;
+    }
     if (step.action === 'llm-check' || step.action === 'llm-wait') { result.llm_steps_pending++; continue; }
     if (!MECHANICAL_ACTIONS.includes(step.action)) {
       // Declared but agent-owned (llm-check/llm-wait are short-circuited above,
@@ -967,6 +1086,15 @@ export async function executeManifest(entry, ctx) {
     }
     mechanicalSteps++;
     const r = await runStep(step, local);
+    if ((step.action === 'assert_text' || step.action === 'assert_url') && step.screenshot) {
+      const file = join(local.screenshotsDir, step.screenshot);
+      const captured = captureScreenshot(file, local);
+      if (captured.ok) local.lastScreenshot = file;
+      else {
+        result.screenshot_error = captured.reason;
+        if (r.ok) Object.assign(r, captured);
+      }
+    }
     if (!r.ok) {
       result.status = r.kind === 'stale' ? 'STALE'
         : (r.kind === 'tool' || r.kind === 'declaration' || !step.action.startsWith('assert')) ? 'ERROR' : 'FAIL';
@@ -974,10 +1102,16 @@ export async function executeManifest(entry, ctx) {
       if (r.kind === 'declaration') result.manifest_error = result.failure_reason;
       break;
     }
+    if (Date.now() >= (local.deadline ?? Infinity)) {
+      result.status = 'ERROR';
+      result.failure_reason = 'manifest timeout exceeded';
+      break;
+    }
   }
-  if (ctx.checks.includes('browser-errors')) {
-    const errs = browser(['errors']);
-    const cons = browser(['console']);
+  const timedOut = Date.now() >= (local.deadline ?? Infinity);
+  if (ctx.checks.includes('browser-errors') && !timedOut) {
+    const errs = localBrowser(['errors']);
+    const cons = localBrowser(['console']);
     result.browser_errors = [
       ...normalizeConsole(errs.ok ? errs.stdout : ''),
       ...normalizeConsole(cons.ok ? cons.stdout : ''),
@@ -994,15 +1128,21 @@ export async function executeManifest(entry, ctx) {
   }
   if (ctx.checks.includes('screenshots')) {
     const file = local.lastScreenshot || join(ctx.screenshotsDir, `${slug}.png`);
-    if (!local.lastScreenshot) browser(['screenshot', file, '--full']);
-    const v = validateScreenshot(file);
-    if (v.ok) result.screenshot = `screenshots/${file.split(sep).pop()}`;
+    const v = local.lastScreenshot ? { ok: true } : timedOut
+      ? { ok: false, reason: 'manifest timeout exceeded before screenshot' }
+      : captureScreenshot(file, local, true);
+    if (v.ok) result.screenshot = screenshotReference(file, local);
     else {
       // Record the tooling failure even when a verdict was already reached —
       // additive, so a product FAIL keeps its own reason and its own status.
       result.screenshot_error = `screenshot ${v.reason}`;
       if (result.status === 'PASS') { result.status = 'ERROR'; result.failure_reason = result.screenshot_error; }
     }
+  }
+  if (local.lastScreenshot) result.screenshot = screenshotReference(local.lastScreenshot, local);
+  if (result.status === 'PASS' && Date.now() >= (local.deadline ?? Infinity)) {
+    result.status = 'ERROR';
+    result.failure_reason = 'manifest timeout exceeded';
   }
   // No mechanical step ran, and no check reached a verdict either: this layer
   // observed nothing, so PASS would claim an evaluation it never made. SKIPPED
@@ -1176,7 +1316,7 @@ async function urlAlive(url) {
   try { const r = await fetch(url, { signal: AbortSignal.timeout(3000) }); return r.status < 500; } catch { return false; }
 }
 
-function writeReportMd(resultsDir, summary, tests, crawlResult) {
+function writeReportMd(reportPath, summary, tests, crawlResult) {
   const lines = [
     `# Visual Report — ${new Date().toISOString().replace('T', ' ').slice(0, 16)}`,
     '',
@@ -1195,7 +1335,8 @@ function writeReportMd(resultsDir, summary, tests, crawlResult) {
     lines.push('', '## Broken local assets (measured)');
     lines.push(...crawlResult.broken.map((b) => `- [${b.tag}] ${b.url} → HTTP ${b.status} (on ${b.found_on})`));
   }
-  writeFileSync(join(resultsDir, 'report.md'), lines.join('\n') + '\n');
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, lines.join('\n') + '\n');
 }
 
 async function cmdRun(args) {
@@ -1208,7 +1349,9 @@ async function cmdRun(args) {
   const scope = String(args.flags.scope || profile.scope || 'all');
   const checks = profile.checks;
   const resultsDir = join(root, 'visual-tests', '_results');
-  const screenshotsDir = join(resultsDir, 'screenshots');
+  const screenshotsDir = config.screenshots_dir ? resolve(root, config.screenshots_dir) : join(resultsDir, 'screenshots');
+  const reportPath = config.report_path ? resolve(root, config.report_path) : join(resultsDir, 'report.md');
+  mkdirSync(resultsDir, { recursive: true });
   mkdirSync(screenshotsDir, { recursive: true });
 
   const lanes = {
@@ -1265,7 +1408,7 @@ async function cmdRun(args) {
     }
     if (checks.includes('local-assets') && !args.flags['no-crawl']) {
       crawlResult = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags) });
-      if (crawlResult.infra_error) { lanes.crawl = { status: 'error', reason: crawlResult.infra_error }; }
+      if (crawlResult.infra_error) { lanes.crawl = { status: 'error', reason: crawlResult.infra_error, remedy: LANE_REMEDIES.INFRA }; }
       else {
         const crawlArtifact = {
           schema_version: '1.0', timestamp: new Date().toISOString(), base_url: baseUrl,
@@ -1303,7 +1446,7 @@ async function cmdRun(args) {
           ? { status: 'skipped', reason: `no manifests match scope "${scope}" — ${onDisk.entries.length} manifest(s) on disk match neither that path fragment nor an open url; fix the scope or run /sg-visual-discover`, remedy: LANE_REMEDIES.DECLARATION }
           : { status: 'skipped', reason: 'no visual manifests in visual-tests/ — run /sg-visual-discover' };
     } else {
-      const ctx = { baseUrl, config, checks, screenshotsDir };
+      const ctx = { baseUrl, config, checks, screenshotsDir, resultsDir, projectRoot: root };
       const tests = [];
       let llmPending = 0;
       for (const [i, entry] of manifests.entries()) {
@@ -1379,7 +1522,7 @@ async function cmdRun(args) {
         lanes.visual = { status: 'ran', results: 'visual-results.json' };
       }
       if (llmPending > 0) lanes.llm_checks = { status: 'needs-agent', reason: `${llmPending} step(s) need the agent lane — llm-check/llm-wait/include (/sg-visual-run)`, count: llmPending };
-      writeReportMd(resultsDir, summary, tests, crawlResult);
+      writeReportMd(reportPath, summary, tests, crawlResult);
     }
 
     writeRun();
@@ -1451,8 +1594,18 @@ async function cmdRun(args) {
     writeRun({ exit_code: exitCode });
     return exitCode;
   } finally {
-    browser(['close']);
-    if (startedApp && !args.flags.serve) stopApp(root);
+    if (browserStarted) { browser(['close']); browserStarted = false; }
+    if (startedApp && !args.flags.serve) {
+      const stopped = await stopApp(root);
+      if (stopped.error) {
+        lanes.visual = { ...lanes.visual, status: 'error',
+          reason: [lanes.visual.reason, `app server cleanup failed: ${stopped.message}`].filter(Boolean).join('; '),
+          remedy: LANE_REMEDIES.INFRA };
+        writeRun({ exit_code: EXIT.INFRA });
+        console.error(`run: ${stopped.message}`);
+        return EXIT.INFRA;
+      }
+    }
   }
 }
 

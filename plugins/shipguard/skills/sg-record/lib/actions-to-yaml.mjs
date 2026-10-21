@@ -116,35 +116,44 @@ export function actionsToYaml(actions, opts) {
         const relativePath = stripBase(action.url, baseUrl);
         // stripBase keeps unmatched absolute URLs (including different ports).
         const url = /^https?:\/\//i.test(relativePath) ? relativePath : `{base_url}${relativePath}`;
-        lines.push(`  - action: open`);
-        lines.push(`    url: "${url}"`);
+        lines.push(`  - action: ${action.observed ? 'assert_url' : 'open'}`);
+        lines.push(`    ${action.observed ? 'expected' : 'url'}: "${escYaml(url)}"`);
         lastWasCheck = false;
         break;
       }
 
+      case 'back':
+      case 'forward':
+        lines.push(`  - action: ${action.type}`);
+        lastWasCheck = false;
+        break;
+
       case 'click': {
-        const target = action.text || action.selector || '';
+        const target = action.text || '';
         lines.push(`  - action: click`);
-        lines.push(`    target: "${escYaml(target)}"`);
+        if (target) lines.push(`    target: "${escYaml(target)}"`);
+        else if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
         lastWasCheck = false;
         break;
       }
 
       case 'fill': {
-        const target = action.text || action.selector || '';
+        const target = action.text || '';
         const value = action.isPassword ? '{credentials.password}' : (action.value || '');
         lines.push(`  - action: fill`);
-        lines.push(`    target: "${escYaml(target)}"`);
+        if (target) lines.push(`    target: "${escYaml(target)}"`);
+        else if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
         lines.push(`    value: "${escYaml(value)}"`);
         lastWasCheck = false;
         break;
       }
 
       case 'select': {
-        const target = action.text || action.selector || '';
+        const target = action.text || '';
         const value = action.value || '';
         lines.push(`  - action: select`);
-        lines.push(`    target: "${escYaml(target)}"`);
+        if (target) lines.push(`    target: "${escYaml(target)}"`);
+        else if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
         lines.push(`    value: "${escYaml(value)}"`);
         lastWasCheck = false;
         break;
@@ -152,6 +161,8 @@ export function actionsToYaml(actions, opts) {
 
       case 'press': {
         lines.push(`  - action: press`);
+        if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
+        else if (action.text) lines.push(`    target: "${escYaml(action.text)}"`);
         lines.push(`    key: "${escYaml(action.key || 'Enter')}"`);
         lastWasCheck = false;
         break;
@@ -177,15 +188,19 @@ export function actionsToYaml(actions, opts) {
 
       case 'check': {
         const text = action.text || '';
+        if (!text.trim()) throw new Error('A recorded check needs non-empty text; choose an element containing text.');
         if (text.length > LLM_CHECK_THRESHOLD) {
           lines.push(`  - action: llm-check`);
           lines.push(`    description: "Verify element content"`);
-          lines.push(`    criteria: "The ${escYaml(action.elementTag || 'element')} should contain text similar to: ${escYaml(text.slice(0, 120))}..."`);
+          const scope = action.selector ? ` matching CSS selector ${action.selector}` : '';
+          lines.push(`    criteria: "The ${escYaml(action.elementTag || 'element')}${escYaml(scope)} should contain text similar to: ${escYaml(text.slice(0, 120))}..."`);
           // Executor contract: llm-check severity is `critical` | `warning` only.
           lines.push(`    severity: warning`);
+          if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
         } else {
           lines.push(`  - action: assert_text`);
           lines.push(`    expected: "${escYaml(text)}"`);
+          if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
         }
         // Auto screenshot after each check (namespaced to avoid collisions
         // between manifests writing into the same results directory).

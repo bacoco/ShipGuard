@@ -9,7 +9,7 @@ Detailed reference for each `action:` type in manifest steps. SKILL.md covers th
 | [Top-level manifest fields](#top-level-manifest-fields) | Writing or reading a manifest header (`timeout`, `priority`, `tags`, `data`, …) |
 | [Variable interpolation](#variable-interpolation) | Writing a manifest with `{base_url}`, `{credentials.*}`, `{data.*}` |
 | [Include resolution](#include-resolution) | Manifest uses `action: include` |
-| [Mechanical actions](#mechanical-actions) | open / click / fill / press / upload / select / wait / assert_* / screenshot |
+| [Mechanical actions](#mechanical-actions) | open / back / forward / click / fill / press / upload / select / wait / assert_* / screenshot |
 | [Screenshot validation](#screenshot-validation-mandatory) | Every screenshot MUST be validated — read this before skipping |
 | [Hybrid actions (llm-*)](#hybrid-actions) | llm-wait, llm-check semantics |
 | [llm-check reliability](#llm-check-reliability) | What llm-check can and cannot assert |
@@ -63,6 +63,11 @@ For `action: include`:
 
 ## Mechanical actions
 
+For `click`, `fill`, `select`, `upload`, and `assert_text`, an optional `selector:`
+is an explicit CSS selector and takes precedence over the human-readable `target:`.
+Pass it directly to agent-browser instead of looking for that string in the
+accessibility tree. Without `selector:`, existing `target:` matching applies.
+
 ### `open`
 
 ```bash
@@ -71,6 +76,23 @@ agent-browser wait --load networkidle
 ```
 
 After every `open`, run session expiry detection (see SKILL.md Execution Strategy).
+
+### `back` / `forward` (Retour / Avance)
+
+Traverse one entry in the current tab's browser history. These actions take no URL or target:
+
+```yaml
+steps:
+  - action: back
+  - action: forward
+```
+
+```bash
+agent-browser back
+agent-browser forward
+```
+
+Keep the same browser session and use the native history command. Do not replace it with `open`: reopening a POST response URL issues a different GET request. The earlier steps must establish the history to traverse. A browser-command failure is `ERROR`; do not fall back to opening the destination. The CLI applies the manifest's remaining timeout to each command. Browser cache and form-resubmission policies still apply; these actions do not fabricate or resend form data themselves.
 
 ### `click`
 
@@ -89,6 +111,8 @@ After every `open`, run session expiry detection (see SKILL.md Execution Strateg
 
 Fields:
 - `key:` (required) — the key to press, with optional modifiers.
+- `target:` or `selector:` (optional) — focus this element before pressing the key;
+  `selector:` takes precedence. Without either, preserve the current focus.
 
 ```bash
 agent-browser press <key>
@@ -109,6 +133,7 @@ See `advanced-interactions.md` §5 for hidden input workarounds.
 
 Fields:
 - `target:` (required) — the select element (matched by label/name/testid in the snapshot).
+- `selector:` (optional) — explicit CSS selector; when present, `target:` is optional.
 - `value:` (required) — the option to select (option value or visible label).
 
 1. `agent-browser snapshot` → find select element matching `target`
@@ -143,6 +168,7 @@ Compare current page URL path against `expected`. Full URLs and path-only values
 
 Fields:
 - `target:` (optional) — scope: assert the text within the element/region matching `target` (same resolution as `click`/`fill`). Omitted → search the whole page.
+- `selector:` (optional) — explicit CSS scope, taking precedence over `target:`; search the whole page only when both are absent.
 - `expected:` (required) — text that must be present.
 - `screenshot:` (optional) — evidence filename captured after the assertion (validated per Screenshot Validation).
 

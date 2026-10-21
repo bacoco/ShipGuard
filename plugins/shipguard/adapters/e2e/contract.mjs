@@ -100,7 +100,7 @@ export function validateReport(doc) {
   }
   const selected = r.results.filter(t => t.selected);
   need(object(r.summary) && count(r.summary.executed), 'summary');
-  const expected = { discovered: r.results.length, selected: selected.length,
+  const expected = { discovered: r.results.length, selected: selected.length, executed: selected.filter(t => t.attempts.length > 0).length,
     passed: 0, failed: 0, interrupted: 0, flaky: 0, skipped: 0 };
   for (const t of selected) expected[t.status === 'timed-out' ? 'failed' : t.status]++;
   for (const [key, value] of Object.entries(expected)) need(r.summary[key] === value, `summary.${key}`);

@@ -28,14 +28,30 @@ label,input,button{display:block;margin:12px 0}</style></head><body>
 <h1>Reservation</h1><form><label for="item">Item name</label><input id="item">
 <button type="submit"><span>Reserve item</span></button></form>
 <p id="result">No reservation yet</p><div id="custom" tabindex="0">Custom action</div>
+<button id="nameless" style="width:40px;height:30px" onclick="fetch('/nameless',{method:'POST'})"></button>
+<form id="focus-form"><input id="prefilled" value="preset"><button>Submit preset</button></form>
+<p id="scoped">Waiting</p><p>Scoped success</p>
 <script>document.querySelector('form').addEventListener('submit',async e=>{
 e.preventDefault();const response=await fetch('/reserve',{method:'POST',body:document.querySelector('#item').value});
 document.querySelector('#result').textContent=await response.text();
-});document.querySelector('#custom').addEventListener('click',()=>{});</script>
+});document.querySelector('#custom').addEventListener('click',()=>{});
+document.querySelector('#focus-form').addEventListener('submit',async e=>{
+e.preventDefault();
+document.querySelector('#scoped').textContent='Scoped success';
+await fetch('/focused',{method:'POST',body:document.querySelector('#prefilled').value});
+});</script>
 </body></html>`;
 let reservations = 0;
 let observedReservation = null;
+let focusedValues = [], namelessClicks = 0;
 const server = createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/nameless') {
+    namelessClicks++; res.writeHead(200); res.end('ok'); return;
+  }
+  if (req.method === 'POST' && req.url === '/focused') {
+    let value = ''; req.setEncoding('utf8'); req.on('data', chunk => { value += chunk; });
+    req.on('end', () => { focusedValues.push(value); res.writeHead(200); res.end('ok'); }); return;
+  }
   if (req.method === 'POST' && req.url === '/reserve') {
     let value = '';
     req.setEncoding('utf8');
@@ -73,7 +89,7 @@ const inject = async () => {
     ${toolbar}`);
 };
 const clickPoint = async (point) => {
-  await ab('mouse', 'move', String(point.x), String(point.y));
+  await ab('mouse', 'move', String(Math.round(point.x)), String(Math.round(point.y)));
   await ab('mouse', 'down');
   await ab('mouse', 'up');
 };
@@ -84,6 +100,7 @@ function check(label, actual, expected) {
 }
 console.log(`Artifacts: ${root}`);
 try {
+  await ab('set', 'viewport', '1280', '1200');
   await inject();
   check('margin really targets the document root',
     await evaluate('document.elementFromPoint(5,5).tagName'), 'HTML');
@@ -142,6 +159,48 @@ profiles:
   copyFileSync(join(tests, '_results', result.screenshot), join(root, 'replay.png'));
   writeFileSync(join(root, 'evidence.json'), JSON.stringify({
     manifest_sha256: before, exit_code: exitCode, result, observed_reservation: observedReservation,
+  }, null, 2));
+
+  // Cross-component regression: captured CSS fallback, Enter focus and scoped
+  // text checks must survive the converter and the mechanical runner together.
+  await inject();
+  await ab('click', '#nameless');
+  await ab('click', '#prefilled');
+  await ab('press', 'Enter');
+  await ab('wait', '--fn', 'document.querySelector("#scoped").textContent === "Scoped success"');
+  await ab('scrollintoview', '#scoped');
+  await ab('click', '#sg-check-btn');
+  const scopePoint = await evaluate(`(() => { const r=document.querySelector('#scoped').getBoundingClientRect(); return {x:r.left+10,y:r.top+10}; })()`);
+  assert.ok(scopePoint.x > 0 && scopePoint.y > 0, `scoped check must be in view: ${JSON.stringify(scopePoint)}`);
+  await clickPoint(scopePoint);
+  await ab('click', '#sg-recorder .sg-btn-stop');
+  const focusedSteps = await evaluate('window.__sgEvents.filter(e=>e.type==="step").map(e=>e.step)');
+  check('focused capture keeps only click, Enter and check', focusedSteps.map(s => s.type), ['click', 'press', 'check']);
+  await ab('screenshot', join(root, 'focused-capture.png'), '--full');
+  const focusedManifest = join(tests, 'manifests/recorded-focused.yaml');
+  const focusedYaml = actionsToYaml([{ type: 'open', url }, ...focusedSteps], { name: 'focused', baseUrl: url });
+  writeFileSync(focusedManifest, focusedYaml);
+  focusedValues = []; namelessClicks = 0;
+  let focusedExit = 0;
+  try {
+    const run = await exec(process.execPath, [cli, 'run', '--profile=fixture', '--scope=recorded-focused', '--no-crawl'], {
+      cwd: root, env, timeout: 90000, maxBuffer: 4 * 1024 * 1024,
+    });
+    writeFileSync(join(root, 'focused-replay.log'), run.stdout + run.stderr);
+  } catch (error) {
+    focusedExit = error.code;
+    writeFileSync(join(root, 'focused-replay.log'), (error.stdout || '') + (error.stderr || ''));
+  }
+  const focusedResult = JSON.parse(readFileSync(join(tests, '_results/visual-results.json'), 'utf8')).tests[0];
+  check('focused raw YAML remains unchanged', readFileSync(focusedManifest, 'utf8'), focusedYaml);
+  check('focused/scoped raw YAML replay exits cleanly', focusedExit, 0);
+  check('focused/scoped raw YAML replay passes', focusedResult.status, 'PASS');
+  check('textless control is replayed exactly once', namelessClicks, 1);
+  check('Enter submits the prefilled field exactly once', focusedValues, ['preset']);
+  copyFileSync(join(tests, '_results', focusedResult.screenshot), join(root, 'focused-replay.png'));
+  writeFileSync(join(root, 'focused-evidence.json'), JSON.stringify({
+    steps: focusedSteps, manifest_sha256: createHash('sha256').update(focusedYaml).digest('hex'),
+    exit_code: focusedExit, result: focusedResult, focused_values: focusedValues, nameless_clicks: namelessClicks,
   }, null, 2));
 
   // Preserve existing fallback clicks; this fix must not discard every custom control.

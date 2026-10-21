@@ -837,7 +837,7 @@ function setTheme(t) {
 
   // ── Sidebar ──
   function renderSidebar() {
-    var visible = lastRunOnly ? D.tests.filter(function(t){return t.screenshot;}) : D.tests;
+    var visible = lastRunOnly ? D.tests.filter(function(t){return t.inLastRun;}) : D.tests;
     var counts = { all: visible.length };
     visible.forEach(function(t) { counts[t.category] = (counts[t.category]||0)+1; });
     var cats = [{id:'all',label:'All'}].concat(D.categories.map(function(c){return {id:c,label:c};}));
@@ -857,7 +857,7 @@ function setTheme(t) {
   // ── Grid ──
   function getFiltered() {
     var results = D.tests.filter(function(t) {
-      if (lastRunOnly && !t.screenshot) return false;
+      if (lastRunOnly && !t.inLastRun) return false;
       if (activeCat !== 'all' && t.category !== activeCat) return false;
       if (activeStatus === 'UPDATED') { if (!isUpdated(t)) return false; }
       else if (activeStatus !== 'ALL' && t.status !== activeStatus) return false;
@@ -935,6 +935,7 @@ function setTheme(t) {
       delete selected[id]; selectedCount=Math.max(0,selectedCount-1);
       delete annotationData[id];
       delete redoFlags[id];
+      delete revertFlags[id];
     } else {
       selected[id]=true; selectedCount++;
     }
@@ -1570,7 +1571,6 @@ function setTheme(t) {
     if (e.key==='Escape') {
       if (document.getElementById('note-overlay').classList.contains('visible')) {
         // r1-z02-008: cancel annotation instead of saving empty string
-        document.getElementById('note-overlay').style.display = 'none';
         document.getElementById('note-overlay').classList.remove('visible');
         pendingAnnot = null;
         editingIndex = null;
@@ -1653,7 +1653,7 @@ function setTheme(t) {
   });
 
   document.getElementById('btn-clear').addEventListener('click', function(){
-    Object.keys(selected).forEach(function(id){ delete annotationData[id]; delete redoFlags[id]; });
+    Object.keys(selected).forEach(function(id){ delete annotationData[id]; delete redoFlags[id]; delete revertFlags[id]; });
     selected={}; selectedCount=0; renderGrid(); updateBar();
   });
 
@@ -2934,10 +2934,10 @@ function procVerdictBadge(verdict) {
   if (!v) { span.style.color = 'var(--muted)'; span.textContent = '—'; return span; }
   if (v.indexOf('error') !== -1 || v.indexOf('fail') !== -1 || v.indexOf('regress') !== -1) {
     span.className = 'mc-sev mc-sev-critical';
-  } else if (v.indexOf('changed') !== -1 || v.indexOf('change') !== -1 || v.indexOf('surprise') !== -1) {
-    span.className = 'mc-sev mc-sev-high';
   } else if (v === 'unchanged' || v === 'pass' || v === 'ok' || v === 'same') {
     span.className = 'badge badge-pass';
+  } else if (v.indexOf('changed') !== -1 || v.indexOf('change') !== -1 || v.indexOf('surprise') !== -1) {
+    span.className = 'mc-sev mc-sev-high';
   } else {
     span.className = 'mc-sev mc-sev-low';
   }

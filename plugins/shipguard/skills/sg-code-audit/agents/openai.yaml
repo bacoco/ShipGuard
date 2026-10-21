@@ -13,4 +13,4 @@ dependencies:
       description: "Resolve the audit scope and changed files."
     - type: "shell"
       value: "node"
-      description: "Retain zone JSON with retain-zone-artifact.mjs in its own linked worktree; process Phase 5.7 replies; build or serve the optional review dashboard."
+      description: "Retain zone JSON with retain-zone-artifact.mjs in its own linked worktree; process Phase 5.7 replies with verification-result.mjs; build or serve the optional review dashboard."

@@ -86,7 +86,7 @@ export async function main(args) {
     return { exitCode, bundle, error: code };
   }
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   const result = await main(process.argv.slice(2));
   // No raw provider output, test text, configuration, environment or source errors on stdout.
   console.log(JSON.stringify(result)); process.exitCode = result.exitCode;

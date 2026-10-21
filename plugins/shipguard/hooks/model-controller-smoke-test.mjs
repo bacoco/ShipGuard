@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const endpoint = 'http://127.0.0.1:' + server.address().port + '/explicit/chat/completions';
-function run(target = endpoint) {
+function run(target = endpoint, suppliedView = view, splitUtf8 = false) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], { env: { ...process.env, SHIPGUARD_DIALOGUE_ENDPOINT: target,
       SHIPGUARD_DIALOGUE_MODEL: 'protocol-fixture-not-a-model', SHIPGUARD_DIALOGUE_API_KEY: '' }, stdio: ['pipe','pipe','pipe'] });
@@ -31,7 +31,12 @@ function run(target = endpoint) {
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('close', code => { clearTimeout(timer); resolve({ code, out }); });
     child.stdin.on('error', () => {});
-    child.stdin.end(JSON.stringify(view));
+    const bytes = Buffer.from(JSON.stringify(suppliedView));
+    if (splitUtf8) {
+      const split = bytes.indexOf(Buffer.from('é')) + 1;
+      child.stdin.write(bytes.subarray(0, split));
+      setTimeout(() => child.stdin.end(bytes.subarray(split)), 80);
+    } else child.stdin.end(bytes);
   });
 }
 try {
@@ -46,6 +51,9 @@ try {
   assert.ok(received.body.messages[0].content.includes('never a completion or approval'));
   assert.deepEqual(JSON.parse(received.body.messages[1].content), view, 'source origins and request must survive transport');
   assert.equal(validateController(JSON.parse(first.out), view).status, 'unknown');
+  const unicodeView = makeView({ ...input, last_assistant_message: 'Été 😀' }, { original_request: 'Préserver le café 😀', sources: [] });
+  assert.equal((await run(endpoint, unicodeView, true)).code, 0);
+  assert.deepEqual(JSON.parse(received.body.messages[1].content), unicodeView, 'split stdin UTF-8 must survive transport');
   reply = { status: 'clear', message: 'Fixture: response can stand.' };
   let result = await run(); assert.equal(result.code, 0);
   let check = validateController(JSON.parse(result.out), view);

@@ -72,6 +72,15 @@ try {
       assert.throws(() => evidencePath(root, name));
   });
   if (process.platform !== 'win32') {
+    await check('symlink entrypoint runs the CLI and preserves usage exit code', () => {
+      const link = join(root, 'adapter-link.mjs');
+      symlinkSync(fileURLToPath(new URL('./adapter.mjs', import.meta.url)), link);
+      for (const entry of [fileURLToPath(new URL('./adapter.mjs', import.meta.url)), link]) {
+        const cli = spawnSync(process.execPath, [entry], { encoding: 'utf8', timeout: 1500 });
+        assert.ifError(cli.error); assert.equal(cli.status, 3);
+        assert.equal(JSON.parse(cli.stdout).error, 'USAGE');
+      }
+    });
     await check('FIFO reports are rejected without blocking before file validation', () => {
       const fifo = join(root, 'fifo-report.json');
       const mk = spawnSync('mkfifo', [fifo], { encoding: 'utf8' });

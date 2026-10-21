@@ -241,14 +241,14 @@ mkdirSync(join(projU, 'visual-tests', 'pages'), { recursive: true });
 wf(join(projU, 'visual-tests', '_config.yaml'), 'base_url: "http://127.0.0.1:1"\n');
 wf(join(projU, 'visual-tests', 'pages', 'ok.yaml'),
   'name: "Ok"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n');
-// leading "---" (the idiomatic YAML document marker) — yamlParse returns {}
+// A leading document marker is outside this parser subset and is rejected.
 wf(join(projU, 'visual-tests', 'pages', 'login.yaml'),
   '---\nname: "Login"\nsteps:\n  - action: open\n    url: "{base_url}/login.html"\n');
 wf(join(projU, 'visual-tests', 'pages', 'old.yaml'), 'name: "Old"\ndeprecated: true\nsteps: []\n');
 const loadedU = loadManifests(projU, 'all');
 assert(loadedU.entries.length === 1 && loadedU.entries[0].id === 'pages/ok', 'manifests: unloadable stays out of the suite');
 assert(loadedU.unloadable.length === 1 && loadedU.unloadable[0].path === 'pages/login.yaml'
-  && loadedU.unloadable[0].reason === 'manifest_not_parseable', 'manifests: unloadable is reported with its path and reason');
+  && loadedU.unloadable[0].reason === 'manifest_unreadable', 'manifests: unloadable is reported with its path and reason');
 // The scope filter runs after the parse gate, so a lost manifest is declared
 // whatever the scope — it has no readable path/url pair to filter it on.
 assert(loadManifests(projU, 'pages/ok').unloadable.length === 1, 'manifests: unloadable is scope-independent');
@@ -364,6 +364,113 @@ try {
   else process.env.SHIPGUARD_AGENT_BROWSER = savedUrlBrowser;
 }
 
+// ── audited CLI regressions (r1-z01) ──
+const auditDir = mkdtempSync(join(tmpdir(), 'sg-cli-audit-'));
+const auditBin = join(auditDir, 'browser');
+const auditLog = join(auditDir, 'calls.jsonl');
+wf(auditBin, '#!/usr/bin/env node\n' + `
+const fs = require('fs');
+const a = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(auditLog)}, JSON.stringify({args:a, session:process.env.AGENT_BROWSER_SESSION})+'\\n');
+if (a[0] === 'get' && a[1] === 'url') console.log('http://example.test/login?next=/dashboard');
+if (a[0] === 'snapshot') console.log(a.includes('-i') ? '- button "Unrelated" [ref=e3]' : '- region "Main" [ref=e1]\\n  - text: empty\\n- region "Other" [ref=e2]\\n  - text: Success');
+if (a[0] === 'get' && a[1] === 'text') console.log(['@e1', '#empty'].includes(a[2]) ? 'empty' : 'Success');
+if (process.env.SG_AUDIT_HISTORY_FAIL && ['back','forward'].includes(a[0])) { console.error('history failed'); process.exit(7); }
+if (a[0] === 'screenshot') {
+  if (process.env.SG_AUDIT_SHOT_FAIL) process.exit(7);
+  fs.writeFileSync(a[1], 'PNGFAKE');
+}
+`);
+chmodSync(auditBin, 0o755);
+const auditSaved = process.env.SHIPGUARD_AGENT_BROWSER;
+const auditShotDir = join(auditDir, 'screenshots');
+mkdirSync(auditShotDir);
+const auditExec = (id, steps, extra = {}, checks = []) => executeManifest(
+  { id, url: '', manifest: { steps, ...extra } },
+  { baseUrl: 'http://example.test', config: {}, checks, screenshotsDir: auditShotDir, projectRoot: auditDir });
+process.env.SHIPGUARD_AGENT_BROWSER = auditBin;
+try {
+  wf(auditLog, '');
+  const history = await auditExec('pages/history', [{action:'back'}, {action:'forward'}]);
+  const historyCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).map(c => c.args)
+    .filter(args => ['back','forward','open'].includes(args[0]));
+  assert(history.status === 'PASS' && deepEq(historyCalls, [['back'], ['forward']]),
+    'history: Back and Forward dispatch native commands without open');
+  process.env.SG_AUDIT_HISTORY_FAIL = '1';
+  try {
+    for (const action of ['back','forward']) {
+      const failed = await auditExec('pages/history-error', [{action}]);
+      assert(failed.status === 'ERROR' && failed.failure_reason.includes('history failed'), `history: ${action} tool failure cannot pass`);
+    }
+  } finally { delete process.env.SG_AUDIT_HISTORY_FAIL; }
+  const query = await auditExec('pages/query', [{ action: 'assert_url', expected: '/dashboard' }]);
+  assert(query.status === 'FAIL', 'r1-z01-004: a query redirect target cannot satisfy the current pathname');
+  const region = await auditExec('pages/region', [{ action: 'assert_text', target: 'Main', expected: 'Success' }]);
+  assert(region.status === 'FAIL', 'r1-z01-005: text outside the named region cannot satisfy its assertion');
+  const regionOk = await auditExec('pages/region-ok', [{ action: 'assert_text', target: 'Main', expected: 'empty' }]);
+  assert(regionOk.status === 'PASS', 'r1-z01-005: text inside the named region still passes');
+  wf(auditLog, '');
+  const css = await auditExec('pages/css', [{ action: 'click', selector: '#submit' },
+    { action: 'fill', selector: '#input', value: 'hello' }, { action: 'press', selector: '#input', key: 'Enter' }]);
+  const cssCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).map(c => c.args);
+  assert(css.status === 'PASS' && cssCalls.some(c => deepEq(c, ['click', '#submit']))
+    && cssCalls.some(c => deepEq(c, ['fill', '#input', 'hello']))
+    && cssCalls.findIndex(c => deepEq(c, ['focus', '#input'])) < cssCalls.findIndex(c => deepEq(c, ['press', 'Enter']))
+    && cssCalls.some(c => deepEq(c, ['focus', '#input'])),
+    'recorder integration: explicit CSS selector is replayed and press restores its focus');
+  const scopedCss = await auditExec('pages/css-text', [{ action: 'assert_text', target: 'Other', selector: '#empty', expected: 'Success' }]);
+  assert(scopedCss.status === 'FAIL', 'recorder integration: explicit CSS assertion scope takes precedence over label');
+  const malformedStep = await auditExec('pages/typo', [{ action: 'open', url: '/' }, { acton: 'assert_text', expected: 'absent' }]);
+  assert(malformedStep.status === 'ERROR' && !!malformedStep.manifest_error,
+    'r1-z01-010: an absent action is a manifest declaration error');
+  for (const duration of ['abc', '31s']) {
+    const badWait = await auditExec('pages/wait', [{ action: 'wait', duration }]);
+    assert(badWait.status === 'ERROR' && !!badWait.manifest_error,
+      `r1-z01-018: invalid wait ${duration} is a declaration error`);
+  }
+  const timed = await auditExec('pages/timeout', [{ action: 'wait', duration: '100ms' }], { timeout: '20ms' });
+  assert(timed.status === 'ERROR' && timed.duration_ms < 100,
+    'r1-z01-008: manifest timeout bounds a wait and cannot return PASS');
+  const auth = await auditExec('pages/auth', [{ action: 'open', url: '/private' }], { requires_auth: true });
+  assert(auth.status !== 'PASS' && /login|auth/i.test(auth.failure_reason || ''),
+    'r1-z01-007: missing login prerequisite cannot pass as an ordinary manifest');
+  mkdirSync(join(auditDir, 'visual-tests', '_shared'), { recursive: true });
+  wf(join(auditDir, 'visual-tests', '_shared', 'login.yaml'), 'steps:\n  - action: open\n    url: "{base_url}/login"\n');
+  wf(auditLog, '');
+  const authed = await auditExec('pages/auth', [{ action: 'open', url: '/private' }], { requires_auth: true });
+  const authCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).filter(c => c.args[0] === 'open');
+  assert(authed.status === 'PASS' && authCalls.length === 2 && authCalls[0].args[1].endsWith('/login'),
+    'r1-z01-007: mechanical shared login executes before authenticated steps');
+  const named = await auditExec('pages/named', [{ action: 'screenshot', filename: 'recorded.png' }], {}, ['screenshots']);
+  assert(named.screenshot === 'screenshots/recorded.png', 'r1-z01-006: recorder filename is honored');
+  for (const action of ['assert_text', 'assert_url']) {
+    const optional = `${action}.png`;
+    await auditExec(`pages/${action}`, [{ action, expected: action === 'assert_text' ? 'Success' : '/login', screenshot: optional }]);
+    assert(ex(join(auditShotDir, optional)), `r1-z01-006: ${action} optional screenshot is captured`);
+  }
+  const first = await auditExec('auth/index', [{ action: 'open', url: '/' }], {}, ['screenshots']);
+  const second = await auditExec('docs/index', [{ action: 'open', url: '/' }], {}, ['screenshots']);
+  assert(first.screenshot !== second.screenshot && ex(join(auditDir, first.screenshot)) && ex(join(auditDir, second.screenshot)),
+    'r1-z01-003: same leaf name in different folders keeps separate screenshot evidence');
+  wf(join(auditShotDir, 'old.png'), 'OLD-VALID-PROOF');
+  process.env.SG_AUDIT_SHOT_FAIL = '1';
+  const old = await auditExec('old', [{ action: 'open', url: '/' }], {}, ['screenshots']);
+  delete process.env.SG_AUDIT_SHOT_FAIL;
+  assert(old.status === 'ERROR' && !old.screenshot && !!old.screenshot_error,
+    'r1-z01-002: failed screenshot cannot reuse an old valid file');
+  const logged = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse);
+  assert(logged.every(c => c.session && c.session !== process.env.AGENT_BROWSER_SESSION),
+    'r1-z01-011: browser bridge overrides the caller session with a dedicated session');
+  let malformedRejected = false;
+  try { yamlParse('steps:\n  - action: open\n    url: /\n - action: assert_text\n   expected: missing\n'); }
+  catch { malformedRejected = true; }
+  assert(malformedRejected, 'r1-z01-009: malformed trailing indentation cannot discard an assertion');
+} finally {
+  if (auditSaved === undefined) delete process.env.SHIPGUARD_AGENT_BROWSER;
+  else process.env.SHIPGUARD_AGENT_BROWSER = auditSaved;
+  delete process.env.SG_AUDIT_SHOT_FAIL;
+}
+
 // ── run without agent-browser -> exit 2 (infra), run.json declares it ──
 // SHIPGUARD_AGENT_BROWSER points at a nonexistent binary (agent-browser shares
 // nvm's bin dir with node, so PATH restriction cannot hide one without the other).
@@ -385,17 +492,17 @@ assert(runJson.lanes.audit.status === 'not-applicable', 'run: audit lane declare
 // Each fixture is a full `run` over a real app and a stand-in browser, because
 // the aggregation reads lanes that only a real run produces.
 const FAKE_F = join(mkdtempSync(join(tmpdir(), 'sg-fbin-')), 'fake-agent-browser');
-wf(FAKE_F, '#!/bin/sh\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n'
+wf(FAKE_F, '#!/bin/sh\nif [ -n "$SG_BROWSER_CALLS" ]; then printf \'%s|%s\\n\' "$1" "$AGENT_BROWSER_SESSION" >> "$SG_BROWSER_CALLS"; fi\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n'
   + '  screenshot) if [ "$SG_EMPTY_SHOT" = 1 ]; then : > "$2"; else printf \'PNGFAKE\' > "$2"; fi ;;\n'
   + '  get) [ "$2" = url ] && printf \'%s\\n\' \'http://127.0.0.1/ok.html\' ;;\nesac\nexit 0\n');
 chmodSync(FAKE_F, 0o755);
 const OK_MANIFEST = 'name: "Ok"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n  - action: assert_text\n    text: "Ok"\n';
 
-function runFixture({ files = {}, flags = [], env = {}, builder = 'process.exit(0);\n' }) {
+function runFixture({ files = {}, flags = [], env = {}, configExtra = '', builder = 'process.exit(0);\n' }) {
   const root = mkdtempSync(join(tmpdir(), 'sg-exit-'));
   mkdirSync(join(root, 'visual-tests'), { recursive: true });
   wf(join(root, 'visual-tests', '_config.yaml'),
-    `version: 2\napp:\n  start: "${APP_U.replace(/"/g, '\\"')}"\n  healthcheck: "/"\n  startup_timeout_ms: 15000\n`);
+    `version: 2\napp:\n  start: "${APP_U.replace(/"/g, '\\"')}"\n  healthcheck: "/"\n  startup_timeout_ms: 15000\n${configExtra}`);
   // A project-local no-op builder keeps the dashboard out of every case that is
   // not about the dashboard (it is also the only way to control its failure).
   if (builder !== null) wf(join(root, 'visual-tests', 'build-review.mjs'), builder);
@@ -407,8 +514,14 @@ function runFixture({ files = {}, flags = [], env = {}, builder = 'process.exit(
     env: { ...process.env, SHIPGUARD_AGENT_BROWSER: FAKE_F, ...env } });
   const rd = join(root, 'visual-tests', '_results');
   const load = (f) => (ex(join(rd, f)) ? JSON.parse(rf(join(rd, f), 'utf8')) : null);
-  return { code: ran.status, err: ran.stderr, run: load('run.json'), visual: load('visual-results.json') };
+  return { root, code: ran.status, err: ran.stderr, run: load('run.json'), visual: load('visual-results.json') };
 }
+
+const fPaths = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'],
+  configExtra: 'screenshots_dir: "artifacts/shots"\nreport_path: "artifacts/summary.md"\n' });
+assert(fPaths.code === EXIT.CLEAN && ex(join(fPaths.root, 'artifacts', 'summary.md'))
+  && ex(join(fPaths.root, 'artifacts', 'shots', fPaths.visual.tests[0].screenshot.split('/').pop())),
+  'r1-z01-020: configured screenshots_dir and report_path drive the actual outputs');
 
 // a scope that selects nothing while the suite exists: the run asserted nothing
 // and the fix is the scope string, not a retry
@@ -433,7 +546,9 @@ assert(fMixed.run?.lanes?.visual?.status === 'ran', 'exit: the visual lane ran b
 
 // no manifests and no crawl: every individual skip is legitimate, their
 // conjunction is a run that asserted nothing
-const fEmpty = runFixture({ flags: ['--no-crawl'] });
+const emptyCalls = join(auditDir, 'empty-browser-calls');
+const fEmpty = runFixture({ flags: ['--no-crawl'], env: { SG_BROWSER_CALLS: emptyCalls } });
+assert(!ex(emptyCalls), 'r1-z01-011: a run without browser work does not issue close or any browser command');
 assert(fEmpty.code === EXIT.CONFIG, 'exit: no lane evaluated anything -> 3');
 
 // an invalid manifest is closer to a bad config than to a broken machine
@@ -575,6 +690,23 @@ for (const [label, entry] of [['direct', join(realDir, 'consumer.mjs')], ['throu
   const libOut = execFileSync('node', [entry], { encoding: 'utf8' });
   assert(libOut.trim() === 'imported function function 2', `entry guard: library import (${label}) does not run the CLI`);
 }
+// Exercise the actual live-probe block with an opened browser whose click fails.
+// This is deliberately isolated: it cannot use or close a real browser session.
+const liveSource = rf(fileURLToPath(import.meta.url), 'utf8');
+const liveStart = liveSource.indexOf('\nlet liveSkip = null;');
+const liveEnd = liveSource.indexOf('\nif (liveSkip)', liveStart);
+const liveProbe = liveSource.slice(liveStart, liveEnd);
+const liveFault = spawnSync('node', ['--input-type=module', '-e', `
+  let failures = 0;
+  const assert = ok => { if (!ok) failures++; };
+  const abBin='fixture', livePage='fixture';
+  const matchSnapshotRef = () => '@e1';
+  const ab = cmd => { if(cmd==='click') throw new Error('unsupported click'); return '- button "Go" [ref=e1]'; };
+  ${liveProbe}
+  process.exit(failures > 0 ? 1 : 0);
+`], { encoding: 'utf8' });
+assert(liveFault.status === 1, 'r1-z01-021: browser command failure after open fails the live probe instead of SKIP');
+
 // ── matchSnapshotRef vs the real binary (fixture-vs-binary guard) ──
 // The fixtures above are captured, not invented — but a captured fixture still
 // freezes. This probe re-derives the contract from whatever agent-browser is
@@ -583,7 +715,7 @@ for (const [label, entry] of [['direct', join(realDir, 'consumer.mjs')], ['throu
 // breaking every click/fill/select/upload in the field. Skipped (never failed)
 // when no browser is available, so this stays a smoke test, not an e2e suite.
 const abBin = process.env.SHIPGUARD_AGENT_BROWSER || 'agent-browser';
-const abSession = 'sg-cli-smoke';
+const abSession = `sg-cli-smoke-${process.pid}`;
 const ab = (...a) => execFileSync(abBin, ['--session', abSession, ...a], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
 const liveDir = mkdtempSync(join(tmpdir(), 'sg-live-'));
 const livePage = join(liveDir, 'probe.html');
@@ -591,8 +723,10 @@ wf(livePage, '<!doctype html><meta charset="utf-8"><title>sg probe</title>'
   + '<button onclick="document.getElementById(\'o\').textContent=\'HIT\'">Nouvelle conversation</button>'
   + '<p id="o">MISS</p>');
 let liveSkip = null;
+let liveOpened = false;
 try {
   ab('open', `file://${livePage}`);
+  liveOpened = true;
   const liveSnap = ab('snapshot', '-i');
   const liveRef = matchSnapshotRef(liveSnap, 'Nouvelle conversation');
   assert(liveRef !== null, `live: ${abBin} snapshot parsed (got: ${JSON.stringify(liveSnap.trim().split('\n')[0])})`);
@@ -601,7 +735,9 @@ try {
     assert(ab('get', 'text', '#o').trim() === 'HIT', 'live: ref returned by matchSnapshotRef is clickable');
   }
 } catch (e) {
-  liveSkip = e.code === 'ENOENT' ? `${abBin} not installed` : String(e.stderr || e.message).trim().split('\n')[0];
+  const reason = String(e.stderr || e.message).trim().split('\n')[0];
+  if (liveOpened) assert(false, `live: browser command failed after open (${reason})`);
+  else liveSkip = e.code === 'ENOENT' ? `${abBin} not installed` : reason;
 } finally {
   try { ab('close'); } catch { /* browser already gone */ }
 }

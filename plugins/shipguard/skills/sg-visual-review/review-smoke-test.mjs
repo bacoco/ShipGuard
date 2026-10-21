@@ -274,6 +274,97 @@ function createFixture() {
   return root;
 }
 
+function checkAuditRegressions() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-regressions-'));
+  const failures = [];
+  const check = (id, fn) => { try { fn(); } catch (error) { failures.push(`${id}: ${error.message}`); } };
+  try {
+    copyFileSync(SOURCE_BUILD, join(root, 'build-review.mjs'));
+    copyFileSync(SOURCE_TEMPLATE, join(root, '_review-template.html'));
+    writeFileSync(join(root, '_config.yaml'), 'base_url: http://localhost:8001\n');
+    for (const id of ['user/login', 'admin/login', 'pages/error', 'pages/old', 'pages/unique']) {
+      mkdirSync(join(root, dirname(id)), { recursive: true });
+      writeFileSync(join(root, id + '.yaml'), `name: ${id}\nsteps:\n  - action: open\n    url: /\n`);
+    }
+    mkdirSync(join(root, '_results/screenshots/nested'), { recursive: true });
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5ioAAAAASUVORK5CYII=', 'base64');
+    writeFileSync(join(root, '_results/screenshots/nested/custom.png'), png);
+    writeFileSync(join(root, '_results/screenshots/old.png'), png);
+    writeJson(join(root, '_results/visual-results.json'), { tests: [
+      { id: 'login', manifest: 'visual-tests/user/login.yaml', status: 'PASS', duration_ms: 17, screenshot: 'screenshots/nested/custom.png' },
+      { id: 'pages/error', status: 'ERROR', failure_reason: 'browser unavailable', screenshot: null },
+      { id: 'unique', status: 'PASS' },
+    ] });
+    writeJson(join(root, '_results/process-results.json'), { units: [{ id: 'mixed', verdict: 'behavior-changed', actions: [
+      { delta: 'unchanged', evidence: 'measured' }, { delta: 'wrong result', evidence: 'reasoned' },
+    ] }] });
+    const build = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+    assert(build.status === 0, build.stderr);
+    const html = readFileSync(join(root, '_results/review.html'), 'utf8');
+    const data = JSON.parse(html.match(/var __VISUAL_DATA__ = ([\s\S]*?);\nvar __RECORDED_DATA__/)[1]);
+    const byId = id => data.tests.find(t => t.id === id);
+    check('r1-z04-001', () => {
+      assert(byId('user/login').status === 'PASS', 'qualified result lost');
+      assert(byId('admin/login').status === 'STALE', 'unexecuted same-basename test inherited PASS');
+      assert(byId('admin/login').durationMs === undefined, 'duration crossed identities');
+      assert(byId('pages/unique').status === 'PASS', 'unique legacy slug no longer resolves');
+    });
+    check('r1-z04-004', () => assert(byId('user/login').screenshot === 'screenshots/nested/custom.png', 'producer screenshot path ignored'));
+    check('r1-z04-007', () => {
+      const findings = JSON.parse(readFileSync(join(root, '_results/findings.json'), 'utf8'));
+      assert(findings.findings.find(f => f.source === 'process').evidence === 'reasoned', 'mixed proof upgraded to measured');
+    });
+    const slice = (start, end) => {
+      const a = html.indexOf(start), b = html.indexOf(end, a);
+      assert(a >= 0 && b > a, `renderer boundaries missing: ${start}`);
+      return html.slice(a, b);
+    };
+    const nodes = new Map();
+    function element() {
+      const classes = new Set();
+      return { style: {}, value: '', children: [], handlers: {}, focus() {}, appendChild(x) { this.children.push(x); },
+        addEventListener(name, fn) { this.handlers[name] = fn; },
+        classList: { add(c) { classes.add(c); }, remove(c) { classes.delete(c); }, contains(c) { return classes.has(c); } } };
+    }
+    const document = { createElement: element, handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; },
+      getElementById(id) { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); } };
+    check('r1-z04-002', () => {
+      const context = { document, pendingAnnot: {}, editingIndex: 0, selectedCount: 0 };
+      runInNewContext(slice('function showNoteInput(', 'function saveAnnotation(') + slice("document.addEventListener('keydown', function(e) {", '// ── Toast'), context);
+      context.showNoteInput('first'); document.handlers.keydown({ key: 'Escape' }); context.showNoteInput('second');
+      const overlay = document.getElementById('note-overlay');
+      assert(overlay.classList.contains('visible') && overlay.style.display !== 'none', 'note stays hidden after Escape');
+      assert(context.pendingAnnot === null && context.editingIndex === null, 'Escape must cancel pending annotation');
+    });
+    check('r1-z04-003', () => {
+      const context = { document, selected: { x: true }, selectedCount: 1, annotationData: { x: [] }, redoFlags: { x: true }, revertFlags: { x: true }, renderGrid() {}, updateBar() {} };
+      runInNewContext(slice('function toggleSelect(', 'var redoFlags ='), context);
+      context.toggleSelect('x'); context.toggleSelect('x');
+      assert(!context.revertFlags.x, 'deselect retained revert intent');
+      context.revertFlags.x = true;
+      runInNewContext(slice("document.getElementById('btn-clear').addEventListener(", '// ── Lightbox navigation'), context);
+      document.getElementById('btn-clear').handlers.click();
+      assert(!context.revertFlags.x, 'Clear retained revert intent');
+    });
+    check('r1-z04-005', () => {
+      const context = { document, D: data, lastRunOnly: true, activeCat: 'all', activeStatus: 'ALL', query: '', isUpdated() { return false; } };
+      runInNewContext(slice('function renderSidebar(', 'function renderGrid('), context);
+      const ids = context.getFiltered().map(t => t.id);
+      assert(ids.includes('pages/error'), 'last-run error without screenshot hidden');
+      assert(!ids.includes('pages/old') && !ids.includes('admin/login'), 'unexecuted tests included');
+      context.renderSidebar();
+      assert(document.getElementById('cat-list').children[0].children[1].textContent === ids.length, 'sidebar count disagrees with last-run grid');
+    });
+    check('r1-z04-006', () => {
+      const context = { document };
+      runInNewContext(slice('function procVerdictBadge(', 'function procEvidenceOf('), context);
+      assert(context.procVerdictBadge('unchanged').className === 'badge badge-pass', 'unchanged classified as changed');
+      assert(context.procVerdictBadge('behavior-changed').className === 'mc-sev mc-sev-high', 'changed verdict lost warning');
+    });
+    assert(!failures.length, failures.join('\n'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
 async function main() {
   const options = parseArgs();
   let root = null;
@@ -282,6 +373,7 @@ async function main() {
   let log = null;
   let passed = false;
   try {
+    checkAuditRegressions();
     root = createFixture();
     const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
     const auditBefore = readFileSync(join(root, '_results', 'audit-results.json'), 'utf8');

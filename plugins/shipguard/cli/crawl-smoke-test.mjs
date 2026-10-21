@@ -47,11 +47,52 @@ const multi = extractAssets('<video src="clip.mp4" poster="poster.jpg"></video>'
 assert(multi.some((a) => a.url.endsWith('clip.mp4')) && multi.some((a) => a.url.endsWith('poster.jpg')),
   'extract: src AND poster on the same tag');
 
+const attrCases = extractAssets('<img src=/unquoted.png><a href="/search?q=1&amp;page=2">next</a><img src="/&#105;mage.png">', 'http://example.test/');
+assert(attrCases.some(a => a.url.endsWith('/unquoted.png')) && attrCases.some(a => a.url.endsWith('/image.png'))
+  && attrCases.some(a => a.url.endsWith('/search?q=1&page=2')), 'r1-z01-013: unquoted URLs and HTML entities decode before resolution');
+
 // clean-URL page-follow rules
 assert(isFollowablePage('http://x/page.html') && isFollowablePage('http://x/docs/') && isFollowablePage('http://x/about'),
   'follow: html, directory, clean URL');
 assert(!isFollowablePage('http://x/logo.png') && !isFollowablePage('http://x/clip.mp4'),
   'follow: asset extensions excluded');
+
+// Redirected HTML resolves relative assets against the final response URL.
+const redirectServer = http.createServer((req, res) => {
+  if (req.url === '/docs') { res.writeHead(302, { location: '/docs/' }); return res.end(); }
+  res.setHeader('content-type', 'text/html');
+  if (req.url === '/docs/') return res.end('<a href="guide.html">Guide</a>');
+  if (req.url === '/docs/guide.html') return res.end('<p>Guide</p>');
+  res.statusCode = 404; res.end('missing');
+});
+await new Promise(r => redirectServer.listen(0, '127.0.0.1', r));
+const redirected = await crawl(`http://127.0.0.1:${redirectServer.address().port}/docs`);
+assert(redirected.pages === 2 && redirected.broken.length === 0, 'r1-z01-012: redirected page keeps its directory when resolving links');
+redirectServer.close();
+
+// A failed collection after the initial health probe must dominate a passing visual lane.
+const collectionRoot = mkdtempSync(join(tmpdir(), 'sg-collect-error-'));
+mkdirSync(join(collectionRoot, 'visual-tests', 'pages'), { recursive: true });
+let collectionGets = 0;
+const collectionServer = http.createServer((req, res) => {
+  if (++collectionGets > 1) return req.socket.destroy();
+  res.setHeader('content-type', 'text/html'); res.end('<p>ok</p>');
+});
+await new Promise(r => collectionServer.listen(0, '127.0.0.1', r));
+writeFileSync(join(collectionRoot, 'visual-tests', '_config.yaml'), `base_url: "http://127.0.0.1:${collectionServer.address().port}"\nprofiles:\n  test:\n    checks: [page-load, local-assets]\n`);
+writeFileSync(join(collectionRoot, 'visual-tests', 'pages', 'ok.yaml'), 'steps:\n  - action: wait\n    duration: 0ms\n');
+writeFileSync(join(collectionRoot, 'visual-tests', 'build-review.mjs'), 'process.exit(0);');
+const collectionBin = join(collectionRoot, 'browser');
+writeFileSync(collectionBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+const savedCollectionBin = process.env.SHIPGUARD_AGENT_BROWSER;
+process.env.SHIPGUARD_AGENT_BROWSER = collectionBin;
+const collectionCode = await runCli([CLI, 'run', '--profile=test'], collectionRoot);
+if (savedCollectionBin === undefined) delete process.env.SHIPGUARD_AGENT_BROWSER;
+else process.env.SHIPGUARD_AGENT_BROWSER = savedCollectionBin;
+const collectionRun = JSON.parse(readFileSync(join(collectionRoot, 'visual-tests', '_results', 'run.json'), 'utf8'));
+assert(collectionCode === EXIT.INFRA && collectionRun.lanes.crawl.remedy === 'infrastructure',
+  'r1-z01-001: collection error stays infrastructure even beside a passing visual lane');
+collectionServer.close();
 
 // ── fixture site: index links page2; page2 has one broken img ──
 const site = mkdtempSync(join(tmpdir(), 'sg-site-'));

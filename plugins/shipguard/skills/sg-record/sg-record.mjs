@@ -93,6 +93,8 @@ try {
 
 let allSteps = [];
 let stopped = false;
+let paused = false;
+const startTime = Date.now();
 let toolbarJS = null;
 let browser = null;
 let manifestSaved = false;
@@ -225,9 +227,11 @@ function handleBridgeEvent(event) {
       break;
     }
     case 'pause':
+      paused = true;
       console.log('  ⏸ paused');
       break;
     case 'resume':
+      paused = false;
       console.log('  ▶ resumed');
       break;
     case 'stop': {
@@ -320,8 +324,8 @@ function askQuestion(prompt) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.on('close', () => resolve('')); // handles SIGINT / stream end
     rl.question(prompt, (answer) => {
-      rl.close();
       resolve(answer.trim());
+      rl.close();
     });
   });
 }
@@ -349,6 +353,10 @@ async function main() {
   if (storageArg) console.log(`  Auth:    ${storageArg}`);
   if (saveStorageArg) console.log(`  Save:    ${saveStorageArg}`);
   console.log('');
+
+  if (storageArg && !existsSync(storageArg)) {
+    throw new Error(`Session storage file not found: ${storageArg}`);
+  }
 
   // Dynamically import Playwright (may be installed globally via npx)
   let chromium;
@@ -390,6 +398,101 @@ async function main() {
     });
 
     const page = await context.newPage();
+    const navigationTasks = new Map();
+    const navigationEntries = new WeakMap();
+    const navigationIntents = new WeakMap();
+    let navigationError = null;
+
+    function noteNavigation({ page: targetPage, frame }, intent) {
+      if (frame !== targetPage.mainFrame()) return;
+      if (intent.cancelled) {
+        if (navigationIntents.get(targetPage)?.id === intent.id) navigationIntents.delete(targetPage);
+      } else {
+        navigationIntents.set(targetPage, intent);
+      }
+    }
+
+    function observeNavigationIntent() {
+      if (window !== window.top || !window.navigation) return;
+      let sequence = 0;
+      window.navigation.addEventListener('navigate', event => {
+        if (!event.isTrusted) return;
+        const intent = {
+          id: `${performance.timeOrigin}:${++sequence}`,
+          url: event.destination.url,
+          scriptedTraversal: event.navigationType === 'traverse' && !event.userInitiated,
+        };
+        window.__sgNavigation(intent).catch(() => {});
+        event.signal.addEventListener('abort', () => {
+          window.__sgNavigation({ id: intent.id, cancelled: true }).catch(() => {});
+        }, { once: true });
+      });
+    }
+
+    // Observe the cause in the departing document, before application scripts.
+    // An entry's transitionType describes its creation, not this traversal.
+    await context.exposeBinding('__sgNavigation', noteNavigation);
+    await context.addInitScript(observeNavigationIntent);
+
+    // Each fresh document receives the canonical list and pause state, including
+    // the initial open and steps captured on other origins.
+    async function injectPage(targetPage) {
+      await navigationTasks.get(targetPage);
+      await targetPage.evaluate(state => { window.__sgRecorderState = state; }, {
+        steps: allSteps, paused, startTime,
+      });
+      await targetPage.addScriptTag({ content: toolbarJS });
+    }
+
+    function recordNavigation(navigationUrl, transitionType, entryId, seenEntries, historyDelta = 0, scriptedTraversal = false) {
+      // A history entry keeps its original transition type on Back/Forward.
+      // Remember even suppressed/paused visits, separately for each page.
+      const revisited = seenEntries.has(entryId);
+      seenEntries.add(entryId);
+      if (paused || stopped || !navigationUrl || navigationUrl === 'about:blank') return;
+      if (revisited && historyDelta !== 0) {
+        // The recorded page action already performs a scripted Back/Forward.
+        // Browser UI traversals have userInitiated=true, even after an idle click.
+        if (scriptedTraversal) return;
+        // Traverse browser history instead of reopening a cached POST as GET.
+        for (let i = 0; i < Math.abs(historyDelta); i++) {
+          recordStep({ type: historyDelta < 0 ? 'back' : 'forward' });
+        }
+        return;
+      }
+      // Only a new link/form entry can belong to the recorded action. Reopening
+      // that POST response would turn it into a different GET request.
+      const last = allSteps[allSteps.length - 1];
+      if (!revisited && ['link', 'form_submit'].includes(transitionType)
+          && last && ['click', 'press', 'fill', 'select', 'upload'].includes(last.type)) return;
+      recordStep({ type: 'open', url: navigationUrl });
+    }
+
+    function queueNavigation(targetPage) {
+      if (!navigationEntries.has(targetPage)) navigationEntries.set(targetPage, { seen: new Set(), currentId: null });
+      const navigationState = navigationEntries.get(targetPage);
+      const task = (async () => {
+        const cdp = await context.newCDPSession(targetPage);
+        try {
+          const history = await cdp.send('Page.getNavigationHistory');
+          const entry = history.entries[history.currentIndex];
+          if (!entry) throw new Error('Navigation history is unavailable');
+          const previousIndex = history.entries.findIndex(item => item.id === navigationState.currentId);
+          const historyDelta = previousIndex < 0 ? 0 : history.currentIndex - previousIndex;
+          navigationState.currentId = entry.id;
+          const intent = navigationIntents.get(targetPage);
+          navigationIntents.delete(targetPage);
+          const scriptedTraversal = intent?.url === entry.url && intent.scriptedTraversal;
+          recordNavigation(entry.url, entry.transitionType, entry.id, navigationState.seen, historyDelta, scriptedTraversal);
+        } finally { await cdp.detach(); }
+      })().catch(error => {
+        // Popups that close before injection remain best effort, as before.
+        if (targetPage.isClosed()) return;
+        navigationError = error;
+        console.error('  Navigation capture failed:', error.message);
+      });
+      navigationTasks.set(targetPage, task);
+    }
 
     // New tabs / popups: inject the toolbar bridge into them too (best
     // effort). The bridge binding is context-wide, so recorded steps flow
@@ -399,9 +502,10 @@ async function main() {
     context.on('page', (newPage) => {
       const injectIntoPopup = async () => {
         try {
-          await newPage.addScriptTag({ content: toolbarJS });
+          await injectPage(newPage);
         } catch (_) { /* popup closed or navigation raced the injection */ }
       };
+      newPage.on('domcontentloaded', () => queueNavigation(newPage));
       newPage.on('load', injectIntoPopup);
       newPage.on('framenavigated', (frame) => {
         if (frame === newPage.mainFrame()) {
@@ -414,11 +518,13 @@ async function main() {
     // Inject toolbar after page load (not addInitScript which gets overwritten by DOM parser)
     async function injectToolbar() {
       try {
-        await page.addScriptTag({ content: toolbarJS });
+        await injectPage(page);
       } catch (_) { /* page may have been closed */ }
     }
 
-    // Re-inject on every navigation (SPA and MPA)
+    // Full documents record their destination before toolbar injection.
+    // Same-document SPA transitions are observed by the existing toolbar.
+    page.on('domcontentloaded', () => queueNavigation(page));
     page.on('load', () => injectToolbar());
 
     // Log frame navigations
@@ -428,11 +534,9 @@ async function main() {
       }
     });
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Record the initial open so every manifest starts at the real start URL.
-    // recordStep dedups the toolbar's echo of the same navigation.
+    // Establish the same initial list before either injection path can run.
     recordStep({ type: 'open', url });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
     await injectToolbar();
 
@@ -457,6 +561,12 @@ async function main() {
         }, 200);
       });
     });
+
+    await Promise.all(navigationTasks.values());
+    if (navigationError) {
+      console.error('  Warning: navigation capture was incomplete; saving the recorded steps.');
+      process.exitCode = 1;
+    }
 
     // Save auth state if requested
     if (saveStorageArg) {

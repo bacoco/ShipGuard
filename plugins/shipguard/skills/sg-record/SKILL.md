@@ -52,12 +52,18 @@ The user navigates the app normally. Every interaction is captured automatically
 |-------------|-------------|
 | Click a button/link | `action: click, target: "Button text"` |
 | Fill an input field | `action: fill, target: "Field label", value: "typed text"` |
-| Press Enter in a form field | `action: press, key: "Enter"` |
+| Press Enter in a form field | `action: press, selector: "#field", key: "Enter"` — restore the field focus before pressing |
 | Select a dropdown option | `action: select, target: "Label", value: "Option"` |
 | Upload a file | `action: upload, file: "{data.upload_file}"` — `upload.file` must be a project-relative path, so the recorder emits a `{data.*}` placeholder plus a `data:` stub you must point at a real file |
 | Navigate to a new page | `action: open, url: "/new-page"` |
+| Browser Back / Forward through recorded document history | `action: back` / `action: forward` |
+| Observe an internal route change after an interaction | `action: assert_url, expected: "/new-page"` — verify the route without reloading |
+
+A checkbox or radio state change records one `click`. When an action has no text label, its CSS address is emitted as `selector:` rather than a text `target:`.
 
 The manifest always starts with an `open` step for the URL the recorder was launched on. New tabs and popups get the toolbar injected too (best effort) — a popup that closes before injection completes (e.g. an instant OAuth redirect window) records nothing.
+
+Document-history traversals use `back` and `forward`, preserving cached POST responses instead of reopening their URL with GET. Each action traverses one entry; a traversal across several entries emits that many actions. New link/form destinations already caused by a recorded action do not add an `open`. The host observes document-load events; restoration solely from the browser's back/forward cache without such an event is not captured by this path.
 
 ### 3. Toolbar Controls
 
@@ -79,7 +85,7 @@ Click **Check** to enter assertion mode:
 1. Toolbar border turns amber
 2. Hover over elements to see what will be captured (amber highlight)
 3. Click on the element you want to verify
-4. The recorder captures its text content as an `assert_text` step
+4. The recorder captures its text content as an `assert_text` step, scoped to the chosen element with `selector:`. An element without text is rejected with a visible message; choose an element containing text.
 5. If the text is long (>80 chars), it becomes an `llm-check` instead (severity `warning`; AI judges the assertion at replay time)
 6. A screenshot is auto-captured at each check point
 7. Check mode deactivates after one capture

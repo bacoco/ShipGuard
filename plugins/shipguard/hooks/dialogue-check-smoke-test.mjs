@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync, readdirSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { makeView, classify, validateController, outputFor } from './lib/dialogue-check.mjs';
 const root = dirname(fileURLToPath(import.meta.url));
 const cli = join(root, 'dialogue-check.mjs');
@@ -19,6 +19,18 @@ function run(input, env = {}) {
     env: { ...safeEnv, ...env }, encoding: 'utf8', timeout: 4000 });
   assert.ifError(result.error); assert.equal(result.status, 0, result.stderr);
   return result.stdout ? JSON.parse(result.stdout) : null;
+}
+async function runSplit(input, env) {
+  const bytes = Buffer.from(JSON.stringify(input));
+  const split = bytes.indexOf(Buffer.from('é')) + 1;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli], { env: { ...safeEnv, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = ''; const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('split fixture timeout')); }, 4000);
+    child.stdout.setEncoding('utf8'); child.stdout.on('data', c => out += c); child.stderr.resume();
+    child.on('error', reject); child.on('close', code => { clearTimeout(timer); assert.equal(code, 0); resolve(JSON.parse(out)); });
+    child.stdin.write(bytes.subarray(0, split));
+    setTimeout(() => child.stdin.end(bytes.subarray(split)), 80);
+  });
 }
 const on = { SHIPGUARD_DIALOGUE_HOOKS: '1' };
 try {
@@ -56,6 +68,12 @@ try {
   const corrected = run(input, configured);
   assert.equal(corrected.decision, 'block'); assert.match(corrected.reason, /NOT a new user request/);
   assert.equal(run({ ...input, stop_hook_active: true }, configured).decision, undefined);
+  const unicodeInput = { ...input, last_assistant_message: 'café 😀' };
+  const unicodeFinding = { ...finding, message: 'café 😀', finding: { ...finding.finding, passage: 'café 😀' } };
+  writeFileSync(controllerPath, 'process.stdin.resume(); process.stdin.on("end",()=>console.log(' + JSON.stringify(JSON.stringify(unicodeFinding)) + '));');
+  assert.match((await runSplit(unicodeInput, configured)).systemMessage, /finding: café 😀/, 'split input must preserve exact evidence');
+  writeFileSync(controllerPath, 'process.stdin.resume(); process.stdin.on("end",()=>{ const b=Buffer.from(' + JSON.stringify(JSON.stringify(unicodeFinding)) + '); const n=b.indexOf(Buffer.from("é"))+1; process.stdout.write(b.subarray(0,n)); setTimeout(()=>process.stdout.end(b.subarray(n)),80); });');
+  assert.match(run(unicodeInput, configured).systemMessage, /café 😀/, 'split controller output must preserve UTF-8');
   const countPath = join(temp, 'controller-calls.txt');
   writeFileSync(controllerPath, 'import { appendFileSync } from "node:fs"; for await (const c of process.stdin) {} appendFileSync(' + JSON.stringify(countPath) + ', "called\\n"); console.log(' + JSON.stringify(JSON.stringify(finding)) + ');');
   assert.equal(run(input, configured).decision, 'block');

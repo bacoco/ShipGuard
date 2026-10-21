@@ -124,6 +124,7 @@ check('unknown result status is refused', () => rejects(d => d.run.results[0].st
 check('unknown step status is refused', () => rejects(d => d.run.results[0].attempts[0].steps[0].status = 'running'));
 check('missing attempts are refused', () => rejects(d => d.run.results[0].attempts = []));
 check('duplicate result IDs are refused', () => rejects(d => d.run.results.push(structuredClone(d.run.results[0]))));
+check('executed summary mismatch is refused', () => rejects(d => d.run.summary.executed = 0));
 check('summary mismatch is refused', () => rejects(d => d.run.summary.selected = 2));
 check('unknown error category is refused', () => rejects(d => d.run.errors.push(failure('unknown'))));
 check('serial groups are explicitly unsupported', () => rejects(d => d.run.serialGroups.push({}), 'UNSUPPORTED_SERIAL'));
