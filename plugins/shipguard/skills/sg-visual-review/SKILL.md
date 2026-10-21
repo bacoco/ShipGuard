@@ -31,7 +31,7 @@ Sandbox note: `--serve`, `POST /save-manifest`, and monitor smoke tests need loo
 
 ### Step 1: Build the Review Page
 
-Run the build script:
+Follow **Setup** below first, including its read-only check of existing project copies. Then run the build script:
 
 ```bash
 node visual-tests/build-review.mjs --serve
@@ -207,16 +207,36 @@ The build script and template are installed to the project:
 
 ## Setup
 
-If the build script is not yet in the project:
+Before using existing copies, compare them with this installed plugin (read-only):
+
+```bash
+# Resolve SHIPGUARD_PLUGIN_ROOT from this skill's own path.
+node "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" init --check-copies
+```
+
+The check includes the template and any installed recorder files. A different or missing
+companion produces an advisory warning with source hashes and a refresh command. Preserve pinned
+or customized copies; do not refresh automatically. If the user explicitly asks to refresh:
+
+```bash
+node "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" init --refresh-copies
+```
+
+Only installed tool groups are refreshed. Replaced files are backed up under the printed
+`visual-tests/.copies-backup-*` path; `copies.json` records old/new hashes (`null` means the file
+was absent). No config, scenarios, authentication state or results are changed. A copied standalone
+CLI needs `--plugin-root=/path/to/plugins/shipguard` to compare against an available source.
+
+If the build script is not yet in the project, copy only missing files:
 
 ```bash
 # Copy from the installed ShipGuard plugin root.
 # Resolve SHIPGUARD_PLUGIN_ROOT from this skill path:
 # $SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/SKILL.md
-cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/
-cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/_review-template.html" visual-tests/
-cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/review-smoke-test.mjs" visual-tests/
-cp "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/monitor-smoke-test.mjs" visual-tests/
+cp -n "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/build-review.mjs" visual-tests/
+cp -n "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/_review-template.html" visual-tests/
+cp -n "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/review-smoke-test.mjs" visual-tests/
+cp -n "$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/monitor-smoke-test.mjs" visual-tests/
 
 # Add npm script (optional)
 # In package.json: "visual:review": "node visual-tests/build-review.mjs"
