@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CE-01/CE-02: real POST and manual history navigation + untouched YAML replay. The host's
+// CE-01/CE-02/CE-03: real POST and manual history navigation + untouched YAML replay. The host's
 // classification callback is executed verbatim with Chromium's actual history.
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
@@ -16,7 +16,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = mkdtempSync(join(tmpdir(), 'sg-record-navigation-'));
 const exec = promisify(execFile);
 const session = `sg-record-navigation-${process.pid}`;
-const source = readFileSync(join(here, '../sg-record.mjs'), 'utf8');
+const currentSource = readFileSync(join(here, '../sg-record.mjs'), 'utf8');
+const source = process.argv.includes('--baseline')
+  ? (await exec('git', ['show', 'd6c8e1e8:plugins/shipguard/skills/sg-record/sg-record.mjs'], { cwd: here })).stdout
+  : currentSource;
+const observer = currentSource.match(/function observeNavigationIntent\(\) \{[\s\S]*?\n    \}/)?.[0];
+const note = source.match(/function noteNavigation\([^)]*\) \{[\s\S]*?\n    \}/)?.[0]
+  || 'function noteNavigation() {}';
+assert.ok(observer, 'actual browser navigation observer is present');
 const callback = source.match(/function recordNavigation\([^)]*\) \{[\s\S]*?\n    \}/)?.[0];
 assert.ok(callback, 'actual host navigation callback is present');
 const queue = source.match(/function queueNavigation\([^)]*\) \{[\s\S]*?\n    \}/)?.[0];
@@ -39,10 +46,10 @@ const server = createServer((req, res) => {
     res.end('<h1>Destination</h1>');
   } else if (req.url === '/one') {
     res.setHeader('Cache-Control', 'no-store');
-    res.end('<h1>One</h1><a id="next" href="/two">Next</a><button id="idle">Idle</button>');
+    res.end('<h1 id="one">One</h1><a id="next" href="/two">Next</a><button id="idle">Idle</button><button id="appforward" onclick="history.forward()">Advance in application</button>');
   } else if (req.url === '/two') {
     res.setHeader('Cache-Control', 'no-store');
-    res.end('<h1>Two</h1><button id="idle">Idle</button>');
+    res.end('<h1 id="two">Two</h1><button id="idle">Idle</button><button id="appback" onclick="history.back()">Return in application</button>');
   } else {
     res.end('<!doctype html><h1>Local reservation</h1><form action="/reserve" method="post"><button id="reserve">Reserve</button></form><button id="idle">Stay here</button><a id="link" href="/linked">Follow link</a><a id="first" href="/one">First</a>');
   }
@@ -53,7 +60,7 @@ const ab = async (...args) => (await exec('agent-browser', ['--session', session
 const evaluate = async code => JSON.parse(await ab('--json', 'eval', '-b', Buffer.from(code).toString('base64'))).data.result;
 let socket, sequence = 0;
 const pending = new Map();
-const pageEvents = [];
+const pageEvents = [], navigationIntents = [];
 async function cdp(method, params = {}, sessionId) {
   const id = ++sequence;
   const reply = new Promise((done, fail) => {
@@ -69,20 +76,30 @@ const historyEntry = async () => {
   return history.entries[history.currentIndex];
 };
 function hostFor(steps) {
-  const host = vm.createContext({ console, stopped: false, paused: false, allSteps: [], navigationTasks: new Map(), navigationEntries: new WeakMap(), navigationError: null });
-  host.page = { isClosed: () => false };
+  const host = vm.createContext({ console, stopped: false, paused: false, allSteps: [], navigationTasks: new Map(), navigationEntries: new WeakMap(), navigationIntents: new WeakMap(), navigationError: null });
+  host.frame = {}; host.page = { isClosed: () => false, mainFrame: () => host.frame };
+  host.observations = [];
   host.context = { newCDPSession: async () => ({ send: async () => host.history, detach: async () => {} }) };
   vm.runInContext(source.slice(source.indexOf('function normalizeUrl'), source.indexOf('function stepDetail'))
-    + '\nfunction stepDetail(){return "";}\n' + callback + '\n' + queue + '\nglobalThis.api={recordStep,queueNavigation};', host);
+    + '\nfunction stepDetail(){return "";}\n' + note + '\n' + callback + '\n' + queue + '\nglobalThis.api={recordStep,queueNavigation,noteNavigation};', host);
   for (const step of steps) host.api.recordStep(step);
   return host;
 }
 async function observe(host) {
   host.history = await cdp('Page.getNavigationHistory', {}, pageSession);
+  const intents = navigationIntents.splice(0);
+  for (const intent of intents) host.api.noteNavigation({page:host.page,frame:host.frame}, intent);
+  host.observations.push({history:host.history,intents});
   host.api.queueNavigation(host.page);
   await host.navigationTasks.get(host.page);
   if (host.navigationError) throw host.navigationError;
   return host.history.entries[host.history.currentIndex];
+}
+// agent-browser 0.39.1 back/forward execute history.back()/forward() in the
+// page. Use Chromium's browser-side command for the manual-navigation witness.
+async function manualTraverse(delta) {
+  const history = await cdp('Page.getNavigationHistory', {}, pageSession);
+  await cdp('Page.navigateToHistoryEntry', {entryId:history.entries[history.currentIndex + delta].id}, pageSession);
 }
 let failures = 0;
 const checks = [];
@@ -97,10 +114,15 @@ try {
   await ab('--args', '--disable-features=BackForwardCache', 'open', url);
   socket = new WebSocket((await ab('get', 'cdp-url')).trim());
   await new Promise((done, fail) => { socket.onopen = done; socket.onerror = fail; });
-  socket.onmessage = event => { const m = JSON.parse(event.data); if (pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } else if (m.method) pageEvents.push(m.method); };
+  socket.onmessage = event => { const m = JSON.parse(event.data); if (pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } else if (m.method) { pageEvents.push(m.method); if (m.method === 'Runtime.bindingCalled' && m.params.name === '__sgNavigation') navigationIntents.push(JSON.parse(m.params.payload)); } };
   const target = (await cdp('Target.getTargets')).targetInfos.find(t => t.type === 'page' && t.url.startsWith(url));
   pageSession = (await cdp('Target.attachToTarget', { targetId: target.targetId, flatten: true })).sessionId;
   await cdp('Page.enable', {}, pageSession);
+  await cdp('Runtime.enable', {}, pageSession);
+  await cdp('Runtime.addBinding', {name:'__sgNavigation'}, pageSession);
+  const observeScript = `(() => { const send = window.__sgNavigation; window.__sgNavigation = intent => { send(JSON.stringify(intent)); return Promise.resolve(); }; (${observer})(); })()`;
+  await cdp('Page.addScriptToEvaluateOnNewDocument', {source:observeScript}, pageSession);
+  await evaluate(observeScript);
   await evaluate(`sessionStorage.clear();window.__sgRecorderState={steps:[{type:'open',url:${JSON.stringify(url)}}],paused:false,startTime:Date.now()};window.__sgBridge=s=>navigator.sendBeacon('/event',s);${toolbar}`);
   await ab('click', '#reserve');
   await ab('wait', '#confirmation');
@@ -155,7 +177,7 @@ try {
   const twoEntry = await observe(historyHost);
   await ab('click', '#idle'); historyHost.api.recordStep({ type: 'click', text: 'Idle' });
   pageEvents.length = 0;
-  await ab('back'); await ab('wait', '--url', '**/one');
+  await manualTraverse(-1); await ab('wait', '--url', '**/one');
   const backEntry = await historyEntry(), backEvents = [...pageEvents];
   await observe(historyHost);
   const backSteps = Array.from(historyHost.allSteps);
@@ -166,7 +188,7 @@ try {
     assert.equal(backSteps.at(-1).type, 'back'); assert.equal(backEntry.url, url + '/one');
   });
   await ab('click', '#idle'); historyHost.api.recordStep({ type: 'click', text: 'Idle' });
-  await ab('forward'); await ab('wait', '--url', '**/two');
+  await manualTraverse(1); await ab('wait', '--url', '**/two');
   const forwardEntry = await observe(historyHost);
   const forwardSteps = Array.from(historyHost.allSteps);
   check('CE-02 manual forward to a visited link entry is preserved', () => {
@@ -187,9 +209,9 @@ try {
   const postEntry = await observe(postHost);
   await inject(); await ab('click', '#next'); await ab('wait', '--url', '**/two'); collect(); await observe(postHost);
   await inject(); await ab('click', '#idle'); collect();
-  await ab('back'); await ab('wait', '#confirmation'); const postBackEntry = await observe(postHost);
-  await ab('forward'); await ab('wait', '--url', '**/two'); await observe(postHost);
-  await ab('back'); await ab('wait', '#confirmation'); await observe(postHost);
+  await manualTraverse(-1); await ab('wait', '#confirmation'); const postBackEntry = await observe(postHost);
+  await manualTraverse(1); await ab('wait', '--url', '**/two'); await observe(postHost);
+  await manualTraverse(-1); await ab('wait', '#confirmation'); await observe(postHost);
   const postSteps = Array.from(postHost.allSteps);
   check('POST history records Back/Forward without opening the response URL', () => {
     assert.equal(postBackEntry.id, postEntry.id); assert.equal(postBackEntry.transitionType, 'form_submit');
@@ -216,7 +238,63 @@ try {
     assert.equal(readFileSync(manifestPath, 'utf8'), historyReplayManifest);
     assert.deepEqual(historyCalls.filter(c => c.path === '/reserve'), [{method:'POST',path:'/reserve'}]);
   });
-  writeFileSync(join(root, 'evidence.json'), JSON.stringify({ checks, entry, captured, hostSteps: steps, manifest, replayCalls, result, manualEntry, linkEntry, history: { oneEntry, twoEntry, backEntry, backEvents, backSteps, forwardEntry, forwardSteps }, postHistory: {postEntry,postBackEntry,steps:postSteps,manifest:historyManifest,replayManifest:historyReplayManifest,calls:historyCalls,result:historyResult} }, null, 2));
+  // CE-03: a captured page button already traverses history. Exercise Back,
+  // Forward, and then a manual Back after an unrelated click in the same tab.
+  await ab('open', url);
+  const appHost = hostFor([{type:'open',url}]); await observe(appHost);
+  const injectApp = async () => {
+    events.length = 0;
+    await evaluate(`sessionStorage.clear();window.__sgRecorderState=${JSON.stringify({steps:Array.from(appHost.allSteps),paused:false,startTime:Date.now()})};window.__sgBridge=s=>navigator.sendBeacon('/event',s);${toolbar}`);
+  };
+  const appClick = async (selector, destination) => {
+    await injectApp(); await ab('click', selector); await ab('wait', destination);
+    for (let i=0; i<40 && !events.some(e=>e.type==='step'); i++) await new Promise(done=>setTimeout(done,25));
+    const captured = events.splice(0).filter(e=>e.type==='step');
+    assert.ok(captured.length, 'real toolbar captured '+selector);
+    for (const event of captured) appHost.api.recordStep(event.step);
+    await observe(appHost);
+  };
+  await appClick('#first', '#one'); await appClick('#next', '#two');
+  await appClick('#appback', '#one');
+  const appBackSteps = Array.from(appHost.allSteps);
+  check('CE-03 page Back is represented only by its recorded click', () => {
+    assert.equal(appHost.observations.at(-1).intents.at(-1).scriptedTraversal, true);
+    assert.deepEqual(appBackSteps.map(s=>s.type), ['open','click','click','click']);
+  });
+  const appManifest = actionsToYaml(appBackSteps, {name:'application-back',baseUrl:url});
+  const appReplayManifest = appManifest
+    .replace(/(    target: "(?:First|Next|Return in application)"\n)/g, '$1  - action: wait\n    duration: 500ms\n')
+    .replace('  - action: screenshot', '  - action: assert_text\n    expected: "One"\n  - action: screenshot');
+  writeFileSync(join(root, 'application-back-recorded.yaml'), appManifest);
+  writeFileSync(manifestPath, appReplayManifest);
+  calls.length = 0;
+  let appExit = 0, appOutput = '';
+  try { const run = await exec(process.execPath, [resolve(here, '../../../cli/shipguard.mjs'), 'run', '--profile=test', '--no-crawl'], {cwd:root,timeout:90000}); appOutput=run.stdout+run.stderr; }
+  catch (error) { appExit=error.code; appOutput=(error.stdout||'')+(error.stderr||''); }
+  writeFileSync(join(root,'application-back-replay.log'),appOutput);
+  const appCalls=[...calls];
+  const appResult=JSON.parse(readFileSync(join(tests,'_results/visual-results.json'),'utf8')).tests[0];
+  check('CE-03 page Back replay stops at One instead of returning home twice', () => {
+    assert.equal(appExit,0); assert.equal(appResult.status,'PASS');
+    // The browser may restore One without an HTTP request. The destination
+    // assertion above proves the page; the log must not show the extra home GET.
+    assert.ok(!appCalls.slice(appCalls.findIndex(c=>c.path==='/two')+1).some(c=>c.path==='/'));
+  });
+  await appClick('#appforward', '#two');
+  const appForwardSteps=Array.from(appHost.allSteps);
+  check('CE-03 page Forward is represented only by its recorded click', () => {
+    assert.equal(appHost.observations.at(-1).intents.at(-1).scriptedTraversal,true);
+    assert.equal(appForwardSteps.at(-1).type,'click');
+    assert.equal(appForwardSteps.at(-1).text,'Advance in application');
+  });
+  await injectApp(); await ab('click','#idle');
+  for(const event of events.splice(0)) if(event.type==='step') appHost.api.recordStep(event.step);
+  await manualTraverse(-1); await ab('wait','#one'); await observe(appHost);
+  check('CE-03 manual Back still records after a page traversal and idle click', () => {
+    assert.equal(appHost.observations.at(-1).intents.at(-1).scriptedTraversal,false);
+    assert.equal(appHost.allSteps.at(-1).type,'back');
+  });
+  writeFileSync(join(root, 'evidence.json'), JSON.stringify({ applicationHistory: {observations:appHost.observations,backSteps:appBackSteps,forwardSteps:appForwardSteps,finalSteps:Array.from(appHost.allSteps),manifest:appManifest,replayManifest:appReplayManifest,calls:appCalls,result:appResult}, checks, entry, captured, hostSteps: steps, manifest, replayCalls, result, manualEntry, linkEntry, history: { oneEntry, twoEntry, backEntry, backEvents, backSteps, forwardEntry, forwardSteps }, postHistory: {postEntry,postBackEntry,steps:postSteps,manifest:historyManifest,replayManifest:historyReplayManifest,calls:historyCalls,result:historyResult} }, null, 2));
 } finally {
   socket?.close();
   try { await ab('close'); } finally { server.closeAllConnections(); await new Promise(done => server.close(done)); }

@@ -400,7 +400,39 @@ async function main() {
     const page = await context.newPage();
     const navigationTasks = new Map();
     const navigationEntries = new WeakMap();
+    const navigationIntents = new WeakMap();
     let navigationError = null;
+
+    function noteNavigation({ page: targetPage, frame }, intent) {
+      if (frame !== targetPage.mainFrame()) return;
+      if (intent.cancelled) {
+        if (navigationIntents.get(targetPage)?.id === intent.id) navigationIntents.delete(targetPage);
+      } else {
+        navigationIntents.set(targetPage, intent);
+      }
+    }
+
+    function observeNavigationIntent() {
+      if (window !== window.top || !window.navigation) return;
+      let sequence = 0;
+      window.navigation.addEventListener('navigate', event => {
+        if (!event.isTrusted) return;
+        const intent = {
+          id: `${performance.timeOrigin}:${++sequence}`,
+          url: event.destination.url,
+          scriptedTraversal: event.navigationType === 'traverse' && !event.userInitiated,
+        };
+        window.__sgNavigation(intent).catch(() => {});
+        event.signal.addEventListener('abort', () => {
+          window.__sgNavigation({ id: intent.id, cancelled: true }).catch(() => {});
+        }, { once: true });
+      });
+    }
+
+    // Observe the cause in the departing document, before application scripts.
+    // An entry's transitionType describes its creation, not this traversal.
+    await context.exposeBinding('__sgNavigation', noteNavigation);
+    await context.addInitScript(observeNavigationIntent);
 
     // Each fresh document receives the canonical list and pause state, including
     // the initial open and steps captured on other origins.
@@ -412,13 +444,16 @@ async function main() {
       await targetPage.addScriptTag({ content: toolbarJS });
     }
 
-    function recordNavigation(navigationUrl, transitionType, entryId, seenEntries, historyDelta = 0) {
+    function recordNavigation(navigationUrl, transitionType, entryId, seenEntries, historyDelta = 0, scriptedTraversal = false) {
       // A history entry keeps its original transition type on Back/Forward.
       // Remember even suppressed/paused visits, separately for each page.
       const revisited = seenEntries.has(entryId);
       seenEntries.add(entryId);
       if (paused || stopped || !navigationUrl || navigationUrl === 'about:blank') return;
       if (revisited && historyDelta !== 0) {
+        // The recorded page action already performs a scripted Back/Forward.
+        // Browser UI traversals have userInitiated=true, even after an idle click.
+        if (scriptedTraversal) return;
         // Traverse browser history instead of reopening a cached POST as GET.
         for (let i = 0; i < Math.abs(historyDelta); i++) {
           recordStep({ type: historyDelta < 0 ? 'back' : 'forward' });
@@ -445,7 +480,10 @@ async function main() {
           const previousIndex = history.entries.findIndex(item => item.id === navigationState.currentId);
           const historyDelta = previousIndex < 0 ? 0 : history.currentIndex - previousIndex;
           navigationState.currentId = entry.id;
-          recordNavigation(entry.url, entry.transitionType, entry.id, navigationState.seen, historyDelta);
+          const intent = navigationIntents.get(targetPage);
+          navigationIntents.delete(targetPage);
+          const scriptedTraversal = intent?.url === entry.url && intent.scriptedTraversal;
+          recordNavigation(entry.url, entry.transitionType, entry.id, navigationState.seen, historyDelta, scriptedTraversal);
         } finally { await cdp.detach(); }
       })().catch(error => {
         // Popups that close before injection remain best effort, as before.

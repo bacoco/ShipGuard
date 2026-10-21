@@ -42,6 +42,7 @@ page.goto=async()=>{page.emit('framenavigated',frame);page.emit('load');
  const popup=new EventEmitter();popup.isClosed=()=>true;popup.waitForLoadState=async()=>{throw new Error('popup closed')};
  context.emit('page',popup);popup.emit('domcontentloaded');
 };
+context.exposeBinding=async()=>{};context.addInitScript=async()=>{};
 context.exposeFunction=async(name,fn)=>{bridge=fn};context.newPage=async()=>page;
 context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const paths=['/start','/paused','/manual','/one','/two'];return {currentIndex:paths.indexOf(new URL(current).pathname),entries:paths.map((path,id)=>({id,url:'http://local'+path,transitionType:['/one','/two'].includes(path)?'link':'typed'}))}},detach:async()=>{}}};
 context.storageState=async()=>({cookies:[],origins:[]});
