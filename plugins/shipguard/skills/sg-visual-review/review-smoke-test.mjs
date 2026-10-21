@@ -26,9 +26,11 @@ function parseArgs() {
     port: null,
     keepTmp: false,
     debug: false,
+    pidOnly: false,
   };
   for (const arg of process.argv.slice(2)) {
     if (arg === '--keep-tmp') options.keepTmp = true;
+    else if (arg === '--pid-only') options.pidOnly = true;
     else if (arg === '--debug') options.debug = true;
     else if (arg.startsWith('--port=')) options.port = parseInt(arg.split('=')[1], 10);
     else throw new Error(`Unknown argument: ${arg}`);
@@ -365,8 +367,84 @@ function checkAuditRegressions() {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+// Execute the production stop/replacement blocks with in-memory files and
+// signal spies only. Never send even signal 0 to a real process (#143).
+async function checkPidRegressions() {
+  const source = readFileSync(SOURCE_BUILD, 'utf8');
+  const helperStart = source.indexOf('// Check whether a PID');
+  const stopStart = source.indexOf('// ── --stop:');
+  const stopEnd = source.indexOf('// Dynamically discover', stopStart);
+  const serveStart = source.indexOf("if (process.argv.includes('--serve')) {");
+  const serveEnd = source.indexOf("  const http = await import('http');", serveStart);
+  assert(helperStart >= 0 && stopStart > helperStart && stopEnd > stopStart
+    && serveStart > stopEnd && serveEnd > serveStart, 'PID block boundaries missing');
+  const helpers = source.slice(helperStart, stopStart);
+  const invalid = ['', ' ', '0', '-1', '-42', '4242junk', '12.5', '1e3', '+4242',
+    '0x1092', 'NaN', 'Infinity', '4242 43', '9007199254740992', '9'.repeat(400)];
+  const failures = [];
+  let checked = 0;
+  for (const mode of ['stop', 'serve']) {
+    const scenarios = [
+      ...invalid.map(text => ({ text, invalid: true })),
+      { text: '4242', pid: 4242 },
+      { text: ' 004242 \n8888\n', pid: 4242 },
+      { text: '9007199254740991', pid: Number.MAX_SAFE_INTEGER },
+      { text: '4242', pid: 4242, stale: true },
+      { text: '7777', pid: 7777, self: true },
+      { text: null },
+    ];
+    for (const scenario of scenarios) {
+      const label = `${mode} PID ${JSON.stringify(scenario.text)}`;
+      const calls = [], errors = [], removed = [];
+      let stopped = false, exitCode = null;
+      const exit = {};
+      const context = {
+        PID_FILE: '/fixture/.server.pid',
+        existsSync: () => scenario.text !== null,
+        readFileSync: () => scenario.text,
+        unlinkSync: path => removed.push(path),
+        console: { log() {}, error: message => errors.push(message) },
+        process: {
+          argv: [mode === 'stop' ? '--stop' : '--serve'], pid: 7777,
+          exit(code) { exitCode = code; throw exit; },
+          kill(pid, signal) {
+            calls.push([pid, signal]);
+            if (scenario.stale || stopped) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+            if (signal === undefined) stopped = true;
+          },
+        },
+        setTimeout(resolve) { resolve(); },
+      };
+      const block = mode === 'stop' ? source.slice(stopStart, stopEnd)
+        : source.slice(serveStart, serveEnd) + '\n}';
+      try {
+        try { await runInNewContext(`(async () => {\n${helpers}\n${block}\n})()`, context); }
+        catch (error) { if (error !== exit) throw error; }
+        if (scenario.invalid) {
+          assert(calls.length === 0, `${label}: reached signal spy ${JSON.stringify(calls)}`);
+          assert(exitCode === 1 && errors.some(message => /Invalid PID file/.test(message)), `${label}: missing explicit refusal`);
+          assert(removed.length === 0, `${label}: invalid PID evidence removed`);
+        } else {
+          const expected = scenario.text === null || (mode === 'serve' && scenario.self) ? []
+            : scenario.stale ? [[scenario.pid, 0]]
+            : mode === 'stop' ? [[scenario.pid, 0], [scenario.pid, undefined]]
+            : [[scenario.pid, 0], [scenario.pid, undefined], [scenario.pid, 0]];
+          assert(JSON.stringify(calls) === JSON.stringify(expected), `${label}: nominal/stale/self behavior changed`);
+          assert(exitCode === (mode === 'stop' ? 0 : null) && errors.length === 0, `${label}: unexpected refusal`);
+          assert(removed.length === (mode === 'stop' && scenario.text !== null ? 1 : 0), `${label}: cleanup changed`);
+        }
+        checked++;
+      } catch (error) { failures.push(error.message); }
+    }
+  }
+  assert(failures.length === 0, `PID regressions (${failures.length} failures):\n${failures.join('\n')}`);
+  console.log(`PID regressions passed: ${checked} cases, signal spies only`);
+}
+
 async function main() {
   const options = parseArgs();
+  await checkPidRegressions();
+  if (options.pidOnly) return;
   let root = null;
   let port = null;
   let server = null;

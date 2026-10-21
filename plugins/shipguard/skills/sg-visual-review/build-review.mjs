@@ -154,14 +154,22 @@ function pidExists(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; }
 }
 
+// Validate the complete first line before conversion or any signal (even 0).
+// Numeric validity does not establish the identity of a stale positive PID.
+function readServerPid() {
+  const text = readFileSync(PID_FILE, 'utf8').split('\n')[0].trim();
+  const pid = /^[0-9]+$/.test(text) ? Number(text) : NaN;
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    console.error('Invalid PID file. If a server is still running, kill it by port (see /sg-visual-review-stop).');
+    process.exit(1);
+  }
+  return pid;
+}
+
 // ── --stop: short-circuit before any config parse / build / persona work ──
 if (process.argv.includes('--stop')) {
   if (existsSync(PID_FILE)) {
-    const pid = parseInt(readFileSync(PID_FILE, 'utf8').split('\n')[0].trim(), 10);
-    if (isNaN(pid)) {
-      console.error('Invalid PID file. If a server is still running, kill it by port (see /sg-visual-review-stop).');
-      process.exit(1);
-    }
+    const pid = readServerPid();
     if (pidExists(pid)) {
       try { process.kill(pid); } catch { /* died in between */ }
       console.log(`Server stopped (PID ${pid}).`);
@@ -1529,8 +1537,8 @@ if (process.argv.includes('--serve')) {
   // Kill a previously started server, then wait (up to ~2s) for it to exit
   // so the port is free before we listen (B10/B16).
   if (existsSync(PID_FILE)) {
-    const oldPid = parseInt(readFileSync(PID_FILE, 'utf8').split('\n')[0].trim(), 10);
-    if (!isNaN(oldPid) && oldPid !== process.pid && pidExists(oldPid)) {
+    const oldPid = readServerPid();
+    if (oldPid !== process.pid && pidExists(oldPid)) {
       try { process.kill(oldPid); } catch { /* already dead */ }
       const deadline = Date.now() + 2000;
       while (Date.now() < deadline && pidExists(oldPid)) {
