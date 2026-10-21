@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.18.0 — 2026-10-21
+
+Changes since [2.17.0](https://github.com/bacoco/ShipGuard/releases/tag/v2.17.0),
+covering main through `3d647c56b43498ff82e587d233af2d8012182f98`.
+This minor version adds an explicit Codex report-only dispatch contract alongside review fixes.
+
+### Added
+
+- Define Codex report-only dispatch for `sg-code-audit`: host capability/permission preflight, inherited authorized model, assigned linked worktrees, native completion tracking and collection of original retained JSON; preserve Claude dispatch and canonical JSON/TOON contracts (#141, PR #147).
+
+### Fixed
+
+- Review server: reject invalid PID text before any signal in stop/replacement paths; require a strictly positive safe decimal integer while preserving the PID/port format (#143, PR #145).
+- Review YAML: preserve quoted strings, including leading zeros, spaces and `#`; explicitly reject unsupported blocks, tags, anchors, aliases, multiline quoted strings and escapes with file/line diagnostics before writing the report (#144, PR #146).
+
+### Validation limits
+
+- Codex `--fix` is explicitly refused; report-only dispatch and inherited-model policy are the supported contract. Native Codex acceptance testing remains to be performed after installation; repository smoke tests do not prove native host execution (#141, PR #147).
+- The review parser remains a dependency-free YAML subset; unsupported forms are rejected rather than interpreted. Numeric PID validation does not establish process identity if a valid PID has been reused (#144, PR #146; #143, PR #145).
+
+### Distribution
+
+- Claude Code and Codex plugin manifests identify this content as 2.18.0; both marketplace catalogs continue to resolve `./plugins/shipguard` without separate version fields. This preparation does not install/update plugins, change hook trust or reload sessions (#148).
+
 ## 2.17.0 — 2026-10-21
 
 Changes since [2.16.1](https://github.com/bacoco/ShipGuard/releases/tag/v2.16.1),
