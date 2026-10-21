@@ -106,6 +106,7 @@ If `requires_auth: true`, execute `_shared/login.yaml` steps.
 For each step in the manifest's `steps:` array, run the corresponding action. **For action semantics, variable interpolation, include resolution, screenshot validation rules, and hybrid `llm-*` actions:** see [references/action-reference.md](references/action-reference.md).
 
 Honor an explicit `selector:` as CSS rather than human text; a `press` step may name a `target:` or `selector:` to focus before sending its key. Details and precedence are in the action reference.
+Execute `back` and `forward` with the browser's native history commands in the same session; never substitute an `open` of a POST response URL.
 
 **Screenshot validation is MANDATORY — never skip.** Every screenshot must be read via the Read tool and visually inspected for errors before proceeding. A screenshot showing an error = test FAIL, regardless of other assertions. See action-reference.md for the full rule.
 

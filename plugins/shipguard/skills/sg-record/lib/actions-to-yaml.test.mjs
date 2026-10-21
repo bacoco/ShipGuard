@@ -65,6 +65,13 @@ describe('actionsToYaml', () => {
     assert.ok(urlLine.includes('url: "{base_url}/start"'));
   });
 
+  test('preserves Back and Forward as history actions without GET URLs', () => {
+    const yaml = actionsToYaml([{type:'back',url:'http://local/post-response'}, {type:'forward'}], {name:'history',baseUrl:'http://local'});
+    assert.deepEqual(yaml.split('\n').filter(line => line.includes('- action:')).map(line => line.trim()),
+      ['- action: back', '- action: forward', '- action: screenshot']);
+    assert.ok(!yaml.includes('post-response'));
+  });
+
   test('converts click action with text target', () => {
     const actions = [
       { type: 'open', url: 'http://localhost:6969/login' },

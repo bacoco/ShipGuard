@@ -43,7 +43,7 @@ page.goto=async()=>{page.emit('framenavigated',frame);page.emit('load');
  context.emit('page',popup);popup.emit('domcontentloaded');
 };
 context.exposeFunction=async(name,fn)=>{bridge=fn};context.newPage=async()=>page;
-context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const path=new URL(current).pathname;return {currentIndex:0,entries:[{id:['/start','/paused','/manual','/one','/two'].indexOf(path),url:current,transitionType:['/one','/two'].includes(path)?'link':'typed'}]}},detach:async()=>{}}};
+context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const paths=['/start','/paused','/manual','/one','/two'];return {currentIndex:paths.indexOf(new URL(current).pathname),entries:paths.map((path,id)=>({id,url:'http://local'+path,transitionType:['/one','/two'].includes(path)?'link':'typed'}))}},detach:async()=>{}}};
 context.storageState=async()=>({cookies:[],origins:[]});
 export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async()=>context,close:async()=>{}}}};
 `);
@@ -57,7 +57,8 @@ check('r1-z03-006 host reinjection carries pause',()=>assert.ok(states.some(s=>s
 check('r1-z03-007 manual document navigation becomes open',()=>assert.ok(yaml.includes('url: "http://local/manual"')));
 check('r1-z03-006 paused navigation is excluded',()=>assert.ok(!yaml.includes('/paused')));
 check('CE-02 host tracks link entry IDs and records the manual return',()=>{
- assert.equal(yaml.match(/url: "http:\/\/local\/one"/g)?.length,1);
+ assert.equal(yaml.match(/action: back/g)?.length,1);
+ assert.ok(!yaml.includes('url: "http://local/one"'));
  assert.ok(!yaml.includes('url: "http://local/two"'));
 });
 let result='';let status=0;try{result=execFileSync(process.execPath,[join(root,'sg-record.mjs'),'http://local/start','--name=missing','--storage='+join(root,'missing.json')],{cwd:root,timeout:10000,encoding:'utf8',stdio:'pipe'})}catch(e){status=e.status;result=(e.stdout||'')+(e.stderr||'')}

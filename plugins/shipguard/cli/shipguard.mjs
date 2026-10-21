@@ -809,7 +809,7 @@ async function cmdCrawl(args) {
   return result.broken.length ? EXIT.FINDINGS : EXIT.CLEAN;
 }
 // ── Manifest loading + mechanical execution ──────────────────────────────────
-export const MECHANICAL_ACTIONS = ['open', 'click', 'fill', 'press', 'wait', 'assert_url', 'assert_text', 'screenshot', 'select', 'upload'];
+export const MECHANICAL_ACTIONS = ['open', 'back', 'forward', 'click', 'fill', 'press', 'wait', 'assert_url', 'assert_text', 'screenshot', 'select', 'upload'];
 
 // Actions the declared grammar defines but this deterministic layer does not
 // execute — the agent lane (/sg-visual-run) owns them. Listed so a manifest
@@ -916,6 +916,11 @@ async function runStep(step, ctx) {
       const r = runBrowser(['open', interpolate(step.url, ctx)]);
       if (!r.ok) return { ok: false, kind: 'tool', reason: `open failed: ${r.stderr || r.stdout}`.trim() };
       return { ok: true };
+    }
+    case 'back':
+    case 'forward': {
+      const r = runBrowser([action]);
+      return r.ok ? { ok: true } : { ok: false, kind: 'tool', reason: `${action} failed: ${r.stderr || r.stdout}`.trim() };
     }
     case 'click':
     case 'fill':

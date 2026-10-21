@@ -375,6 +375,7 @@ fs.appendFileSync(${JSON.stringify(auditLog)}, JSON.stringify({args:a, session:p
 if (a[0] === 'get' && a[1] === 'url') console.log('http://example.test/login?next=/dashboard');
 if (a[0] === 'snapshot') console.log(a.includes('-i') ? '- button "Unrelated" [ref=e3]' : '- region "Main" [ref=e1]\\n  - text: empty\\n- region "Other" [ref=e2]\\n  - text: Success');
 if (a[0] === 'get' && a[1] === 'text') console.log(['@e1', '#empty'].includes(a[2]) ? 'empty' : 'Success');
+if (process.env.SG_AUDIT_HISTORY_FAIL && ['back','forward'].includes(a[0])) { console.error('history failed'); process.exit(7); }
 if (a[0] === 'screenshot') {
   if (process.env.SG_AUDIT_SHOT_FAIL) process.exit(7);
   fs.writeFileSync(a[1], 'PNGFAKE');
@@ -389,6 +390,19 @@ const auditExec = (id, steps, extra = {}, checks = []) => executeManifest(
   { baseUrl: 'http://example.test', config: {}, checks, screenshotsDir: auditShotDir, projectRoot: auditDir });
 process.env.SHIPGUARD_AGENT_BROWSER = auditBin;
 try {
+  wf(auditLog, '');
+  const history = await auditExec('pages/history', [{action:'back'}, {action:'forward'}]);
+  const historyCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).map(c => c.args)
+    .filter(args => ['back','forward','open'].includes(args[0]));
+  assert(history.status === 'PASS' && deepEq(historyCalls, [['back'], ['forward']]),
+    'history: Back and Forward dispatch native commands without open');
+  process.env.SG_AUDIT_HISTORY_FAIL = '1';
+  try {
+    for (const action of ['back','forward']) {
+      const failed = await auditExec('pages/history-error', [{action}]);
+      assert(failed.status === 'ERROR' && failed.failure_reason.includes('history failed'), `history: ${action} tool failure cannot pass`);
+    }
+  } finally { delete process.env.SG_AUDIT_HISTORY_FAIL; }
   const query = await auditExec('pages/query', [{ action: 'assert_url', expected: '/dashboard' }]);
   assert(query.status === 'FAIL', 'r1-z01-004: a query redirect target cannot satisfy the current pathname');
   const region = await auditExec('pages/region', [{ action: 'assert_text', target: 'Main', expected: 'Success' }]);

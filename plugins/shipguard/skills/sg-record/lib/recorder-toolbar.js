@@ -140,6 +140,9 @@
   /* ── Step detail text ──────────────────────────────────────── */
   function stepDetail(step) {
     switch (step.type) {
+      case 'back':
+      case 'forward':
+        return '';
       case 'open':
         return step.url || '';
       case 'click':

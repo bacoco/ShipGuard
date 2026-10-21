@@ -122,6 +122,12 @@ export function actionsToYaml(actions, opts) {
         break;
       }
 
+      case 'back':
+      case 'forward':
+        lines.push(`  - action: ${action.type}`);
+        lastWasCheck = false;
+        break;
+
       case 'click': {
         const target = action.text || '';
         lines.push(`  - action: click`);

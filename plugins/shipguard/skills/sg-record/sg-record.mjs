@@ -412,12 +412,19 @@ async function main() {
       await targetPage.addScriptTag({ content: toolbarJS });
     }
 
-    function recordNavigation(navigationUrl, transitionType, entryId, seenEntries) {
+    function recordNavigation(navigationUrl, transitionType, entryId, seenEntries, historyDelta = 0) {
       // A history entry keeps its original transition type on Back/Forward.
       // Remember even suppressed/paused visits, separately for each page.
       const revisited = seenEntries.has(entryId);
       seenEntries.add(entryId);
       if (paused || stopped || !navigationUrl || navigationUrl === 'about:blank') return;
+      if (revisited && historyDelta !== 0) {
+        // Traverse browser history instead of reopening a cached POST as GET.
+        for (let i = 0; i < Math.abs(historyDelta); i++) {
+          recordStep({ type: historyDelta < 0 ? 'back' : 'forward' });
+        }
+        return;
+      }
       // Only a new link/form entry can belong to the recorded action. Reopening
       // that POST response would turn it into a different GET request.
       const last = allSteps[allSteps.length - 1];
@@ -427,15 +434,18 @@ async function main() {
     }
 
     function queueNavigation(targetPage) {
-      if (!navigationEntries.has(targetPage)) navigationEntries.set(targetPage, new Set());
-      const seenEntries = navigationEntries.get(targetPage);
+      if (!navigationEntries.has(targetPage)) navigationEntries.set(targetPage, { seen: new Set(), currentId: null });
+      const navigationState = navigationEntries.get(targetPage);
       const task = (async () => {
         const cdp = await context.newCDPSession(targetPage);
         try {
           const history = await cdp.send('Page.getNavigationHistory');
           const entry = history.entries[history.currentIndex];
           if (!entry) throw new Error('Navigation history is unavailable');
-          recordNavigation(entry.url, entry.transitionType, entry.id, seenEntries);
+          const previousIndex = history.entries.findIndex(item => item.id === navigationState.currentId);
+          const historyDelta = previousIndex < 0 ? 0 : history.currentIndex - previousIndex;
+          navigationState.currentId = entry.id;
+          recordNavigation(entry.url, entry.transitionType, entry.id, navigationState.seen, historyDelta);
         } finally { await cdp.detach(); }
       })().catch(error => {
         // Popups that close before injection remain best effort, as before.

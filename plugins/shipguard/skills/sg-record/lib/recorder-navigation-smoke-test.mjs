@@ -19,6 +19,8 @@ const session = `sg-record-navigation-${process.pid}`;
 const source = readFileSync(join(here, '../sg-record.mjs'), 'utf8');
 const callback = source.match(/function recordNavigation\([^)]*\) \{[\s\S]*?\n    \}/)?.[0];
 assert.ok(callback, 'actual host navigation callback is present');
+const queue = source.match(/function queueNavigation\([^)]*\) \{[\s\S]*?\n    \}/)?.[0];
+assert.ok(queue, 'actual host navigation queue is present');
 const toolbar = readFileSync(join(here, 'recorder-toolbar.js'), 'utf8')
   .replace("'__CSS_PLACEHOLDER__'", JSON.stringify(readFileSync(join(here, 'recorder-toolbar.css'), 'utf8')));
 const calls = [], events = [];
@@ -31,7 +33,8 @@ const server = createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   if (req.url === '/reserve') {
     res.statusCode = req.method === 'POST' ? 200 : 405;
-    res.end(req.method === 'POST' ? '<h1 id="confirmation">Reserved</h1>' : '<h1>GET is not a reservation</h1>');
+    res.setHeader('Cache-Control', 'max-age=3600');
+    res.end(req.method === 'POST' ? '<h1 id="confirmation">Reserved</h1><a id="next" href="/two">Next</a>' : '<h1>GET is not a reservation</h1>');
   } else if (req.url === '/manual' || req.url === '/linked') {
     res.end('<h1>Destination</h1>');
   } else if (req.url === '/one') {
@@ -66,14 +69,21 @@ const historyEntry = async () => {
   return history.entries[history.currentIndex];
 };
 function hostFor(steps) {
-  const host = vm.createContext({ console: { log() {} }, stopped: false, paused: false, allSteps: [] });
+  const host = vm.createContext({ console, stopped: false, paused: false, allSteps: [], navigationTasks: new Map(), navigationEntries: new WeakMap(), navigationError: null });
+  host.page = { isClosed: () => false };
+  host.context = { newCDPSession: async () => ({ send: async () => host.history, detach: async () => {} }) };
   vm.runInContext(source.slice(source.indexOf('function normalizeUrl'), source.indexOf('function stepDetail'))
-    + '\nfunction stepDetail(){return "";}\n' + callback + '\nglobalThis.api={recordStep,recordNavigation};', host);
+    + '\nfunction stepDetail(){return "";}\n' + callback + '\n' + queue + '\nglobalThis.api={recordStep,queueNavigation};', host);
   for (const step of steps) host.api.recordStep(step);
-  host.seenEntries = new Set();
   return host;
 }
-const observe = (host, entry) => host.api.recordNavigation(entry.url, entry.transitionType, entry.id, host.seenEntries);
+async function observe(host) {
+  host.history = await cdp('Page.getNavigationHistory', {}, pageSession);
+  host.api.queueNavigation(host.page);
+  await host.navigationTasks.get(host.page);
+  if (host.navigationError) throw host.navigationError;
+  return host.history.entries[host.history.currentIndex];
+}
 let failures = 0;
 const checks = [];
 function check(label, fn) {
@@ -98,7 +108,7 @@ try {
   const entry = await historyEntry();
   const captured = events.filter(event => event.type === 'step').map(event => event.step);
   const host = hostFor([{ type: 'open', url }, ...captured]);
-  observe(host, entry);
+  await observe(host);
   const steps = Array.from(host.allSteps);
   check('POST capture reaches the confirmation', () => assert.equal(entry.transitionType, 'form_submit'));
   check('POST response does not become another open', () => assert.deepEqual(steps.map(s => s.type), ['open', 'click']));
@@ -110,7 +120,7 @@ try {
   writeFileSync(join(tests, 'build-review.mjs'), 'process.exit(0);\n');
   calls.length = 0;
   let exit = 0, output = '';
-  try { const run = await exec(process.execPath, [resolve(here, '../../../cli/shipguard.mjs'), 'run', '--profile=test', '--no-crawl'], { cwd: root, timeout: 30000 }); output = run.stdout + run.stderr; }
+  try { const run = await exec(process.execPath, [resolve(here, '../../../cli/shipguard.mjs'), 'run', '--profile=test', '--no-crawl'], { cwd: root, timeout: 90000 }); output = run.stdout + run.stderr; }
   catch (error) { exit = error.code; output = (error.stdout || '') + (error.stderr || ''); }
   writeFileSync(join(root, 'replay.log'), output);
   const replayCalls = [...calls];
@@ -123,47 +133,90 @@ try {
   await ab('open', url + '/manual');
   const manualEntry = await historyEntry();
   const manualHost = hostFor([{ type: 'open', url }, { type: 'click', text: 'Stay here' }]);
-  observe(manualHost, manualEntry);
+  await observe(manualHost);
   check('manual address navigation after an unrelated click remains open', () => assert.equal(manualHost.allSteps.at(-1).url, url + '/manual'));
   await ab('open', url);
   await ab('click', '#link'); await ab('wait', '--url', '**/linked');
   const linkEntry = await historyEntry();
   const linkHost = hostFor([{ type: 'open', url }, { type: 'click', text: 'Follow link' }]);
-  observe(linkHost, linkEntry);
+  await observe(linkHost);
   check('recorded link navigation does not become another open', () => assert.deepEqual(Array.from(linkHost.allSteps, s => s.type), ['open', 'click']));
 
   // Same real route as Astra's CE-02 witness; feed every visited entry to the
   // actual host callback, including destinations suppressed after link clicks.
   await ab('open', url);
   const historyHost = hostFor([{ type: 'open', url }]);
-  observe(historyHost, await historyEntry());
+  await observe(historyHost);
   await ab('click', '#first'); await ab('wait', '--url', '**/one');
   historyHost.api.recordStep({ type: 'click', text: 'First' });
-  const oneEntry = await historyEntry(); observe(historyHost, oneEntry);
+  const oneEntry = await observe(historyHost);
   await ab('click', '#next'); await ab('wait', '--url', '**/two');
   historyHost.api.recordStep({ type: 'click', text: 'Next' });
-  const twoEntry = await historyEntry(); observe(historyHost, twoEntry);
+  const twoEntry = await observe(historyHost);
   await ab('click', '#idle'); historyHost.api.recordStep({ type: 'click', text: 'Idle' });
   pageEvents.length = 0;
   await ab('back'); await ab('wait', '--url', '**/one');
   const backEntry = await historyEntry(), backEvents = [...pageEvents];
-  observe(historyHost, backEntry);
+  await observe(historyHost);
   const backSteps = Array.from(historyHost.allSteps);
   await ab('screenshot', join(root, 'manual-back.png'));
-  check('CE-02 manual back to a visited link entry remains open', () => {
+  check('CE-02 manual back to a visited link entry is preserved', () => {
     assert.equal(backEntry.id, oneEntry.id); assert.equal(backEntry.transitionType, 'link');
     assert.ok(backEvents.includes('Page.domContentEventFired'));
-    assert.equal(backSteps.at(-1).type, 'open'); assert.equal(backSteps.at(-1).url, url + '/one');
+    assert.equal(backSteps.at(-1).type, 'back'); assert.equal(backEntry.url, url + '/one');
   });
   await ab('click', '#idle'); historyHost.api.recordStep({ type: 'click', text: 'Idle' });
   await ab('forward'); await ab('wait', '--url', '**/two');
-  const forwardEntry = await historyEntry(); observe(historyHost, forwardEntry);
+  const forwardEntry = await observe(historyHost);
   const forwardSteps = Array.from(historyHost.allSteps);
-  check('CE-02 manual forward to a visited link entry remains open', () => {
+  check('CE-02 manual forward to a visited link entry is preserved', () => {
     assert.equal(forwardEntry.id, twoEntry.id); assert.equal(forwardEntry.transitionType, 'link');
-    assert.equal(forwardSteps.at(-1).type, 'open'); assert.equal(forwardSteps.at(-1).url, url + '/two');
+    assert.equal(forwardSteps.at(-1).type, 'forward'); assert.equal(forwardEntry.url, url + '/two');
   });
-  writeFileSync(join(root, 'evidence.json'), JSON.stringify({ checks, entry, captured, hostSteps: steps, manifest, replayCalls, result, manualEntry, linkEntry, history: { oneEntry, twoEntry, backEntry, backEvents, backSteps, forwardEntry, forwardSteps } }, null, 2));
+
+  // Actual POST -> link -> Idle -> Back -> Forward -> Back. The browser can
+  // restore its cached POST response; replay must use history, never GET it.
+  await ab('open', url);
+  const postHost = hostFor([{ type: 'open', url }]); await observe(postHost);
+  const inject = async () => {
+    events.length = 0;
+    await evaluate(`sessionStorage.clear();window.__sgRecorderState=${JSON.stringify({steps:Array.from(postHost.allSteps),paused:false,startTime:Date.now()})};window.__sgBridge=s=>navigator.sendBeacon('/event',s);${toolbar}`);
+  };
+  const collect = () => { for (const event of events.splice(0)) if (event.type === 'step') postHost.api.recordStep(event.step); };
+  await inject(); await ab('click', '#reserve'); await ab('wait', '#confirmation'); collect();
+  const postEntry = await observe(postHost);
+  await inject(); await ab('click', '#next'); await ab('wait', '--url', '**/two'); collect(); await observe(postHost);
+  await inject(); await ab('click', '#idle'); collect();
+  await ab('back'); await ab('wait', '#confirmation'); const postBackEntry = await observe(postHost);
+  await ab('forward'); await ab('wait', '--url', '**/two'); await observe(postHost);
+  await ab('back'); await ab('wait', '#confirmation'); await observe(postHost);
+  const postSteps = Array.from(postHost.allSteps);
+  check('POST history records Back/Forward without opening the response URL', () => {
+    assert.equal(postBackEntry.id, postEntry.id); assert.equal(postBackEntry.transitionType, 'form_submit');
+    assert.deepEqual(postSteps.map(s => s.type), ['open','click','click','click','back','forward','back']);
+  });
+  const historyManifest = actionsToYaml(postSteps, {name:'post-history',baseUrl:url});
+  // This history witness declares settling waits after the two document-changing
+  // clicks, plus a destination assertion. Keep the converted history actions
+  // untouched; the separate CE-01 witness above still replays raw recorder YAML.
+  const historyReplayManifest = historyManifest
+    .replace(/(    target: "(?:Reserve|Next)"\n)/g, '$1  - action: wait\n    duration: 500ms\n')
+    .replace('  - action: screenshot', '  - action: assert_text\n    expected: "Reserved"\n  - action: screenshot');
+  writeFileSync(join(root, 'post-history-recorded.yaml'), historyManifest);
+  writeFileSync(manifestPath, historyReplayManifest);
+  calls.length = 0;
+  let historyExit = 0, historyOutput = '';
+  try { const run = await exec(process.execPath, [resolve(here, '../../../cli/shipguard.mjs'), 'run', '--profile=test', '--no-crawl'], { cwd: root, timeout: 90000 }); historyOutput = run.stdout + run.stderr; }
+  catch (error) { historyExit = error.code; historyOutput = (error.stdout || '') + (error.stderr || ''); }
+  writeFileSync(join(root, 'history-replay.log'), historyOutput);
+  const historyCalls = [...calls];
+  const historyResult = JSON.parse(readFileSync(join(tests, '_results/visual-results.json'), 'utf8')).tests[0];
+  check('POST history replays to Reserved with one POST and zero GET of the response', () => {
+    assert.equal(historyExit, 0); assert.equal(historyResult.status, 'PASS');
+    assert.equal(readFileSync(manifestPath, 'utf8'), historyReplayManifest);
+    assert.deepEqual(historyCalls.filter(c => c.path === '/reserve'), [{method:'POST',path:'/reserve'}]);
+  });
+  writeFileSync(join(root, 'evidence.json'), JSON.stringify({ checks, entry, captured, hostSteps: steps, manifest, replayCalls, result, manualEntry, linkEntry, history: { oneEntry, twoEntry, backEntry, backEvents, backSteps, forwardEntry, forwardSteps }, postHistory: {postEntry,postBackEntry,steps:postSteps,manifest:historyManifest,replayManifest:historyReplayManifest,calls:historyCalls,result:historyResult} }, null, 2));
 } finally {
   socket?.close();
   try { await ab('close'); } finally { server.closeAllConnections(); await new Promise(done => server.close(done)); }

@@ -9,7 +9,7 @@ Detailed reference for each `action:` type in manifest steps. SKILL.md covers th
 | [Top-level manifest fields](#top-level-manifest-fields) | Writing or reading a manifest header (`timeout`, `priority`, `tags`, `data`, …) |
 | [Variable interpolation](#variable-interpolation) | Writing a manifest with `{base_url}`, `{credentials.*}`, `{data.*}` |
 | [Include resolution](#include-resolution) | Manifest uses `action: include` |
-| [Mechanical actions](#mechanical-actions) | open / click / fill / press / upload / select / wait / assert_* / screenshot |
+| [Mechanical actions](#mechanical-actions) | open / back / forward / click / fill / press / upload / select / wait / assert_* / screenshot |
 | [Screenshot validation](#screenshot-validation-mandatory) | Every screenshot MUST be validated — read this before skipping |
 | [Hybrid actions (llm-*)](#hybrid-actions) | llm-wait, llm-check semantics |
 | [llm-check reliability](#llm-check-reliability) | What llm-check can and cannot assert |
@@ -76,6 +76,23 @@ agent-browser wait --load networkidle
 ```
 
 After every `open`, run session expiry detection (see SKILL.md Execution Strategy).
+
+### `back` / `forward` (Retour / Avance)
+
+Traverse one entry in the current tab's browser history. These actions take no URL or target:
+
+```yaml
+steps:
+  - action: back
+  - action: forward
+```
+
+```bash
+agent-browser back
+agent-browser forward
+```
+
+Keep the same browser session and use the native history command. Do not replace it with `open`: reopening a POST response URL issues a different GET request. The earlier steps must establish the history to traverse. A browser-command failure is `ERROR`; do not fall back to opening the destination. The CLI applies the manifest's remaining timeout to each command. Browser cache and form-resubmission policies still apply; these actions do not fabricate or resend form data themselves.
 
 ### `click`
 
