@@ -10,7 +10,7 @@ dependencies:
   tools:
     - type: "shell"
       value: "agent-browser"
-      description: "Drive browser steps and capture screenshots."
+      description: "Drive browser steps and capture screenshots; honor explicit CSS selector scopes and focus optional press targets as described in references/action-reference.md."
     - type: "shell"
       value: "git"
       description: "Scope visual tests to changed routes when requested."

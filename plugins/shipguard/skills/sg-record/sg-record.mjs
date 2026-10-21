@@ -93,6 +93,8 @@ try {
 
 let allSteps = [];
 let stopped = false;
+let paused = false;
+const startTime = Date.now();
 let toolbarJS = null;
 let browser = null;
 let manifestSaved = false;
@@ -225,9 +227,11 @@ function handleBridgeEvent(event) {
       break;
     }
     case 'pause':
+      paused = true;
       console.log('  ⏸ paused');
       break;
     case 'resume':
+      paused = false;
       console.log('  ▶ resumed');
       break;
     case 'stop': {
@@ -320,8 +324,8 @@ function askQuestion(prompt) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.on('close', () => resolve('')); // handles SIGINT / stream end
     rl.question(prompt, (answer) => {
-      rl.close();
       resolve(answer.trim());
+      rl.close();
     });
   });
 }
@@ -349,6 +353,10 @@ async function main() {
   if (storageArg) console.log(`  Auth:    ${storageArg}`);
   if (saveStorageArg) console.log(`  Save:    ${saveStorageArg}`);
   console.log('');
+
+  if (storageArg && !existsSync(storageArg)) {
+    throw new Error(`Session storage file not found: ${storageArg}`);
+  }
 
   // Dynamically import Playwright (may be installed globally via npx)
   let chromium;
@@ -391,6 +399,20 @@ async function main() {
 
     const page = await context.newPage();
 
+    // Each fresh document receives the canonical list and pause state, including
+    // the initial open and steps captured on other origins.
+    async function injectPage(targetPage) {
+      await targetPage.evaluate(state => { window.__sgRecorderState = state; }, {
+        steps: allSteps, paused, startTime,
+      });
+      await targetPage.addScriptTag({ content: toolbarJS });
+    }
+
+    function recordNavigation(navigationUrl) {
+      if (paused || stopped || !navigationUrl || navigationUrl === 'about:blank') return;
+      recordStep({ type: 'open', url: navigationUrl });
+    }
+
     // New tabs / popups: inject the toolbar bridge into them too (best
     // effort). The bridge binding is context-wide, so recorded steps flow
     // back to Node. Limitation: a popup that closes before injection
@@ -399,9 +421,10 @@ async function main() {
     context.on('page', (newPage) => {
       const injectIntoPopup = async () => {
         try {
-          await newPage.addScriptTag({ content: toolbarJS });
+          await injectPage(newPage);
         } catch (_) { /* popup closed or navigation raced the injection */ }
       };
+      newPage.on('domcontentloaded', () => recordNavigation(newPage.url()));
       newPage.on('load', injectIntoPopup);
       newPage.on('framenavigated', (frame) => {
         if (frame === newPage.mainFrame()) {
@@ -414,11 +437,16 @@ async function main() {
     // Inject toolbar after page load (not addInitScript which gets overwritten by DOM parser)
     async function injectToolbar() {
       try {
-        await page.addScriptTag({ content: toolbarJS });
+        await injectPage(page);
       } catch (_) { /* page may have been closed */ }
     }
 
-    // Re-inject on every navigation (SPA and MPA)
+    // Full documents record their destination before toolbar injection.
+    // Same-document SPA transitions are observed by the existing toolbar.
+    page.on('domcontentloaded', () => {
+      const frame = page.mainFrame();
+      recordNavigation(frame.url());
+    });
     page.on('load', () => injectToolbar());
 
     // Log frame navigations
@@ -428,11 +456,9 @@ async function main() {
       }
     });
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Record the initial open so every manifest starts at the real start URL.
-    // recordStep dedups the toolbar's echo of the same navigation.
+    // Establish the same initial list before either injection path can run.
     recordStep({ type: 'open', url });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
     await injectToolbar();
 

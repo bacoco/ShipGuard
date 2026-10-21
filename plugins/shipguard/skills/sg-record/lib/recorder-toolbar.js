@@ -27,6 +27,7 @@
   var startTime = Date.now();
   var timerInterval = null;
   var lastUrl = location.href;
+  var enterSubmission = null;
 
   // Restore from sessionStorage (SPA persistence)
   try {
@@ -34,12 +35,22 @@
     if (saved) steps = JSON.parse(saved);
     var savedTime = sessionStorage.getItem('__sgStartTime');
     if (savedTime) startTime = parseInt(savedTime, 10);
+    paused = sessionStorage.getItem('__sgPaused') === 'true';
   } catch (_) { /* ignore */ }
+
+  // Node owns the full list across documents and origins. Local storage is
+  // only a fallback when the toolbar is used without the recorder host.
+  if (window.__sgRecorderState) {
+    steps = window.__sgRecorderState.steps.slice();
+    paused = Boolean(window.__sgRecorderState.paused);
+    startTime = window.__sgRecorderState.startTime;
+  }
 
   function persistSteps() {
     try {
       sessionStorage.setItem('__sgSteps', JSON.stringify(steps));
       sessionStorage.setItem('__sgStartTime', String(startTime));
+      sessionStorage.setItem('__sgPaused', String(paused));
     } catch (_) { /* ignore */ }
   }
 
@@ -199,14 +210,19 @@
   }
 
   /* ── Toolbar controls ──────────────────────────────────────── */
-  function togglePause() {
-    paused = !paused;
+  function renderPause() {
     pauseBtn.textContent = paused ? '\u25B6' : '\u23F8';
     if (paused) {
       recDot.classList.add('paused');
     } else {
       recDot.classList.remove('paused');
     }
+  }
+
+  function togglePause() {
+    paused = !paused;
+    renderPause();
+    persistSteps();
     bridge({ type: paused ? 'pause' : 'resume' });
   }
 
@@ -272,7 +288,13 @@
       var tagName = target.tagName.toLowerCase();
       var selector = cssSelector(target);
 
-      addStep({ type: 'check', text: text, elementTag: tagName, selector: selector });
+      if (!text) {
+        titleEl.textContent = 'Check needs text';
+        titleEl.setAttribute('title', 'Choose an element containing visible text.');
+      } else {
+        titleEl.textContent = 'SG Record';
+        addStep({ type: 'check', text: text, elementTag: tagName, selector: selector });
+      }
 
       // Exit check mode
       checkMode = false;
@@ -410,9 +432,16 @@
 
     // Skip input/textarea/select — fill/change handlers cover those
     var tag = el.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    // Enter already records the implicit form submission as a key press.
+    // Browsers may also dispatch a zero-detail click on the default submitter.
+    if (e.detail === 0 && el.type === 'submit' && el.form === enterSubmission && enterSubmission) return;
+    if (tag === 'input' && el.type !== 'submit') return;
+    if (tag === 'textarea' || tag === 'select') return;
+    // A label dispatches its own click plus a click/change on its checkbox.
+    // Capture the state change once rather than replaying two toggles.
+    if (tag === 'label' && el.control && /^(checkbox|radio)$/.test(el.control.type)) return;
 
-    var text = (el.textContent || '').trim().slice(0, 80);
+    var text = (tag === 'input' ? (findLabel(el) || el.value) : (el.textContent || '')).trim().slice(0, 80);
 
     var step = {
       type: 'click',
@@ -451,6 +480,7 @@
     var el = e.target;
     var tag = el.tagName.toLowerCase();
     if (tag !== 'input' && tag !== 'textarea') return;
+    if (tag === 'input' && /^(checkbox|radio|file|submit|button|reset|image|hidden)$/.test(el.type)) return;
 
     // Reset the debounce for this element
     var prev = pendingFills.get(el);
@@ -470,9 +500,11 @@
     var tag = e.target.tagName ? e.target.tagName.toLowerCase() : '';
     // Enter in a textarea inserts a newline — only record single-line fields
     if (tag !== 'input' && tag !== 'select') return;
+    enterSubmission = e.target.form || null;
+    setTimeout(function () { enterSubmission = null; }, 0);
     // Commit this field's pending fill BEFORE the key press
     commitFill(e.target);
-    addStep({ type: 'press', key: 'Enter' });
+    addStep({ type: 'press', key: 'Enter', text: findLabel(e.target) || '', selector: cssSelector(e.target) });
   }
   document.addEventListener('keydown', onDocumentKeydown, true);
 
@@ -497,7 +529,9 @@
     var el = e.target;
     var tag = el.tagName.toLowerCase();
 
-    if (tag === 'select') {
+    if (tag === 'input' && /^(checkbox|radio)$/.test(el.type)) {
+      addStep({ type: 'click', text: findLabel(el) || '', selector: cssSelector(el), tagName: 'input' });
+    } else if (tag === 'select') {
       var label = findLabel(el) || '';
       var selectedOption = el.options[el.selectedIndex];
       var optionText = selectedOption ? selectedOption.textContent.trim() : el.value;
@@ -529,21 +563,22 @@
   document.addEventListener('change', onFileChange, true);
 
   /* ── Navigation detection ──────────────────────────────────── */
-  function checkNavigation() {
+  function checkNavigation(observed) {
     if (location.href !== lastUrl) {
       var newUrl = location.href;
       lastUrl = newUrl;
-      addStep({ type: 'open', url: newUrl });
+      addStep({ type: 'open', url: newUrl, observed: observed === true });
     }
   }
 
   // MutationObserver on body for SPA route changes
-  var urlObserver = new MutationObserver(checkNavigation);
+  var urlObserver = new MutationObserver(function () { checkNavigation(true); });
   urlObserver.observe(document.body, { childList: true, subtree: true });
 
   // popstate for history navigation
   window.addEventListener('popstate', checkNavigation);
 
   /* ── Initial render ────────────────────────────────────────── */
+  renderPause();
   renderSteps();
 })();

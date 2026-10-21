@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Record"
   short_description: "Record browser actions as replayable test manifests."
-  default_prompt: "Record a ShipGuard browser scenario for this URL."
+  default_prompt: "Record a ShipGuard browser scenario for this URL. Preserve CSS selector fallback, field focus for Enter, and the chosen element scope for text checks; reject checks without text."
 
 policy:
   allow_implicit_invocation: false

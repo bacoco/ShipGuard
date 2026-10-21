@@ -63,6 +63,11 @@ For `action: include`:
 
 ## Mechanical actions
 
+For `click`, `fill`, `select`, `upload`, and `assert_text`, an optional `selector:`
+is an explicit CSS selector and takes precedence over the human-readable `target:`.
+Pass it directly to agent-browser instead of looking for that string in the
+accessibility tree. Without `selector:`, existing `target:` matching applies.
+
 ### `open`
 
 ```bash
@@ -89,6 +94,8 @@ After every `open`, run session expiry detection (see SKILL.md Execution Strateg
 
 Fields:
 - `key:` (required) — the key to press, with optional modifiers.
+- `target:` or `selector:` (optional) — focus this element before pressing the key;
+  `selector:` takes precedence. Without either, preserve the current focus.
 
 ```bash
 agent-browser press <key>
@@ -109,6 +116,7 @@ See `advanced-interactions.md` §5 for hidden input workarounds.
 
 Fields:
 - `target:` (required) — the select element (matched by label/name/testid in the snapshot).
+- `selector:` (optional) — explicit CSS selector; when present, `target:` is optional.
 - `value:` (required) — the option to select (option value or visible label).
 
 1. `agent-browser snapshot` → find select element matching `target`
@@ -143,6 +151,7 @@ Compare current page URL path against `expected`. Full URLs and path-only values
 
 Fields:
 - `target:` (optional) — scope: assert the text within the element/region matching `target` (same resolution as `click`/`fill`). Omitted → search the whole page.
+- `selector:` (optional) — explicit CSS scope, taking precedence over `target:`; search the whole page only when both are absent.
 - `expected:` (required) — text that must be present.
 - `screenshot:` (optional) — evidence filename captured after the assertion (validated per Screenshot Validation).
 
