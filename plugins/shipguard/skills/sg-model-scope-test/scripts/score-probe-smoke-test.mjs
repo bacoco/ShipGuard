@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,9 @@ import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const adapter = readFileSync(join(here, "../agents/openai.yaml"), "utf8");
+assert.match(adapter, /^policy:\s*\n  allow_implicit_invocation: false\s*$/m,
+  "Model scope probes require an explicit user request; implicit invocation must be disabled");
 const scorer = join(here, "score-probe.mjs");
 const root = mkdtempSync(join(tmpdir(), "sg-model-scope-test-"));
 
