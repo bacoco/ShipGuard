@@ -60,6 +60,7 @@ function yamlParse(text, source = 'YAML input') {
     // before any output is written, including inside steps or nested maps.
     if (/^[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:\s+#.*)?$/.test(value)) unsupported('block scalar');
     if (/^[&*]/.test(value)) unsupported('anchor or alias');
+    if (value.startsWith('!')) unsupported('tag');
     return { value, quoted: false };
   }
 

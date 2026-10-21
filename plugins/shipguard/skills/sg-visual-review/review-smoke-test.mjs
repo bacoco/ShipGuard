@@ -292,7 +292,7 @@ function checkYamlRegressions() {
       const source = readFileSync(SOURCE_BUILD, 'utf8');
       const context = {};
       runInNewContext(source.slice(source.indexOf('function yamlParse('), source.indexOf('const yaml =')), context);
-      for (const raw of ['0042', 'true', 'false', 'null', '~', '|', '>']) {
+      for (const raw of ['0042', 'true', 'false', 'null', '~', '|', '>', '!!str', '!local', '!<tag:example.com,2026:label>']) {
         const quoted = JSON.stringify(raw);
         const doc = context.yamlParse(`name: ${quoted}\ndata:\n  value: ${quoted}\nsteps:\n  - expected: ${quoted}\n    criteria: ${quoted}\n`);
         assert([doc.name, doc.data.value, doc.steps[0].expected, doc.steps[0].criteria].every(v => v === raw),
@@ -341,6 +341,20 @@ function checkYamlRegressions() {
     ].join('\n');
     const refused = [
       ['historical #12', historical],
+      ['tagged block (Astra)', [
+        'name: Tagged block', 'description: !!str |', '  First line', '  Second line',
+        'steps:', '  - action: llm-check', '    criteria: !!str |', '      The heading is visible', '',
+      ].join('\n')],
+      ['tagged quoted string (Astra)', 'name: !!str "0042"\n'],
+      ['tagged folded block', 'description: !!str >-\n  first\n  second\n'],
+      ['tagged array leading property', 'steps:\n  - criteria: !!str |\n      first\n'],
+      ['tagged array property', 'steps:\n  - action: llm-check\n    criteria: !!str |\n      first\n'],
+      ['tagged nested value', 'data:\n  value: !!int "0042"\n'],
+      ['tagged scalar list item', 'tags:\n  - !label demo\n'],
+      ['tagged inline list item', 'tags: [!!str "0042"]\n'],
+      ['local tag', 'name: !label "0042"\n'],
+      ['named tag handle', 'name: !custom!label "0042"\n'],
+      ['verbatim tag', 'name: !<tag:yaml.org,2002:str> "0042"\n'],
       ['folded block', 'description: >- # folded\n  first\n  second\n'],
       ['array leading block', 'steps:\n  - criteria: |+\n      first\n'],
       ['array property block', 'steps:\n  - action: llm-check\n    criteria: |\n      first\n'],
@@ -361,7 +375,7 @@ function checkYamlRegressions() {
         writeFileSync(manifestPath, yaml);
         const result = build();
         assert(result.status !== 0, 'unsupported YAML was accepted with exit 0');
-        assert(result.stderr.includes(manifestPath) && /unsupported YAML/i.test(result.stderr),
+        assert(result.stderr.includes(manifestPath) && /unsupported YAML/i.test(result.stderr) && /at line \d+/.test(result.stderr),
           `missing explicit file diagnostic: ${result.stderr}`);
         for (const path of paths) assert(existing ? readFileSync(path, 'utf8') === 'previous evidence' : !existsSync(path),
           'refused YAML changed generated output');
