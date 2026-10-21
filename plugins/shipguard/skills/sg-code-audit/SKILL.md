@@ -53,6 +53,41 @@ Infra files (`Dockerfile*`, `docker-compose*`, `*.yaml`, `*.yml`, `*.toml`, `Mak
 
 ---
 
+## Host preflight — before Phase 0
+
+Resolve the current host from its actually exposed tools and permissions before monitor setup,
+creating worktrees, or promising an executable audit. The Claude Code profile below is unchanged.
+On Codex, apply this preflight and the Codex dispatch section instead of Claude-only launch/model
+instructions, including those in the reference templates.
+
+- Parse mutation/model flags first. The default and `--report-only` are report-only. On Codex,
+  `--fix` must stop with `Codex --fix is not supported — report-only dispatch only; fix mode awaits native validation.`
+  Do not silently downgrade it. Conflicting flags still fail as specified in Phase 1.
+- Codex accepts only the default or `--model=auto`: inherit the already authorized Codex model
+  for audits, tracers, verification, and capacity probes. Record the effective model if observable;
+  otherwise record it as inherited/unknown, never invent a model name. Explicit Claude model
+  choices must stop with `Codex --model=sonnet/opus/haiku is not supported — use --model=auto to inherit the authorized Codex model.`
+  Do not translate opus/sonnet to an OpenAI model or use haiku. Claude's existing model choices
+  and quality policy remain unchanged.
+- Confirm delegation AND native completion tracking are available and authorized; Git/Node and
+  file tools can create/read the required result; and there is permission to create or use a linked worktree
+  at `base_sha` per attempt. An available tool alone is not authorization. If the orchestrator
+  supplies worktrees, verify their allocation and retention before use. Do not require Claude's
+  `isolation` parameter or a branch for Codex report-only.
+- A linked worktree separates files and the Git index, not the permissions of children sharing
+  the parent's access. If policy requires per-child system confinement that the available executor
+  cannot provide, stop explicitly; a prompt requiring read-only source access is not that boundary.
+- If a required capability/permission is missing, launch no agent or worktree, report the missing
+  capability and `Audit incomplete — host dispatch unavailable; no new canonical report.` When
+  result writes are authorized, allocate only the Phase 1 run record with
+  `status: "incomplete_artifact_transport"`, `entries: []`, `accepted_artifacts: []` and the
+  capability failure reason. Otherwise report that the incomplete record could not be persisted.
+  Leave the previous canonical JSON/TOON unchanged and identify it as historical if present.
+  Stop before monitor/setup, verification, or aggregation. Incompatible flags similarly stop
+  before setup; they do not start a run.
+
+---
+
 ## Phase 0 — Monitor Setup
 
 Detect or start the review server for real-time audit monitoring. Optional — if the user declines or the server can't start, the audit proceeds normally.
@@ -76,7 +111,8 @@ Parse the user's input into working values: **mode**, **focus**, **fix_mode**, *
    that default; only `--fix` sets `fix_mode = true`. If both flags are present, print
    `Cannot use --fix and --report-only together.` and stop before creating agents or worktrees.
    Also check for `--monitor` — it forces the Phase 0 monitor on without asking.
-4. Check for `--model=<model>`. Values: `sonnet`, `opus`, `auto`. Default: `auto`.
+4. Check for `--model=<model>`. On Codex use the host preflight's inherited-model policy.
+   The following profile applies to Claude Code. Values: `sonnet`, `opus`, `auto`. Default: `auto`.
    - `auto` (default): the balanced profile — audit agents run on the strongest available model (opus) in every round, and verification agents (Phase 5.7) run on a fast verification model (sonnet).
    - `sonnet`: audit agents use sonnet (fallback when the opus weekly quota is saturated).
    - `opus`: audit agents use opus — the explicit spelling of the `auto` audit profile.
@@ -297,7 +333,7 @@ intent-to-add in the agent's own index, including when `visual-tests/` is ignore
 artifact content and creates no commit. Never run it in the parent checkout or replace it with a
 source edit, a change to ignore rules, or a dummy marker. No further commits may follow retention.
 
-### Dispatch
+### Claude Code dispatch
 
 For each zone, dispatch an agent:
 
@@ -307,19 +343,60 @@ For each zone, dispatch an agent:
 - **model:** per the `--model` flag (Phase 1 step 4): `auto`/`opus` → the strongest available model (opus) for all audit rounds; `sonnet` → sonnet. NEVER use haiku — it is permanently banned.
 - **run_in_background:** true
 
-**Staggered dispatch:** do not launch all agents in the same instant. Dispatch in **batches of up to 10 agents per message** to limit API burst load — this prevents 529 overload errors caused by too many agents requesting context simultaneously. The same batching rule applies to verification agents in Phase 5.7.
-
-**Dispatch log:** after every state transition atomically rewrite `dispatch_log_path` using the
-run-scoped schema in `references/output-schema.md`. Each entry contains `{run_id, base_sha, zone_id,
-round, agent_id, status, dispatched_at, retry, artifact}`. When a retry is dispatched, mark the
-original agent `superseded` with its reason before adding the retry. A late completion from a
-superseded agent is recorded but can never become the accepted artifact.
-
 **Note on worktrees:** the Agent tool with `isolation: worktree` automatically creates a temporary
 git worktree and branch. The branch name is returned in the agent's result as `branch` — record it
 in the dispatch log for the merge phase. Inject the Phase 1 `base_sha` into every agent prompt: each
 worktree agent verifies its HEAD equals that SHA before working, and the merge phase verifies branch
 ancestry from the same immutable base.
+
+### Codex dispatch (report-only)
+
+1. Before launching each attempt, fix the ShipGuard `agent_id` and all five identities. Assign
+   an absolute, unique `worktree_path` outside the parent checkout, either supplied by the
+   authorized orchestrator or created with `git worktree add --detach {worktree_path} {base_sha}`.
+   Do not reuse a path owned by another attempt or overwrite an existing directory. Resolve its
+   `realpath`, confirm it is a registered linked worktree of this repository and its HEAD equals
+   `base_sha`. On mismatch stop that attempt: no reset and no source edits. A detached HEAD is
+   valid; no returned `branch` is required. Persist this path, the artifact's exact relative path,
+   and the identity tuple in the dispatch entry before launching the child.
+2. Use the exposed native delegation tool, for example `collaboration.spawn_agent`, with the
+   filled zone prompt and the preassigned absolute worktree path. Omit model overrides to inherit
+   the authorized Codex model. Do not pass Claude-only `isolation`, `run_in_background`, or
+   `model: opus/sonnet` parameters. Do not launch another CLI or session as a fallback.
+   Native delegation does not change the child working directory: prepend a Codex binding to
+   the prompt requiring that every shell command and file operation explicitly use the assigned
+   worktree as its root (shell `workdir`/`git -C`, absolute file paths). The installed retention
+   helper is read from the injected absolute path and runs with that worktree as its working
+   directory. Reaffirm report-only, no source/history edits, and the exact ShipGuard `agent_id`;
+   the native runtime identifier never replaces it. In the template's base-verification block,
+   replace the reset-on-mismatch instruction with stop-and-report; never reset a supplied worktree.
+3. Associate the returned native identifier as `native_agent_id` with the existing ShipGuard
+   entry and its preassigned `worktree_path`. Track native terminal completion using that
+   identifier and the host's exposed wait/status/completion mechanism. A creation acknowledgement is not completion;
+   a timeout or progress message is not success. Apply the existing capacity/quota and retry rules.
+4. Require the completed child to return its worktree path, five identities and retention receipt
+   alongside its summary. Compare those to the preassigned entry. The parent then performs Phase 5
+   using its recorded path, not an untrusted path from the summary. The receipt and text do not
+   replace the original JSON. Retain each worktree until collection is accepted; cleanup requires
+   the normal authority and applies only to this run's owned worktrees after accepted collection.
+
+### Shared dispatch tracking
+
+**Staggered dispatch:** do not launch all agents in the same instant. Dispatch in **batches of up to 10 agents per message** to limit API burst load — this prevents 529 overload errors caused by too many agents requesting context simultaneously. Respect any lower native concurrency limit. The same batching rule applies to verification agents in Phase 5.7.
+
+**Dispatch log:** after every state transition atomically rewrite `dispatch_log_path` using the
+run-scoped schema in `references/output-schema.md`. Each entry contains `{run_id, base_sha, zone_id,
+round, agent_id, status, dispatched_at, retry, artifact}`. Keep the Codex transport bindings
+(`worktree_path`, `native_agent_id`, inherited model when observable) on that entry; these are
+dispatch metadata, not changes to zone JSON or canonical JSON/TOON schemas. When a retry is
+dispatched, mark the original agent `superseded` with its reason before adding the retry. A late
+completion from a superseded agent is recorded but can never become the accepted artifact.
+
+On Codex, Phases 5.6/5.7 and capacity probes use the same inherited Codex model and native completion tracking.
+Tracers and verifiers keep their existing read-only parent-source scope (no zone worktree);
+bind each to the exact absolute parent root and `source_sha`, and keep their existing result
+paths, verification protocol and limits. Do not apply the Claude-only Agent/model parameters
+in `references/verification.md` on Codex. This changes the host transport, not evidence gates.
 
 Print: `Round {round_number}: Dispatched {agent_count} agents (batches of {batch_size}). Waiting for completion...`
 
@@ -346,7 +423,10 @@ still read, copy, and validate the original file. Never reconstruct it from the 
 1. Read the agent's output text.
 2. **"Prompt is too long" / "context window":** the zone was too large. Split `zone.paths` into two roughly equal groups (by file count), create zones `{zone.id}a` and `{zone.id}b`, dispatch two new agents with the same template but narrower scope, and track them. **Single-path zone edge case:** split the individual files under that path in half alphabetically; if the zone has fewer than 3 files, mark it `failed` (cannot split further) and log `Zone {zone.id} too small to re-split ({N} files) — skipping.` Print: `Zone {zone.id} context overflow — re-splitting into {zone.id}a and {zone.id}b`
 3. **Success:** resolve the exact artifact path from that `agent_id`'s dispatch entry and copy it to
-   `{run_dir}`. Validate JSON shape plus exact `run_id`, `base_sha`, `zone_id`, `round`, and
+   `{run_dir}`. On Codex use the preassigned real `worktree_path`, verify it still identifies the
+   allocated linked worktree at `base_sha`, and verify the artifact's real path stays inside that worktree
+   at the exact prescribed relative location (reject symlink escapes). Never discover it from a
+   returned branch or glob. Validate JSON shape plus exact `run_id`, `base_sha`, `zone_id`, `round`, and
    `agent_id`. A mismatch is stale or foreign evidence: reject it, mark the attempt failed, and
    retry once with the validation error. Only the newest non-superseded successful attempt may set
    `accepted_artifact` for a zone. Print: `Zone {zone.id} complete: {N} bugs found`.
