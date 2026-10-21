@@ -276,6 +276,128 @@ function createFixture() {
   return root;
 }
 
+// #144: exercise YAML through the real generator and its embedded dashboard data.
+function checkYamlRegressions() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-yaml-'));
+  const failures = [];
+  const check = (label, fn) => { try { fn(); } catch (error) { failures.push(`${label}: ${error.message}`); } };
+  try {
+    copyFileSync(SOURCE_BUILD, join(root, 'build-review.mjs'));
+    copyFileSync(SOURCE_TEMPLATE, join(root, '_review-template.html'));
+    mkdirSync(join(root, 'pages'));
+    writeFileSync(join(root, '_config.yaml'), 'base_url: null\n');
+    // HTML stringifies step values; inspect the production parser as well to
+    // distinguish quoted booleans/numbers from the unchanged unquoted types.
+    check('scalar types', () => {
+      const source = readFileSync(SOURCE_BUILD, 'utf8');
+      const context = {};
+      runInNewContext(source.slice(source.indexOf('function yamlParse('), source.indexOf('const yaml =')), context);
+      for (const raw of ['0042', 'true', 'false', 'null', '~', '|', '>', '!!str', '!local', '!<tag:example.com,2026:label>']) {
+        const quoted = JSON.stringify(raw);
+        const doc = context.yamlParse(`name: ${quoted}\ndata:\n  value: ${quoted}\nsteps:\n  - expected: ${quoted}\n    criteria: ${quoted}\n`);
+        assert([doc.name, doc.data.value, doc.steps[0].expected, doc.steps[0].criteria].every(v => v === raw),
+          `quoted ${raw} changed type or value`);
+      }
+      const doc = context.yamlParse('count: 42\nenabled: true\nempty: null\ntilde: ~\ndata:\n  count: 42\nsteps:\n  - count: 42\n    enabled: false\n');
+      assert(doc.count === 42 && doc.enabled === true && doc.empty === null && doc.tilde === null,
+        'unquoted top-level types changed');
+      assert(doc.steps[0].count === 42 && doc.steps[0].enabled === false && doc.data.count === '42',
+        'unquoted array/nested types changed');
+      assert(context.yamlParse("name: 'l''accueil' # comment").name === "l'accueil", 'single quote escape lost');
+      assert(context.yamlParse('name: "a # b" # comment').name === 'a # b', 'quoted hash lost');
+      assert(context.yamlParse('name: "a\\n\\"b\\""').name === 'a\n"b"', 'double quote escapes lost');
+    });
+    const manifestPath = join(root, 'pages', 'yaml.yaml');
+    const build = () => spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+    writeFileSync(manifestPath, [
+      'name: "0042"',
+      "description: '  true  ' # keep spaces and type",
+      'requires_auth: false',
+      'steps:',
+      '  - expected: "0042"',
+      "    criteria: 'false'",
+      '  - action: open',
+      '    url: "{base_url}/"',
+      '',
+    ].join('\n'));
+    check('quoted strings', () => {
+      const result = build();
+      assert(result.status === 0, result.stderr);
+      const html = readFileSync(join(root, '_results/review.html'), 'utf8');
+      const data = JSON.parse(html.match(/var __VISUAL_DATA__ = ([\s\S]*?);\nvar __RECORDED_DATA__/)[1]);
+      const test = data.tests[0];
+      assert(test.name === '0042', `name became ${JSON.stringify(test.name)}`);
+      assert(test.description === '  true  ', 'quoted whitespace/comment was altered');
+      assert(test.steps[0].expected === '0042', 'array leading property lost its quoted type');
+      assert(test.steps[0].criteria === 'false', 'array property lost its quoted type');
+      assert(test.requiresAuth === false, 'unquoted false changed type');
+      assert(test.url === 'http://localhost:6969/', 'unquoted null config changed type');
+    });
+    const historical = [
+      'name: "0042"', 'description: |', '  First line', '  Second line',
+      'steps:', '  - action: open', '    url: "{base_url}/"',
+      '  - action: llm-check', '    criteria: |',
+      '      The heading is visible', '      The form is labelled', '',
+    ].join('\n');
+    const refused = [
+      ['historical #12', historical],
+      ['tagged block (Astra)', [
+        'name: Tagged block', 'description: !!str |', '  First line', '  Second line',
+        'steps:', '  - action: llm-check', '    criteria: !!str |', '      The heading is visible', '',
+      ].join('\n')],
+      ['tagged quoted string (Astra)', 'name: !!str "0042"\n'],
+      ['tagged folded block', 'description: !!str >-\n  first\n  second\n'],
+      ['tagged array leading property', 'steps:\n  - criteria: !!str |\n      first\n'],
+      ['tagged array property', 'steps:\n  - action: llm-check\n    criteria: !!str |\n      first\n'],
+      ['tagged nested value', 'data:\n  value: !!int "0042"\n'],
+      ['tagged scalar list item', 'tags:\n  - !label demo\n'],
+      ['tagged inline list item', 'tags: [!!str "0042"]\n'],
+      ['local tag', 'name: !label "0042"\n'],
+      ['named tag handle', 'name: !custom!label "0042"\n'],
+      ['verbatim tag', 'name: !<tag:yaml.org,2002:str> "0042"\n'],
+      ['folded block', 'description: >- # folded\n  first\n  second\n'],
+      ['array leading block', 'steps:\n  - criteria: |+\n      first\n'],
+      ['array property block', 'steps:\n  - action: llm-check\n    criteria: |\n      first\n'],
+      ['nested block', 'data:\n  criteria: >2-\n    first\n'],
+      ['anchor', 'name: &label Demo\n'],
+      ['alias', 'name: *label\n'],
+      ['multiline quote', 'name: "first\n  second"\n'],
+      ['unsupported escape', 'name: "\\e"\n'],
+    ];
+    for (const [label, yaml] of refused) check(label, () => {
+      // A refusal must neither create a misleading report nor rewrite existing evidence.
+      for (const existing of [false, true]) {
+        const paths = ['review.html', 'visual-results.json', 'findings.json'].map(name => join(root, '_results', name));
+        for (const path of paths) {
+          rmSync(path, { force: true });
+          if (existing) writeFileSync(path, 'previous evidence');
+        }
+        writeFileSync(manifestPath, yaml);
+        const result = build();
+        assert(result.status !== 0, 'unsupported YAML was accepted with exit 0');
+        assert(result.stderr.includes(manifestPath) && /unsupported YAML/i.test(result.stderr) && /at line \d+/.test(result.stderr),
+          `missing explicit file diagnostic: ${result.stderr}`);
+        for (const path of paths) assert(existing ? readFileSync(path, 'utf8') === 'previous evidence' : !existsSync(path),
+          'refused YAML changed generated output');
+      }
+    });
+    // All YAML readers carry the same filename diagnostic, even outside walkDir.
+    for (const filename of ['_config.yaml', '_regressions.yaml']) check(filename, () => {
+      rmSync(manifestPath);
+      const path = join(root, filename);
+      writeFileSync(path, 'description: |\n  unsupported\n');
+      const result = build();
+      assert(result.status !== 0 && result.stderr.includes(path) && /unsupported YAML/i.test(result.stderr),
+        'unsupported YAML did not fail explicitly');
+      rmSync(path);
+      writeFileSync(manifestPath, 'name: Plain\n');
+      if (filename === '_config.yaml') writeFileSync(path, 'base_url: null\n');
+    });
+    assert(!failures.length, failures.join('\n'));
+    console.log('review YAML regressions passed');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
 function checkAuditRegressions() {
   const root = mkdtempSync(join(tmpdir(), 'shipguard-review-regressions-'));
   const failures = [];
@@ -451,6 +573,7 @@ async function main() {
   let log = null;
   let passed = false;
   try {
+    checkYamlRegressions();
     checkAuditRegressions();
     root = createFixture();
     const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
