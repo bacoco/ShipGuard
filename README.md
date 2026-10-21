@@ -34,6 +34,12 @@ You can also ask Claude or Codex to test one or several model/effort combination
 
 ShipGuard replies in the chat with `PASS`, `FAIL`, or `UNAVAILABLE` for each configuration.
 
+## Version 2.17.0
+
+Since 2.16.1: conditional preparation for complex tasks, native back/forward recording and replay,
+project tool-copy checks and refresh, and fixes to evidence validation, CLI outcomes and recordings.
+See the [changelog](CHANGELOG.md#2170--2026-10-21) for the complete release notes.
+
 ## Consolidated release 2.16.0
 
 Goal-linked pre-review, verifier protocol hardening, an optional E2E evidence adapter, prompt audits
