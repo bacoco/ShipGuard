@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CE-01: real POST navigation + untouched recorded YAML replay. The host's
+// CE-01/CE-02: real POST and manual history navigation + untouched YAML replay. The host's
 // classification callback is executed verbatim with Chromium's actual history.
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
@@ -34,8 +34,14 @@ const server = createServer((req, res) => {
     res.end(req.method === 'POST' ? '<h1 id="confirmation">Reserved</h1>' : '<h1>GET is not a reservation</h1>');
   } else if (req.url === '/manual' || req.url === '/linked') {
     res.end('<h1>Destination</h1>');
+  } else if (req.url === '/one') {
+    res.setHeader('Cache-Control', 'no-store');
+    res.end('<h1>One</h1><a id="next" href="/two">Next</a><button id="idle">Idle</button>');
+  } else if (req.url === '/two') {
+    res.setHeader('Cache-Control', 'no-store');
+    res.end('<h1>Two</h1><button id="idle">Idle</button>');
   } else {
-    res.end('<!doctype html><h1>Local reservation</h1><form action="/reserve" method="post"><button id="reserve">Reserve</button></form><button id="idle">Stay here</button><a id="link" href="/linked">Follow link</a>');
+    res.end('<!doctype html><h1>Local reservation</h1><form action="/reserve" method="post"><button id="reserve">Reserve</button></form><button id="idle">Stay here</button><a id="link" href="/linked">Follow link</a><a id="first" href="/one">First</a>');
   }
 });
 await new Promise(done => server.listen(0, '127.0.0.1', done));
@@ -44,6 +50,7 @@ const ab = async (...args) => (await exec('agent-browser', ['--session', session
 const evaluate = async code => JSON.parse(await ab('--json', 'eval', '-b', Buffer.from(code).toString('base64'))).data.result;
 let socket, sequence = 0;
 const pending = new Map();
+const pageEvents = [];
 async function cdp(method, params = {}, sessionId) {
   const id = ++sequence;
   const reply = new Promise((done, fail) => {
@@ -63,8 +70,10 @@ function hostFor(steps) {
   vm.runInContext(source.slice(source.indexOf('function normalizeUrl'), source.indexOf('function stepDetail'))
     + '\nfunction stepDetail(){return "";}\n' + callback + '\nglobalThis.api={recordStep,recordNavigation};', host);
   for (const step of steps) host.api.recordStep(step);
+  host.seenEntries = new Set();
   return host;
 }
+const observe = (host, entry) => host.api.recordNavigation(entry.url, entry.transitionType, entry.id, host.seenEntries);
 let failures = 0;
 const checks = [];
 function check(label, fn) {
@@ -73,12 +82,15 @@ function check(label, fn) {
 }
 console.log(`Artifacts: ${root}`);
 try {
-  await ab('open', url);
+  // Reproduce Astra's document-load path deterministically. A bfcache restore
+  // does not emit DOMContentLoaded, which is the host callback under test.
+  await ab('--args', '--disable-features=BackForwardCache', 'open', url);
   socket = new WebSocket((await ab('get', 'cdp-url')).trim());
   await new Promise((done, fail) => { socket.onopen = done; socket.onerror = fail; });
-  socket.onmessage = event => { const m = JSON.parse(event.data); if (pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
+  socket.onmessage = event => { const m = JSON.parse(event.data); if (pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } else if (m.method) pageEvents.push(m.method); };
   const target = (await cdp('Target.getTargets')).targetInfos.find(t => t.type === 'page' && t.url.startsWith(url));
   pageSession = (await cdp('Target.attachToTarget', { targetId: target.targetId, flatten: true })).sessionId;
+  await cdp('Page.enable', {}, pageSession);
   await evaluate(`sessionStorage.clear();window.__sgRecorderState={steps:[{type:'open',url:${JSON.stringify(url)}}],paused:false,startTime:Date.now()};window.__sgBridge=s=>navigator.sendBeacon('/event',s);${toolbar}`);
   await ab('click', '#reserve');
   await ab('wait', '#confirmation');
@@ -86,7 +98,7 @@ try {
   const entry = await historyEntry();
   const captured = events.filter(event => event.type === 'step').map(event => event.step);
   const host = hostFor([{ type: 'open', url }, ...captured]);
-  host.api.recordNavigation(entry.url, entry.transitionType);
+  observe(host, entry);
   const steps = Array.from(host.allSteps);
   check('POST capture reaches the confirmation', () => assert.equal(entry.transitionType, 'form_submit'));
   check('POST response does not become another open', () => assert.deepEqual(steps.map(s => s.type), ['open', 'click']));
@@ -111,17 +123,49 @@ try {
   await ab('open', url + '/manual');
   const manualEntry = await historyEntry();
   const manualHost = hostFor([{ type: 'open', url }, { type: 'click', text: 'Stay here' }]);
-  manualHost.api.recordNavigation(manualEntry.url, manualEntry.transitionType);
+  observe(manualHost, manualEntry);
   check('manual address navigation after an unrelated click remains open', () => assert.equal(manualHost.allSteps.at(-1).url, url + '/manual'));
   await ab('open', url);
   await ab('click', '#link'); await ab('wait', '--url', '**/linked');
   const linkEntry = await historyEntry();
   const linkHost = hostFor([{ type: 'open', url }, { type: 'click', text: 'Follow link' }]);
-  linkHost.api.recordNavigation(linkEntry.url, linkEntry.transitionType);
+  observe(linkHost, linkEntry);
   check('recorded link navigation does not become another open', () => assert.deepEqual(Array.from(linkHost.allSteps, s => s.type), ['open', 'click']));
-  writeFileSync(join(root, 'evidence.json'), JSON.stringify({ checks, entry, captured, hostSteps: steps, manifest, replayCalls, result, manualEntry, linkEntry }, null, 2));
+
+  // Same real route as Astra's CE-02 witness; feed every visited entry to the
+  // actual host callback, including destinations suppressed after link clicks.
+  await ab('open', url);
+  const historyHost = hostFor([{ type: 'open', url }]);
+  observe(historyHost, await historyEntry());
+  await ab('click', '#first'); await ab('wait', '--url', '**/one');
+  historyHost.api.recordStep({ type: 'click', text: 'First' });
+  const oneEntry = await historyEntry(); observe(historyHost, oneEntry);
+  await ab('click', '#next'); await ab('wait', '--url', '**/two');
+  historyHost.api.recordStep({ type: 'click', text: 'Next' });
+  const twoEntry = await historyEntry(); observe(historyHost, twoEntry);
+  await ab('click', '#idle'); historyHost.api.recordStep({ type: 'click', text: 'Idle' });
+  pageEvents.length = 0;
+  await ab('back'); await ab('wait', '--url', '**/one');
+  const backEntry = await historyEntry(), backEvents = [...pageEvents];
+  observe(historyHost, backEntry);
+  const backSteps = Array.from(historyHost.allSteps);
+  await ab('screenshot', join(root, 'manual-back.png'));
+  check('CE-02 manual back to a visited link entry remains open', () => {
+    assert.equal(backEntry.id, oneEntry.id); assert.equal(backEntry.transitionType, 'link');
+    assert.ok(backEvents.includes('Page.domContentEventFired'));
+    assert.equal(backSteps.at(-1).type, 'open'); assert.equal(backSteps.at(-1).url, url + '/one');
+  });
+  await ab('click', '#idle'); historyHost.api.recordStep({ type: 'click', text: 'Idle' });
+  await ab('forward'); await ab('wait', '--url', '**/two');
+  const forwardEntry = await historyEntry(); observe(historyHost, forwardEntry);
+  const forwardSteps = Array.from(historyHost.allSteps);
+  check('CE-02 manual forward to a visited link entry remains open', () => {
+    assert.equal(forwardEntry.id, twoEntry.id); assert.equal(forwardEntry.transitionType, 'link');
+    assert.equal(forwardSteps.at(-1).type, 'open'); assert.equal(forwardSteps.at(-1).url, url + '/two');
+  });
+  writeFileSync(join(root, 'evidence.json'), JSON.stringify({ checks, entry, captured, hostSteps: steps, manifest, replayCalls, result, manualEntry, linkEntry, history: { oneEntry, twoEntry, backEntry, backEvents, backSteps, forwardEntry, forwardSteps } }, null, 2));
 } finally {
   socket?.close();
-  try { await ab('close'); } finally { await new Promise(done => server.close(done)); }
+  try { await ab('close'); } finally { server.closeAllConnections(); await new Promise(done => server.close(done)); }
 }
 process.exitCode = failures ? 1 : 0;

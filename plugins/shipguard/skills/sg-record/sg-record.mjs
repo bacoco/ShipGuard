@@ -399,6 +399,7 @@ async function main() {
 
     const page = await context.newPage();
     const navigationTasks = new Map();
+    const navigationEntries = new WeakMap();
     let navigationError = null;
 
     // Each fresh document receives the canonical list and pause state, including
@@ -411,25 +412,30 @@ async function main() {
       await targetPage.addScriptTag({ content: toolbarJS });
     }
 
-    function recordNavigation(navigationUrl, transitionType) {
+    function recordNavigation(navigationUrl, transitionType, entryId, seenEntries) {
+      // A history entry keeps its original transition type on Back/Forward.
+      // Remember even suppressed/paused visits, separately for each page.
+      const revisited = seenEntries.has(entryId);
+      seenEntries.add(entryId);
       if (paused || stopped || !navigationUrl || navigationUrl === 'about:blank') return;
-      // Chromium distinguishes address-bar/reload navigation from links and
-      // form submissions. The latter already belong to the recorded action;
-      // reopening a POST response would turn it into a different GET request.
+      // Only a new link/form entry can belong to the recorded action. Reopening
+      // that POST response would turn it into a different GET request.
       const last = allSteps[allSteps.length - 1];
-      if (['link', 'form_submit'].includes(transitionType)
+      if (!revisited && ['link', 'form_submit'].includes(transitionType)
           && last && ['click', 'press', 'fill', 'select', 'upload'].includes(last.type)) return;
       recordStep({ type: 'open', url: navigationUrl });
     }
 
     function queueNavigation(targetPage) {
+      if (!navigationEntries.has(targetPage)) navigationEntries.set(targetPage, new Set());
+      const seenEntries = navigationEntries.get(targetPage);
       const task = (async () => {
         const cdp = await context.newCDPSession(targetPage);
         try {
           const history = await cdp.send('Page.getNavigationHistory');
           const entry = history.entries[history.currentIndex];
           if (!entry) throw new Error('Navigation history is unavailable');
-          recordNavigation(entry.url, entry.transitionType);
+          recordNavigation(entry.url, entry.transitionType, entry.id, seenEntries);
         } finally { await cdp.detach(); }
       })().catch(error => {
         // Popups that close before injection remain best effort, as before.

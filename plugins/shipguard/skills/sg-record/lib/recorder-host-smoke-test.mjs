@@ -29,6 +29,12 @@ page.addScriptTag=async()=>{
  },20)}else if(stage===1){stage=2;setTimeout(()=>{
  bridge(JSON.stringify({type:'resume'}));current='http://local/manual';page.emit('framenavigated',frame);page.emit('domcontentloaded');page.emit('load');
  },20)}else if(stage===2){stage=3;setTimeout(()=>{
+ bridge(JSON.stringify({type:'step',step:{type:'click',text:'First'}}));current='http://local/one';page.emit('domcontentloaded');page.emit('load');
+ },20)}else if(stage===3){stage=4;setTimeout(()=>{
+ bridge(JSON.stringify({type:'step',step:{type:'click',text:'Next'}}));current='http://local/two';page.emit('domcontentloaded');page.emit('load');
+ },20)}else if(stage===4){stage=5;setTimeout(()=>{
+ bridge(JSON.stringify({type:'step',step:{type:'click',text:'Idle'}}));current='http://local/one';page.emit('domcontentloaded');page.emit('load');
+ },20)}else if(stage===5){stage=6;setTimeout(()=>{
  writeFileSync(new URL('./states.json',import.meta.url),JSON.stringify(states));bridge(JSON.stringify({type:'stop',steps:[]}));
  },20)}
 };
@@ -37,7 +43,7 @@ page.goto=async()=>{page.emit('framenavigated',frame);page.emit('load');
  context.emit('page',popup);popup.emit('domcontentloaded');
 };
 context.exposeFunction=async(name,fn)=>{bridge=fn};context.newPage=async()=>page;
-context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');return {currentIndex:0,entries:[{url:current,transitionType:'typed'}]}},detach:async()=>{}}};
+context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const path=new URL(current).pathname;return {currentIndex:0,entries:[{id:['/start','/paused','/manual','/one','/two'].indexOf(path),url:current,transitionType:['/one','/two'].includes(path)?'link':'typed'}]}},detach:async()=>{}}};
 context.storageState=async()=>({cookies:[],origins:[]});
 export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async()=>context,close:async()=>{}}}};
 `);
@@ -50,6 +56,10 @@ check('r1-z03-001 host injection includes initial open',()=>assert.equal(states[
 check('r1-z03-006 host reinjection carries pause',()=>assert.ok(states.some(s=>s.paused===true)));
 check('r1-z03-007 manual document navigation becomes open',()=>assert.ok(yaml.includes('url: "http://local/manual"')));
 check('r1-z03-006 paused navigation is excluded',()=>assert.ok(!yaml.includes('/paused')));
+check('CE-02 host tracks link entry IDs and records the manual return',()=>{
+ assert.equal(yaml.match(/url: "http:\/\/local\/one"/g)?.length,1);
+ assert.ok(!yaml.includes('url: "http://local/two"'));
+});
 let result='';let status=0;try{result=execFileSync(process.execPath,[join(root,'sg-record.mjs'),'http://local/start','--name=missing','--storage='+join(root,'missing.json')],{cwd:root,timeout:10000,encoding:'utf8',stdio:'pipe'})}catch(e){status=e.status;result=(e.stdout||'')+(e.stderr||'')}
 check('r1-z03-011 absent storage fails before launch and save',()=>{assert.equal(status,1);assert.match(result,/Session storage file not found/);assert.ok(!result.includes('FIXTURE_BROWSER_LAUNCHED'));assert.ok(!existsSync(join(root,'manifests/recorded-missing.yaml')))});
 const authPath=join(root,'saved-auth.json');status=0;result='';
