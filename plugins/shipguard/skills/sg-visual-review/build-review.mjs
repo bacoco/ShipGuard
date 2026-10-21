@@ -246,7 +246,7 @@ function parseVisualResults() {
     const statusMap = {};
     const durationMap = {};
     const reasonMap = {};
-    const slugOwners = {}; // slug -> Set of full ids, to detect ambiguous slug-only matches (B19)
+    const screenshotMap = {};
     for (const test of raw.tests || []) {
       if (!test || typeof test !== 'object') continue;
       const status = displayStatus(test.status, test.id || test.manifest);
@@ -255,24 +255,21 @@ function parseVisualResults() {
       // only _regressions.yaml could supply one, so every reason produced by
       // this run was shown as "none".
       const reason = typeof test.failure_reason === 'string' && test.failure_reason ? test.failure_reason : null;
-      const keys = [
+      const identifiers = [
         normalizeTestId(test.id),
         normalizeTestId(test.manifest),
       ].filter(Boolean);
+      // A qualified manifest identifies the test even if an older producer
+      // writes only its basename in id. Do not alias it to another category.
+      const qualified = identifiers.filter(key => key.includes('/'));
+      const keys = qualified.length ? qualified : identifiers;
       for (const key of keys) {
         statusMap[key] = status;
         if (duration != null) durationMap[key] = duration;
         if (reason) reasonMap[key] = reason;
-        const slug = key.split('/').pop();
-        if (slug) {
-          if (slug !== key) (slugOwners[slug] = slugOwners[slug] || new Set()).add(key);
-          statusMap[slug] = status;
-          if (duration != null) durationMap[slug] = duration;
-          if (reason) reasonMap[slug] = reason;
-        }
+        if (typeof test.screenshot === 'string' && test.screenshot) screenshotMap[key] = test.screenshot;
       }
     }
-    const ambiguousSlugs = Object.keys(slugOwners).filter(slug => slugOwners[slug].size > 1);
 
     const summary = raw.summary && typeof raw.summary === 'object' ? raw.summary : {};
     return {
@@ -280,7 +277,8 @@ function parseVisualResults() {
       statusMap,
       durationMap,
       reasonMap,
-      ambiguousSlugs,
+      screenshotMap,
+      runKeys: Object.keys(statusMap),
       runTimestamp: raw.timestamp || null,
       run_id: raw.run_id || null,
       scope: raw.scope && typeof raw.scope === 'object' ? raw.scope : null,
@@ -458,25 +456,34 @@ function findScreenshot(id, slug, steps) {
 
 // ── 5. Merge status from report ──
 function mergeStatus(tests, report, regressions) {
-  const ambiguous = new Set(report.ambiguousSlugs || []);
+  const slugCounts = {};
+  for (const test of tests) {
+    const slug = test.id.split('/').pop();
+    slugCounts[slug] = (slugCounts[slug] || 0) + 1;
+  }
   const durationMap = report.durationMap || {};
   const reasonMap = report.reasonMap || {};
+  const screenshotMap = report.screenshotMap || {};
+  const runKeys = new Set(report.runKeys || Object.keys(report.statusMap));
   for (const t of tests) {
     const slug = t.id.split('/').pop();
-    // Match by full category/slug id first, then fall back to slug only (B19)
-    if (report.statusMap[t.id]) {
-      t.status = report.statusMap[t.id];
-      if (Number.isFinite(durationMap[t.id])) t.durationMs = durationMap[t.id];
-    } else if (report.statusMap[slug]) {
-      if (ambiguous.has(slug)) {
-        console.warn(`  WARN: test slug "${slug}" matches several results across categories; using the last status seen. Prefer full category/slug ids in visual-results.json.`);
+    // Legacy basename-only results are usable only for a unique inventory id.
+    const key = report.statusMap[t.id] ? t.id : slugCounts[slug] === 1 && report.statusMap[slug] ? slug : null;
+    t.inLastRun = runKeys.has(t.id) || (slugCounts[slug] === 1 && runKeys.has(slug));
+    if (key) {
+      t.status = report.statusMap[key];
+      if (Number.isFinite(durationMap[key])) t.durationMs = durationMap[key];
+      if (screenshotMap[key]) {
+        const path = resolve(RESULTS_DIR, screenshotMap[key]);
+        const rel = relative(RESULTS_DIR, path).replace(/\\/g, '/');
+        const usable = !isAbsolute(rel) && rel !== '..' && !rel.startsWith('../') && existsSync(path) && statSync(path).isFile();
+        t.screenshot = usable ? rel : null;
+        t.screenshotMtime = usable ? statSync(path).mtimeMs : 0;
       }
-      t.status = report.statusMap[slug];
-      if (Number.isFinite(durationMap[slug])) t.durationMs = durationMap[slug];
     }
     // This run's measured reason describes this run; _regressions.yaml only
     // remembers the last one recorded, so it fills in when the run said nothing.
-    const measuredReason = reasonMap[t.id] || reasonMap[slug] || null;
+    const measuredReason = key ? reasonMap[key] : null;
     if (measuredReason) t.failureReason = String(measuredReason);
     const reg = regressions[t.id] || regressions[slug];
     if (reg) {
@@ -1176,7 +1183,7 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
   for (const unit of (processResults && Array.isArray(processResults.units) ? processResults.units : [])) {
     if (!unit || typeof unit !== 'object' || unit.verdict === 'unchanged') continue;
     const actions = Array.isArray(unit.actions) ? unit.actions : [];
-    const measured = actions.some((a) => a && a.evidence === 'measured');
+    const measured = actions.length > 0 && actions.every((a) => a && a.evidence === 'measured');
     const surprise = actions.some((a) => a && a.surprise);
     findings.push({
       title: `${unit.kind || 'unit'} ${unit.ref || unit.id || ''}: ${unit.verdict || 'changed'}`.trim(),
