@@ -128,8 +128,14 @@ The tree **mutates during Phase 1** in this case, so after the audit lane finish
 This produces `visual-tests/_results/audit-results.json` with `impacted_backend[]` (`{endpoint, reason, severity}` objects) and `impacted_ui_routes[]` (`{route, reason, severity, bug_count}` objects) — the lists the next lanes consume.
 
 Update `run.json` to `audit.status = "running"` before invoking the lane, then to `ran` with its
-result path only after `audit-results.json` is readable. Record `error` plus the observed reason if
-the lane does not produce a usable result.
+result path only after `audit-results.json` is readable. For a newly invoked audit, capture its
+announced `run_id` and require that the canonical JSON has that exact `run_id` and `base_sha` and
+its named `runs/{run_id}/dispatch.json` has `status: "completed"`. Existence, modification time,
+and unchanged source HEAD alone cannot prove that this invocation succeeded. Record `error` plus
+the observed reason for `incomplete_artifact_transport` or any missing/mismatched result, even
+when an older canonical report is still readable. Keep that old report as history; do not pass
+`--from-audit` to later lanes after this failure or present it as the new audit. Explicit reuse
+offered in Phase 0 remains a separate, announced choice.
 
 If the audit finds nothing impacted, note it and still run the diff-scoped process-check (a clean audit doesn't mean the behavior didn't change).
 

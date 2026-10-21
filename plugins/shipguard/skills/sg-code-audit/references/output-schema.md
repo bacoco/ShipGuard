@@ -302,7 +302,15 @@ record is the only source of artifact paths accepted by Phase 5 and Phase 6:
 }
 ```
 
-Allowed `status` values are `running`, `paused_quota`, and `completed`. A quota pause records the
+Allowed run `status` values are `running`, `paused_quota`, `completed`, and
+`incomplete_artifact_transport`. The latter is terminal if the helper is unavailable before
+dispatch or after the single transport retry is exhausted: retain successful `accepted_artifacts`,
+record failed entries, when dispatched, with `reason` equal to
+`artifact_missing` or `artifact_retention_failed` and their `retry` count, and never aggregate this
+incomplete run or overwrite the previous canonical JSON/TOON. Rejected and superseded attempts
+remain traceable and never enter `accepted_artifacts`. A text-only JSON or a retention receipt
+does not constitute an accepted artifact: the parent must copy and identity-validate the file.
+A quota pause records the
 provider's `reset_at` when known and leaves pending entries pending; it does not overwrite the
 canonical audit. Resume is allowed only when repository HEAD still equals `base_sha`, and resumes
 only pending entries after one successful minimal capacity probe. Superseded attempts remain in

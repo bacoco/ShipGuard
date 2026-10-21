@@ -41,6 +41,7 @@ Sandbox note: report-only avoids source writes, but agent dispatch, Git worktree
 | `references/output-schema.md` | Canonical output schemas, TOON format, normalization maps, lifecycle/accepted-risks procedures, risk score, route derivation, terminal summary |
 | `references/monitor.md` | Phase 0 monitor setup, all monitor POST payloads |
 | `references/checklists.md` | Round focus descriptions + language-specific checklists |
+| `retain-zone-artifact.mjs` | Retain one identity-checked JSON in its own linked worktree without staging content or creating a commit |
 
 ## AUDITABLE extensions (shared list)
 
@@ -282,9 +283,19 @@ The core execution phase. For each round (1 to `round_count`), build prompts and
 
 Load `references/agent-prompt.md` § "Prompt template" and instantiate it per zone with `{run_id}`,
 `{agent_id}`, `{zone}`, `{round_number}`, `{base_sha}`, checklist, learnings, and fix-mode variables.
+Resolve `artifact_retention_script` to the absolute path of this skill's installed
+`retain-zone-artifact.mjs` and inject that path too; do not guess a plugin-cache version or use a
+path in the audited project. If the helper cannot be read, persist run status
+`incomplete_artifact_transport` and stop before dispatch with an explicit transport error rather
+than silently omitting retention. Leave the previous canonical reports unchanged.
 Agents write to the relative run-scoped path
 `visual-tests/_results/runs/{run_id}/zone-{zone.id}-r{round_number}-{agent_id}.json` inside their
 own worktree, and every prompt gets the mandatory anti-self-censoring instruction appended.
+Before completing, each agent must run the injected retention helper after writing and validating
+its JSON (and after any source commits). It makes only that exact artifact Git-visible through
+intent-to-add in the agent's own index, including when `visual-tests/` is ignored. It stages no
+artifact content and creates no commit. Never run it in the parent checkout or replace it with a
+source edit, a change to ignore rules, or a dummy marker. No further commits may follow retention.
 
 ### Dispatch
 
@@ -326,6 +337,9 @@ Zone agents write their JSON to the run-scoped relative path declared in Phase 4
 copies that exact file out of `{worktree_path}` into `{run_dir}` as soon as the agent completes —
 always before any merge and before `git worktree remove`. Worktree merges never deliver zone JSONs;
 this validated copy is the only transport.
+Retention happens **before the agent returns**, because the native runtime may remove a clean
+worktree before Phase 5 can run. A retention receipt is not a collected artifact: the parent must
+still read, copy, and validate the original file. Never reconstruct it from the agent's output text.
 
 ### On agent completion
 
@@ -336,6 +350,14 @@ this validated copy is the only transport.
    `agent_id`. A mismatch is stale or foreign evidence: reject it, mark the attempt failed, and
    retry once with the validation error. Only the newest non-superseded successful attempt may set
    `accepted_artifact` for a zone. Print: `Zone {zone.id} complete: {N} bugs found`.
+   **Missing worktree/file or failed retention:** record `reason: "artifact_missing"` or
+   `"artifact_retention_failed"`. Retry at most once using the same mandatory retention step and a
+   new `agent_id`, marking the original attempt `superseded` first. A second transport failure is
+   terminal: set run `status: "incomplete_artifact_transport"`, persist the failed attempt and
+   already accepted paths, and stop new dispatch. Collect any already-running agents without
+   treating the run as complete. Do not run verification or canonical aggregation for this run.
+   Print `Audit incomplete: {run_id} — artifact transport failed; no new canonical report.` If
+   an older canonical report remains, name its run as historical; it is not this run's result.
 4. **Account/session capacity exhausted:** detect `session limit`, `usage limit`, `quota exceeded`,
    `rate limit resets`, and equivalent account-capacity messages separately from 529. Set the run
    status to `paused_quota`, store any parsed reset time, stop new dispatch immediately, and persist
@@ -490,6 +512,8 @@ Read only the `accepted_artifact` paths listed in the current run's persisted di
 the validated current-run cross-zone artifact. Revalidate `run_id` and `base_sha` while loading.
 Never glob `{results_dir}`, never consume a previous run directory, and never rely on merges to
 deliver artifacts.
+An `incomplete_artifact_transport` run cannot enter this phase, even if some zone artifacts were
+accepted. Leave the previous `audit-results.json` and `audit-results.toon` unchanged.
 
 ### Step 1.5: Normalize + Deduplicate
 
@@ -618,6 +642,8 @@ Before reporting completion to the user, verify:
 - [ ] Context overflows handled (zones re-split and relaunched)
 - [ ] Zone JSONs copied out of every worktree BEFORE worktree removal or merge and validated against
       run/base/zone/round/agent identity
+- [ ] Zone JSON retained before native agent completion; exhausted transport failure explicitly
+      incomplete, with no canonical aggregation or reuse of an older report as the new result
 - [ ] Quota exhaustion paused without fleet retries; resume probe and unchanged-base guard applied
 - [ ] Working tree clean check performed before merge
 - [ ] Branch ancestry verified from `base_sha` before each merge
