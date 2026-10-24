@@ -92,7 +92,7 @@ Run the relevant smoke test after touching a skill's scripts or templates.
 - Results contract: skills read/write `visual-tests/_results/` (`audit-results.json` canonical, `audit-results.toon` compact, `logic-results.json`, `process-results.json`, change reports under `change-reports/`). Legacy `.code-audit-results/` is read as a fallback. Keep these paths and JSON shapes stable — skills consume each other's outputs (`--from-audit`, `--from-logic`, `--from-process`).
 - Version bumps go in `plugins/shipguard/.claude-plugin/plugin.json` (keep `.codex-plugin/plugin.json` and marketplace manifests consistent).
 - Visual flows require `agent-browser` (npm, global). Always close browsers after use.
-- Code audit parallelism relies on Claude Code's Agent tool with worktree isolation; other CLIs get the non-parallel lanes.
+- Code-audit dispatch is host-specific: Claude Code uses Agent worktree isolation; Codex report-only uses native delegation and assigned linked worktrees only when the skill's host preflight confirms the required capabilities and authorization.
 - `--model=haiku` is deliberately refused for audits — do not relax this.
 - Per-project learned state lives in the target project's `.shipguard/` directory, not in this repo.
 - Keep the two marketplace manifests (`.claude-plugin/` and `.agents/plugins/`) in sync when plugin metadata changes.
