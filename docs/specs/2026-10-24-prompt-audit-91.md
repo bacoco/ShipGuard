@@ -137,3 +137,11 @@ L'étude fournit une contre-analyse de sources au SHA indiqué, un inventaire de
 La preuve exécutée est mécanique : lectures Git, calcul du préfixe, inventaires et validation des citations par le helper sans patch. Aucun smoke test, sonde textuelle avec modèle, audit délégué ou parcours réel Claude/Codex n'a été exécuté. Les essais historiques et les résultats amont ne sont pas des mesures ShipGuard sur ce SHA. L'absence de diff de prompt signifie qu'aucune modification applicable n'est justifiée ici ; elle ne signifie ni absence universelle de défauts ni efficacité démontrée.
 
 La livraison de ce texte se vérifie par les liens et chemins cités, un diff limité au rapport, une inspection de confidentialité et `git diff --check`. Elle ne demande aucune relance de suite de tests. L'étude peut ainsi être soumise à décision sans transformer les questions différées en campagne autorisée.
+
+## Décision d’intégration — 24 octobre 2026
+
+L’étude est retenue : conserver les prompts et réutiliser `sg-improve --prompt-audit`, sans nouvel outil ni campagne de modèles. Le même lot applique uniquement la correction du résumé des hôtes dans `CLAUDE.md:95`, conforme au préflight et au dispatch existants. Les constats et numéros de ligne précédents restent ceux de la référence étudiée.
+
+Les questions non mesurées — contexte effectivement livré, effet des formulations et pertinence de la recommandation de modèle du parcours rétrospectif — sont conservées pour un éventuel réexamen en 2027 dans le [backlog #150](https://github.com/bacoco/ShipGuard/issues/150). Leur intérêt reste **non évalué : ni prouvé utile, ni prouvé inutile**. Les conserver ne déclenche aucune expérience, modification ou installation.
+
+Cette décision termine l’étude #91 ; elle ne transforme pas les inconnues en bénéfices démontrés. Le lot contient seulement ce rapport et la phrase documentaire corrigée ; aucun prompt distribué, script, adaptateur ou réglage n’est modifié.
