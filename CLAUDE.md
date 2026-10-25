@@ -68,6 +68,51 @@ node scripts/run-smoke-suite.mjs
 
 The launcher discovers every `*-smoke-test*.mjs` file dynamically, runs them serially, and reports each status and duration plus a final summary. Run the full suite after touching a skill's scripts or templates.
 
+## Release preparation
+
+Prepare a stable release in the current major series without changing files first:
+
+```bash
+node scripts/prepare-release.mjs 2.18.1 --dry-run
+```
+
+Review the displayed diff, then apply that exact five-file preparation explicitly with `--apply`.
+Run `node scripts/check-consistency.mjs`, commit the preparation, and merge it through the normal
+review flow. Only after that merge, create and push the matching tag and create the GitHub release:
+
+```bash
+git tag -a v2.18.1 -m "ShipGuard 2.18.1"
+git push origin v2.18.1
+gh release create v2.18.1 --title "ShipGuard 2.18.1" --notes-file RELEASE_NOTES.md
+```
+
+Tagging and release creation are manual publication steps; `prepare-release.mjs` never performs
+them, installs a plugin, or deploys anything. Build `RELEASE_NOTES.md` from the reviewed changelog
+entry before running the final command.
+
+To return an installed host to the previous version, clone the previous tag reported by the script
+into a persistent local directory, then replace the existing `shipguard` marketplace source with
+that checkout. For example, after adapting the tag, path, and existing install scope:
+
+```bash
+git clone --branch v2.18.0 --single-branch https://github.com/bacoco/ShipGuard.git /persistent/path/ShipGuard-v2.18.0
+
+claude plugin marketplace remove shipguard
+claude plugin marketplace add /persistent/path/ShipGuard-v2.18.0
+claude plugin install shipguard@shipguard
+claude plugin list
+
+codex plugin marketplace remove shipguard
+codex plugin marketplace add /persistent/path/ShipGuard-v2.18.0
+codex plugin add shipguard@shipguard
+codex plugin list
+```
+
+Run only the block for each host that is actually installed. Keep the tagged checkout while it is
+the registered source. Preserve the existing install scope and enabled state, review hooks again,
+and restart affected sessions; do not edit plugin cache files directly. Claude and Codex have
+separate marketplaces and caches.
+
 ## Conventions and constraints
 
 - Results contract: skills read/write `visual-tests/_results/` (`audit-results.json` canonical, `audit-results.toon` compact, `logic-results.json`, `process-results.json`, change reports under `change-reports/`). Legacy `.code-audit-results/` is read as a fallback. Keep these paths and JSON shapes stable — skills consume each other's outputs (`--from-audit`, `--from-logic`, `--from-process`).
