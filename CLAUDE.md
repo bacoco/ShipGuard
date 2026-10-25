@@ -65,6 +65,8 @@ node scripts/run-smoke-suite.mjs
 
 The launcher discovers every `*-smoke-test*.mjs` file dynamically, runs them serially, and reports each status and duration plus a final summary. Run the full suite after touching a skill's scripts or templates.
 
+Before every merge, the single project verification command `node scripts/run-smoke-suite.mjs` must have passed for the code being merged, and all code must have received a review from the other family (Claude reviews Codex code; Codex reviews Claude code). Reuse a successful suite result when the code is unchanged; documentation-only changes require a structural diff check, not another suite run. Do not merge while either requirement is unmet.
+
 ## Conventions and constraints
 
 - Results contract: skills read/write `visual-tests/_results/` (`audit-results.json` canonical, `audit-results.toon` compact, `logic-results.json`, `process-results.json`, change reports under `change-reports/`). Legacy `.code-audit-results/` is read as a fallback. Keep these paths and JSON shapes stable — skills consume each other's outputs (`--from-audit`, `--from-logic`, `--from-process`).
