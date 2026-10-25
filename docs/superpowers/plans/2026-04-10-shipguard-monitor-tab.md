@@ -1,3 +1,5 @@
+> **Statut : historique, achèvement non vérifié point par point.**
+
 # ShipGuard Monitor Tab — Implementation Plan
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,6 @@
+> **Statut : historique, achèvement non vérifié point par point.**
+> Livraison associée : [PR #81](https://github.com/bacoco/ShipGuard/pull/81) ; ne prouve pas l’achèvement exhaustif de ce document.
+
 # GrillGoal and ambiguity checks through hooks
 
 Implementation update (15 September 2026): the optional hook adapters are delivered in 2.11.0.
