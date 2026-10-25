@@ -1,3 +1,6 @@
+> **Statut : historique, achèvement non vérifié point par point.**
+> Livraison associée : [PR #80](https://github.com/bacoco/ShipGuard/pull/80) ; ne prouve pas l’achèvement exhaustif de ce document.
+
 # Périmètre de livraison de #79 — revue avant codage
 
 Version : 2.10.0. Remplace le périmètre proposé de la première version,

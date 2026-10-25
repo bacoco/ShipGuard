@@ -1,3 +1,6 @@
+> **Statut : historique, achèvement non vérifié point par point.**
+> Livraison associée : [PR #89](https://github.com/bacoco/ShipGuard/pull/89) ; ne prouve pas l’achèvement exhaustif de ce document.
+
 # Need-to-goal continuity: challenged design and first implementation
 
 **Status, 1 October 2026:** an opt-in goal-aware pre-review is implemented in PR #89, with
