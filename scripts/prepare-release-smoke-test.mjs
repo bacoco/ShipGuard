@@ -45,6 +45,22 @@ try {
   parts[2] += 1;
   const nextVersion = parts.join('.');
   const previousTag = `v${currentVersion}`;
+  const olderTag = `v${parts[0]}.0.0`;
+  assert.notEqual(olderTag, previousTag, 'fixture needs an older stable tag in the same major series');
+  run('git', ['tag', olderTag]);
+  run('git', ['commit', '--quiet', '--allow-empty', '-m', 'Changes after older release fixture']);
+  const beforeMissingTag = new Map(releaseFiles.map((path) => [path, read(path)]));
+  for (const mode of ['--dry-run', '--apply']) {
+    const result = spawnSync(process.execPath, ['scripts/prepare-release.mjs', nextVersion, mode], {
+      cwd: temporaryRoot,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1, `${mode} must refuse when the current version tag is missing`);
+    assert.ok(result.stderr.includes(`does not match current manifest version ${currentVersion}`), result.stderr);
+    assert.equal(result.stdout, '', `${mode} must refuse before rendering a release plan`);
+    for (const path of releaseFiles) assert.equal(read(path), beforeMissingTag.get(path), `${mode} changed ${path}`);
+    assert.equal(run('git', ['status', '--porcelain']), '', `${mode} refusal must leave Git clean`);
+  }
   run('git', ['tag', previousTag]);
   const subjects = ['Preserve $1 literally', 'Preserve $& literally', 'Preserve $$ literally'];
   const bullets = [];
@@ -75,7 +91,7 @@ try {
     [...releaseFiles].sort(),
     'apply must prepare exactly the same five files',
   );
-  console.log('PASS: $1, $& and $$ titles preserved in dry-run and apply; exactly five files prepared in a temporary Git copy.');
+  console.log('PASS: missing current tag refuses both modes without mutation; nominal $1, $& and $$ titles preserved; exactly five files prepared in a temporary Git copy.');
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
 }
