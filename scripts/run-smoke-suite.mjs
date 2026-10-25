@@ -1,19 +1,34 @@
 #!/usr/bin/env node
 
 import { readdirSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { dirname, relative, resolve } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const ignoredDirectories = new Set(['.git', 'node_modules']);
 const smokeTestPattern = /-smoke-test.*\.mjs$/;
+// Git tracks files, so include their parent directories while still discovering
+// new or renamed tests from the working tree inside those directories.
+const trackedDirectories = new Set([repositoryRoot]);
+const trackedFiles = execFileSync('git', ['ls-files', '-z'], {
+  cwd: repositoryRoot,
+  encoding: 'utf8',
+}).split('\0').filter(Boolean);
+
+for (const file of trackedFiles) {
+  let directory = dirname(resolve(repositoryRoot, file));
+  while (directory !== repositoryRoot) {
+    trackedDirectories.add(directory);
+    directory = dirname(directory);
+  }
+}
 
 function discoverSmokeTests(directory) {
   const tests = [];
 
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {
-      if (!ignoredDirectories.has(entry.name)) {
+      if (!ignoredDirectories.has(entry.name) && trackedDirectories.has(resolve(directory, entry.name))) {
         tests.push(...discoverSmokeTests(resolve(directory, entry.name)));
       }
     } else if (entry.isFile() && smokeTestPattern.test(entry.name)) {
