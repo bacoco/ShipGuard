@@ -6,7 +6,7 @@ contract and actual technical coverage are documented in
 [dialogue-hooks.md](../../plugins/shipguard/docs/dialogue-hooks.md). Model evaluations were cancelled
 by the maintainer; they are not claimed as delivered evidence.
 
-Status: design proposal, September 8, 2026. This branch adds the standalone skill; the additional hooks are neither implemented nor enabled. This document preserves the analysis for maintainers and is not a dependency of `grill-goal/SKILL.md`.
+Historical status, September 8, 2026: design proposal adding the standalone skill, before implementation of the additional hooks. The optional hooks were subsequently delivered in [2.11.0](2026-09-15-shipguard-2.11.0.md); activation remains opt-in. This document preserves the analysis for maintainers and is not a dependency of `grill-goal/SKILL.md`.
 
 ## Problem and expected outcome
 

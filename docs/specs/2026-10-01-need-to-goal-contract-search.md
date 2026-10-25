@@ -1,8 +1,9 @@
 # Need-to-goal continuity: challenged design and first implementation
 
 **Status, 1 October 2026:** an opt-in goal-aware pre-review is implemented in PR #89, with
-focused deterministic tests. It is not merged, activated or behaviorally qualified with a real
-model. Issue #90 remains the owner of the wider study. The owner's later request explicitly
+focused deterministic tests. [PR #89 was merged on 18 October 2026](https://github.com/bacoco/ShipGuard/pull/89);
+that merge does not establish activation or behavioral qualification with a real model.
+Issue #90 remains the owner of the wider study. The owner's later request explicitly
 authorized challenging the proposal, implementing the justified change and updating this PR;
 the earlier documentation-only mandate is historical, not a prohibition on this implementation.
 No merge, model evaluation, deployment, hook activation or scheduler change is included.
