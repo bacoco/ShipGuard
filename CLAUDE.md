@@ -60,32 +60,10 @@ Exception: `grill-goal` contains only `SKILL.md`, with all behavioral instructio
 Smoke tests are standalone Node scripts (no test framework, no package.json):
 
 ```bash
-node plugins/shipguard/hooks/dialogue-review-smoke-test.mjs
-node plugins/shipguard/skills/sg-improve/prompt-audit-smoke-test.mjs
-node plugins/shipguard/skills/sg-pre-review/goal-coverage-smoke-test.mjs
-node plugins/shipguard/skills/sg-pre-review/goal-runner-smoke-test.mjs
-node plugins/shipguard/skills/sg-code-audit/verification-result-smoke-test.mjs
-node plugins/shipguard/skills/sg-code-audit/verification-result-cli-smoke-test.mjs
-node plugins/shipguard/adapters/e2e/adapter-smoke-test.mjs
-node plugins/shipguard/adapters/e2e/outcomes-smoke-test.mjs
-node plugins/shipguard/adapters/e2e/runner-smoke-test.mjs
-node plugins/shipguard/hooks/dialogue-check-smoke-test.mjs
-node plugins/shipguard/hooks/model-controller-smoke-test.mjs
-node plugins/shipguard/hooks/dialogue-review-smoke-test.mjs
-node plugins/shipguard/skills/sg-pre-review/pre-review-smoke-test.mjs
-node plugins/shipguard/skills/sg-pre-review/evidence-guard-smoke-test.mjs
-node plugins/shipguard/skills/sg-ship/run-manifest-smoke-test.mjs
-node plugins/shipguard/skills/sg-visual-review/review-smoke-test.mjs
-node plugins/shipguard/skills/sg-visual-review/monitor-smoke-test.mjs
-node plugins/shipguard/skills/sg-improve/improve-dry-run-smoke-test.mjs
-node plugins/shipguard/skills/sg-improve/improve-rollback-smoke-test.mjs
-node plugins/shipguard/skills/sg-visual-fix/visual-fix-dry-run-smoke-test.mjs
-node plugins/shipguard/skills/sg-scout/offline-dry-run-smoke-test.mjs
-node plugins/shipguard/skills/sg-mission-lock/scripts/mission-lock-smoke-test.mjs
-node plugins/shipguard/skills/sg-model-scope-test/scripts/score-probe-smoke-test.mjs
+node scripts/run-smoke-suite.mjs
 ```
 
-Run the relevant smoke test after touching a skill's scripts or templates.
+The launcher discovers every `*-smoke-test*.mjs` file dynamically, runs them serially, and reports each status and duration plus a final summary. Run the full suite after touching a skill's scripts or templates.
 
 ## Conventions and constraints
 

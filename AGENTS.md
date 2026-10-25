@@ -7,7 +7,7 @@ This file provides guidance to Codex and other coding agents working in this rep
 Take the most direct, safe, verifiable path:
 - Define "done" before you start; state it in one sentence.
 - Work in small, reviewable increments — one skill or one concern per change.
-- Use the project's existing harness: the smoke-test `.mjs` scripts next to each skill are the verification mechanism. Run the relevant ones after any change to skill scripts or templates.
+- Use the project's existing harness: the smoke-test `.mjs` scripts next to each skill are the verification mechanism. Run them with `node scripts/run-smoke-suite.mjs` after any change to skill scripts or templates.
 - Do not invent new frameworks, test runners, or build steps; this repo is deliberately dependency-free (no package.json).
 
 ## Repository Guidance
