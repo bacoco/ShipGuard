@@ -8,6 +8,9 @@ process checks, visual testing, browser-flow recording, and review dashboards.
 The [root README](../../README.md) is the complete, canonical guide for features, installation,
 configuration, compatibility, and usage.
 
+Code audits are report-only by default and include Shell support. Explicit `--fix` opts in to
+tier-gated safe fixes in Claude Code; Codex `--fix` is not supported.
+
 ## Plugin package references
 
 - [`skills/`](skills/) contains the canonical skill instructions.
