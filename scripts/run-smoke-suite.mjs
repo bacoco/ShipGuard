@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
@@ -48,18 +48,46 @@ const tests = discoverSmokeTests(repositoryRoot)
 const suiteStartedAt = Date.now();
 let passed = 0;
 let failed = 0;
+const testResults = [];
+let consistency;
+
+// Status is numeric: 0 = passed, 1 = failed. Store no child output or errors.
+function measuredResult(path, result, durationMs) {
+  return { path, status: result.status === 0 ? 0 : 1, exitCode: result.status ?? 1, durationMs };
+}
+
+function writeSummary() {
+  const summaryPath = resolve(repositoryRoot, 'visual-tests/_results/smoke-summary.json');
+  const summary = {
+    status: consistency.status || (failed > 0 ? 1 : 0),
+    durationMs: Date.now() - suiteStartedAt,
+    counts: { passed, failed, total: tests.length, skipped: tests.length - passed - failed },
+    consistency,
+    tests: testResults,
+  };
+  try {
+    mkdirSync(dirname(summaryPath), { recursive: true });
+    writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  } catch {
+    // Reporting must not replace the suite's original exit code.
+    console.error('Could not write smoke summary.');
+  }
+}
 
 console.log('Running repository consistency check.');
+const consistencyStartedAt = Date.now();
 const consistencyResult = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/check-consistency.mjs')], {
   cwd: repositoryRoot,
   env: process.env,
   stdio: 'inherit',
 });
+consistency = measuredResult('scripts/check-consistency.mjs', consistencyResult, Date.now() - consistencyStartedAt);
 
 if (consistencyResult.status !== 0) {
   const reason = consistencyResult.error?.message
     ?? (consistencyResult.signal ? `signal ${consistencyResult.signal}` : `exit ${consistencyResult.status}`);
   console.error(`Consistency check failed (${reason}); smoke tests were not run.`);
+  writeSummary();
   process.exit(consistencyResult.status ?? 1);
 }
 
@@ -75,7 +103,9 @@ for (const [index, test] of tests.entries()) {
     env: process.env,
     stdio: 'inherit',
   });
-  const duration = formatDuration(Date.now() - startedAt);
+  const durationMs = Date.now() - startedAt;
+  const duration = formatDuration(durationMs);
+  testResults.push(measuredResult(displayPath, result, durationMs));
 
   if (result.status === 0) {
     passed += 1;
@@ -90,5 +120,6 @@ for (const [index, test] of tests.entries()) {
 
 const totalDuration = formatDuration(Date.now() - suiteStartedAt);
 console.log(`\nSummary: ${passed} passed, ${failed} failed, ${tests.length} total (${totalDuration})`);
+writeSummary();
 
 if (failed > 0) process.exitCode = 1;

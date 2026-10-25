@@ -229,6 +229,7 @@ Print one summary across all applicable lanes:
 - **Behavior:** units changed / new errors / surprises, reasoned-vs-measured mix (from `visual-tests/_results/process-results.json`)
 - **Visual:** pass/fail on impacted routes (or "skipped — reason")
 - **Findings:** total from `visual-tests/_results/findings.json` with the evidence mix (measured/reasoned/manual) — the dashboard's Findings tab is the entry point
+- **Tokens / cost:** report token volume and cost only when a real usage source supplies each value; identify that source and its coverage. For either missing value, state `not available`; never estimate or infer it from test durations, findings, prompts, or model pricing. Do not store prompts, identities, absolute paths, or private data.
 - **Audit-fix delta** (only under `--fix`): what the audit lane itself changed, labeled separately from the user's own diff
 - The dashboard URL, and the single most important thing for the human to look at first.
 
