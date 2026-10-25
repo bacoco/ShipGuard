@@ -1,0 +1,3 @@
+visual-tests/_results/
+.shipguard/history/
+*.server.pid
