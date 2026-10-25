@@ -2,14 +2,13 @@
 // Real capture regressions on local sample data; dedicated named session only.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 const here=dirname(fileURLToPath(import.meta.url));
-const output=resolve(here,'../../../../../visual-tests/_results/recorder-browser');
-mkdirSync(output,{recursive:true});
 const phase=process.argv[2]||'after';
 const exec=promisify(execFile);const session=`sg-recorder-audit-${process.pid}`;
 const toolbar=readFileSync(join(here,'recorder-toolbar.js'),'utf8').replace("'__CSS_PLACEHOLDER__'",JSON.stringify(readFileSync(join(here,'recorder-toolbar.css'),'utf8')));
@@ -22,6 +21,7 @@ const ev=async(code)=>{const r=JSON.parse(await ab('--json','eval','-b',Buffer.f
 const inject=async(state)=>{await ab('open',url);await ev(`sessionStorage.clear();window.__events=[];window.__sgBridge=s=>window.__events.push(JSON.parse(s));window.__sgRecorderState=${JSON.stringify(state||{steps:[],paused:false,startTime:Date.now()})};${toolbar}`)};
 let failures=0;const evidence=[];
 async function check(id,fn){try{await fn();console.log(`PASS ${id}`);evidence.push({id,pass:true})}catch(e){failures++;console.error(`FAIL ${id}: ${e.message}`);evidence.push({id,pass:false,error:e.message})}}
+const output=mkdtempSync(join(tmpdir(),'sg-recorder-audit-browser-'));
 try{
 await inject({steps:[{type:'open',url},{type:'click',text:'Alpha'},{type:'click',text:'Bravo'}],paused:false,startTime:Date.now()});
 await ab('screenshot',join(output,`${phase}-canonical.png`),'--full');
@@ -40,6 +40,6 @@ await inject();await ab('click','#sg-check-btn');
 await ev(`const r=document.querySelector('#empty').getBoundingClientRect();document.querySelector('.sg-check-overlay').dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:r.x+10,clientY:r.y+10}));`);
 await check('r1-z03-019 empty check is rejected visibly',async()=>{assert.equal(await ev('window.__events.filter(e=>e.type==="step").length'),0);assert.match(await ev('document.querySelector("#sg-recorder").textContent'),/text/i)});
 await ab('screenshot',join(output,`${phase}-empty-check.png`),'--full');
-}finally{try{await ab('close')}finally{await new Promise(done=>server.close(done))}}
 writeFileSync(join(output,`${phase}-evidence.json`),JSON.stringify({session,url,evidence},null,2));
+}finally{try{await ab('close')}finally{try{await new Promise(done=>server.close(done))}finally{rmSync(output,{recursive:true,force:true})}}}
 process.exitCode=failures?1:0;
