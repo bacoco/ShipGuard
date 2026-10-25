@@ -6,13 +6,15 @@ Code audit narrows the field. Logic Audit checks declared contracts and invarian
 
 ## Skills Overview
 
-ShipGuard is composed of 17 canonical skills plus one deprecated alias: a cross-skill mission guard, independent verification lanes, self-improvement, macro recording, durable change reports, and a bounded reference-comparison prompt. `sg-ship` orchestrates the applicable verification lanes end to end.
+ShipGuard is composed of 19 canonical skills plus one deprecated alias: a cross-skill mission guard, independent verification lanes, self-improvement, macro recording, durable change reports, and a bounded reference-comparison prompt. `sg-ship` orchestrates the applicable verification lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
 | `grill-goal` | Human dialogue and confirmed synthesis; does not execute the goal | User request | Standalone Markdown goal |
 | `sg-pre-review` | Explicit interfaces-first review before design, report-only | Original request + repository + optional supplied plan | Chat report; optional `prereview-results.json` for Pre-Review tab |
+| `sg-communication-memory` | Study authorized conversations for private contextual jargon and dialogue improvements | Authorized conversation sources + private profile | Private profile updates or an evidence-backed chat report |
 | `sg-mission-lock` | Protect scope proportionately: direct answers, silent checks for bounded actions, short explicit lock for complex or sensitive work; host hook supplies routing by default | User mission + host lifecycle event | Developer-context guard; no project files or runtime state |
+| `sg-model-scope-test` | Probe model and effort combinations for scope-protection behavior | Requested model/effort matrix | `PASS`, `FAIL`, or `UNAVAILABLE` per configuration |
 | `sg-beat-reference` | Build a bounded prompt that compares an artifact against a named, fetchable reference | Quality goal + reference + ceiling | Paste-ready comparison-loop prompt |
 | `sg-gauntlet` | Deprecated compatibility alias for `sg-beat-reference` | Former command | Delegates to canonical skill |
 | `sg-ship` | Conversational orchestrator -- proposes scope once, then code -> applicable logic -> process -> visual -> review | User request + repo diff | Unified review across applicable signals |
