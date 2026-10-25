@@ -1,3 +1,6 @@
+> **Statut : historique, achèvement non vérifié point par point.**
+> Livraison associée : [PR #62](https://github.com/bacoco/ShipGuard/pull/62), [tag v2.5.0](https://github.com/bacoco/ShipGuard/tree/v2.5.0) ; ne prouve pas l’achèvement exhaustif de ce document.
+
 # ShipGuard v2.5.0 — Recette Engine Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

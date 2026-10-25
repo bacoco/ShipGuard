@@ -1,3 +1,5 @@
+> **Statut : historique, achèvement non vérifié point par point.**
+
 # ShipGuard Smart Scope — Design Spec
 
 **Date:** 2026-04-10
