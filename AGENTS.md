@@ -18,6 +18,8 @@ Take the most direct, safe, verifiable path:
 
 The main branch is `main`. Create feature branches for changes; do not commit directly to `main` unless explicitly asked.
 
+Before creating a branch, run `git fetch origin` and base the new branch on `origin/main`. Never base it on a stale local `main`.
+
 ## Critical Constraints
 
 - This is a Claude Code plugin: each skill lives in `plugins/shipguard/skills/<name>/` with a `SKILL.md` (YAML frontmatter + prompt) and an `agents/openai.yaml` Codex adapter — keep both in sync when changing a skill's interface.
