@@ -1,14 +1,10 @@
-# Security policy — draft
-
-**Not ready for merge: maintainers must confirm supported versions and choose a
-private vulnerability reporting channel.**
+# Security policy
 
 ## Supported versions
 
-The plugin manifests identify version **2.18.0**, also the latest GitHub release
-at the time of this draft (2026-10-25). This identifies the current release; it
-does not establish a security maintenance commitment. The supported-version
-range and any backport policy remain to be confirmed before merge.
+Only the latest published GitHub release is supported for security fixes. When
+a new release is published, it becomes the only supported version. Older
+versions receive no backported security fixes; upgrade to the latest release.
 
 ## Local data access and storage
 
@@ -41,10 +37,10 @@ Sources: [project conventions](CLAUDE.md),
 [private communication memory](plugins/shipguard/docs/communication-memory.md),
 and [sandbox notes](plugins/shipguard/docs/sandbox.md).
 
-## Reporting a vulnerability — decision required
+## Reporting a vulnerability
 
-GitHub private vulnerability reporting is disabled for this repository, verified
-through the GitHub API on 2026-10-25. No private reporting channel is designated
-by this draft. **Maintainers must choose and document a private channel before
-merging this policy.** Do not put vulnerability details, secrets or personal data
-in public issues or pull requests.
+GitHub private vulnerability reporting is enabled for this repository. To report
+a vulnerability privately, open the repository's
+[GitHub Security Advisories page](https://github.com/bacoco/ShipGuard/security/advisories)
+and click **Report a vulnerability**. Do not put vulnerability details, secrets
+or personal data in public issues or pull requests.
