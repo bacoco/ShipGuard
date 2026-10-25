@@ -183,7 +183,7 @@ after.set('docs/product-roadmap.md', replaceOnce(
 after.set('CHANGELOG.md', replaceOnce(
   before.get('CHANGELOG.md'),
   /^(# Changelog\n\n)/,
-  `$1${changelogEntry}\n`,
+  (_match, heading) => `${heading}${changelogEntry}\n`,
   'CHANGELOG.md heading',
 ));
 
