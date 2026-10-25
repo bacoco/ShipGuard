@@ -120,6 +120,9 @@ const previousTag = git([
 if (!new RegExp(`^v${currentVersionParts[0]}\\.\\d+\\.\\d+$`).test(previousTag)) {
   fail(`latest reachable ${currentVersionParts[0]}.x tag is not a stable release tag: ${previousTag}`);
 }
+if (previousTag !== `v${currentVersion}`) {
+  fail(`previous stable tag ${previousTag} does not match current manifest version ${currentVersion}`);
+}
 const head = git(['rev-parse', 'HEAD']);
 const commitLines = git(['log', '--no-merges', '--format=%h%x09%s', `${previousTag}..HEAD`])
   .split('\n')
