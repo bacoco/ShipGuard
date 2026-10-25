@@ -34,6 +34,20 @@ const suiteStartedAt = Date.now();
 let passed = 0;
 let failed = 0;
 
+console.log('Running repository consistency check.');
+const consistencyResult = spawnSync(process.execPath, [resolve(repositoryRoot, 'scripts/check-consistency.mjs')], {
+  cwd: repositoryRoot,
+  env: process.env,
+  stdio: 'inherit',
+});
+
+if (consistencyResult.status !== 0) {
+  const reason = consistencyResult.error?.message
+    ?? (consistencyResult.signal ? `signal ${consistencyResult.signal}` : `exit ${consistencyResult.status}`);
+  console.error(`Consistency check failed (${reason}); smoke tests were not run.`);
+  process.exit(consistencyResult.status ?? 1);
+}
+
 console.log(`Discovered ${tests.length} smoke test${tests.length === 1 ? '' : 's'}.`);
 
 for (const [index, test] of tests.entries()) {

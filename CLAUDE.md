@@ -41,6 +41,9 @@ plugins/shipguard/                   # The plugin itself
     ├── sg-improve/                  # Session learnings → .shipguard/ + GitHub issues
     └── sg-scout/                    # GitHub technique scouting
 docs/                                # architecture.md, product-roadmap.md, specs/, scout-reports/, screenshots/
+├── proposals/                       # Design proposals
+└── superpowers/                     # Implementation plans
+    └── plans/
 examples/                            # Canonical manifests: _config.yaml, _regressions.yaml, _shared/login.yaml, auth/, chat/, documents/
 visual-tests/                        # This repo's own _config.yaml (dogfooding)
 scripts/build-demo-gif.py            # README demo GIF builder
