@@ -34,11 +34,11 @@ Sandbox note: browser sockets, local network, and cache writes may require expli
 1. Verify `agent-browser --version` is available
 2. Load the CLI's own reference (`agent-browser skills get core --full`) as ground truth for command syntax when unsure.
 3. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/sg-visual-discover`)
-4. Verify `{base_url}` is reachable: `agent-browser open {base_url}`, check no error.
+4. Check that browser connection options or inherited environment (`--cdp`, `--auto-connect`, `AGENT_BROWSER_CDP`, `AGENT_BROWSER_AUTO_CONNECT`, etc.) will not attach this run to an external browser. If they would, stop before opening or closing a browser. Before the first browser action, allocate a fresh, unpredictable `{session_id}` for this run (for example, `visual-run-$(date +%s)-$(openssl rand -hex 8)`) and record its literal value for every subsequent command, including recovery and cleanup. Use `agent-browser --session {session_id} open {base_url}` to check reachability. Never use an existing session name or attach to an external browser for this run.
    - **If unreachable and `_config.yaml` has an `app.start` block:** start the app via the ShipGuard CLI instead of aborting — `node visual-tests/shipguard.mjs serve` (copy it first if missing: `cp "$SHIPGUARD_PLUGIN_ROOT/cli/shipguard.mjs" visual-tests/`). Use the `base_url` it prints for the rest of the run. Remember that the CLI started it: run `node visual-tests/shipguard.mjs stop` in the final cleanup — only when the CLI started the app, never kill a server the user started themselves.
    - Exit-code semantics: `serve` exiting `2` is an **infrastructure error** (report it as such, distinct from any product finding); `3` is a config error.
    - Trust boundary: `serve` executes `app.start` through a shell with your local privileges — same trust level as running the project's npm scripts. Only run it on a `_config.yaml` you trust.
-   - If unreachable and there is no `app.start`, run `agent-browser close` before aborting (see cleanup invariant below).
+   - If unreachable and there is no `app.start`, apply the targeted cleanup rule below before aborting.
 5. Create `{screenshots_dir}` and `visual-tests/_results/` if missing (`mkdir -p`)
 6. Read `visual-tests/_regressions.yaml` (create empty if missing)
 
@@ -48,9 +48,11 @@ Scope-source precedence (bridge flags > `--diff` > natural language > `--regress
 
 ## Execution strategy
 
-**All browser tests run sequentially** in a single browser session. One login, one browser, one agent.
+**All browser tests run sequentially** in the allocated browser session. One login, one browser, one agent. Prefix **every** browser action in this skill and its references with `agent-browser --session {session_id}`; examples that omit the prefix are shorthand, not permission to use the default session. Keep the recorded literal ID across shell/tool calls; a shell variable from a previous call may be gone. `--session-name`, `--restore`, `--state`, and `--profile` concern auth or browser state and do not select the owned session.
 
-> **Cleanup invariant (hard rule):** On ANY exit — success, failure, abort, or interrupt — run `agent-browser close` (and `agent-browser close --all` if named sessions were used). Ignore errors from close. This covers the 3-consecutive-ERROR abort path (Browser crash recovery below), pre-flight reachability failure, and mid-run interrupts.
+> **Cleanup invariant (hard rule):** On every exit while the agent can still act — success, assertion failure, browser error, or deliberate abort — close only the session allocated for this run with `agent-browser --session {session_id} close`. If allocation failed, issue no close command. A session name alone never grants ownership of an externally attached browser. Never fall back to the default session, `close --all`, or unidentified processes. Keep the primary test/infrastructure error intact; if close fails or times out, report a separate `cleanup_error` with the session ID and failure. Attempt cleanup before finalizing the report so the error is visible there too.
+
+> **Interruption limit:** Instructions to the model cannot guarantee cleanup after its host process stops. If a CLI SIGINT or native turn cancellation prevents the close command from running, mark cleanup **not verified**; an external operator may inspect and close only the recorded owned session. Do not claim an interrupt-safe lifecycle hook unless that host's activation, trust, and execution have each been observed.
 
 > **CRITICAL: NEVER call multiple `agent-browser` commands in parallel Bash calls.** agent-browser uses a single Playwright daemon. Parallel calls cause navigations to race to the same page, producing wrong URLs and corrupted screenshots. Even separate Bash tool calls in the same message execute concurrently. Always chain browser commands sequentially.
 
@@ -90,7 +92,7 @@ For each manifest:
 ### Step 0: Isolation
 
 ```bash
-agent-browser open {base_url}
+agent-browser --session {session_id} open {base_url}
 ```
 
 Every test starts from the base URL. No state carries over.
@@ -132,12 +134,14 @@ Record them on the test as `browser_errors: [{"level": "error"|"warn", "text": "
 
 If any `agent-browser` command returns non-zero exit code or times out:
 
-1. `agent-browser close` (ignore errors)
-2. `agent-browser open {base_url}`
+1. `agent-browser --session {session_id} close` (record any `cleanup_error`; do not widen cleanup)
+2. `agent-browser --session {session_id} open {base_url}`
 3. If `requires_auth`: re-login
 4. Retry the failed step once
 5. If retry fails → test `ERROR`, next test
-6. If 3 consecutive `ERROR` across different tests → **abort entire run** with "Browser unstable — check agent-browser installation". Per the cleanup invariant, still run `agent-browser close` (ignore errors) before exiting.
+6. If 3 consecutive `ERROR` across different tests → **abort entire run** with "Browser unstable — check agent-browser installation". Apply the targeted cleanup invariant before exiting.
+
+Before finalizing the report, close the owned session and capture any `cleanup_error` independently of the test result. If pre-flight failed before allocation, record that no browser cleanup was attempted. A close failure must not turn a `FAIL` assertion into a browser `ERROR` or erase the primary failure.
 
 ## Update regressions
 
@@ -151,7 +155,7 @@ After all tests complete, update `visual-tests/_regressions.yaml`:
 
 ## Generate report
 
-Write the canonical machine-readable result to `visual-tests/_results/visual-results.json` (create the directory with `mkdir -p` if missing). `report.md` is a human-readable rendering only and must not be the only status source.
+Write the canonical machine-readable result to `visual-tests/_results/visual-results.json` (create the directory with `mkdir -p` if missing). Include the targeted cleanup outcome after the close attempt. `report.md` is a human-readable rendering only and must not be the only status source.
 
 Minimum JSON shape (stub — the authoritative full schema lives in [references/report-formats.md](references/report-formats.md)):
 
@@ -194,7 +198,7 @@ Display a concise summary: pass/total, failures (one line each), stale tests (wi
 | `wait <selector>` | Wait for element (single arg; also accepts ms, `--url`, `--load`, `--fn`, `--text`) | `agent-browser wait "#result"` |
 | `find <locator> <value> [action]` | Find by locator type, optionally act | `agent-browser find text "Submit" click` |
 | `get url` | Current URL | `agent-browser get url` |
-| `close` | Close browser | `agent-browser close` |
+| `close` | Close this run's browser | `agent-browser --session {session_id} close` |
 
 ### Advanced interactions
 
@@ -212,7 +216,7 @@ Before considering the run complete:
 - [ ] Every screenshot read and visually validated
 - [ ] `_regressions.yaml` updated (failures added, 3 passes → removed)
 - [ ] Report written to `{report_path}`
-- [ ] Browser closed — `agent-browser close` ran (cleanup invariant: always, even on failure or abort; `close --all` if named sessions were used)
+- [ ] Owned browser session closed with `agent-browser --session {session_id} close`, or a distinct `cleanup_error` / unverified interruption was reported; no close command if allocation failed
 - [ ] Summary displayed (pass/fail/stale)
 - [ ] If this run supports UI-visible code changes, invoke `sg-change-report` and commit the resulting `change-reports/<report-id>` and generated `persona-reports/<report-id>` artifacts with the PR
 - [ ] Do not commit `visual-tests/_results/review.html` or `visual-tests/_results/.server.pid`
