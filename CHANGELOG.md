@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.18.1 — 2026-10-26
+
+Changes since [2.18.0](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.0),
+covering `v2.18.0..0cfbf19523ddf5001c2b0d9caa8c5e0f6fc176a2`.
+
+### Changes
+
+- docs: show ShipGuard paths by user task (`c69678c`)
+- docs: clarify Git retention and browser preflight capabilities (`389c08c`)
+- docs(sg-visual-run): distinguish cleanup outcomes (`c57329f`)
+- fix(sg-visual-run): scope browser cleanup to owned session (`3a7d6b5`)
+- Add private-data-free smoke summary and sourced usage reporting (`4c8f136`)
+- docs: finalize security support and private reporting policy (`58a42d7`)
+- docs: draft security policy for issue #179 (`fdf8c8f`)
+- docs: mark historical plans and specs without claiming completion (Refs #175) (`de67fd8`)
+- fix: restrict smoke discovery to Git-tracked directories (`b792a8f`)
+- fix(release): require previous tag to match canonical version (`7a6a2a4`)
+- fix: preserve literal commit subjects in release changelog (`1249f20`)
+- docs: restore plugin README audit contract references (`53f95ab`)
+- docs: correct two historical specification statuses (`c9bd0a0`)
+- docs: require origin/main as new branch base (`ae9c983`)
+- chore: remove temporary issue 101 baseline files (refs #164) (`a2e4584`)
+- docs: specify merge verification and cross-family review (`5654b12`)
+- Keep recorder browser smoke output in a temporary directory (`34c72bf`)
+- feat: add explicit release preparation (Refs #158) (`ece02be`)
+- docs: make root README canonical (`0281098`)
+- test: add repository consistency check (`d148419`)
+- test: add smoke suite launcher (`541b014`)
+- docs: analyse des processus ShipGuard du 25 octobre 2026 (`8473bff`)
+- docs: align host summary and conclude issue 91 (Refs #91) (`9a091e3`)
+- docs: conclude bounded instruction study (Refs #91) (`68bb732`)
+
 ## 2.18.0 — 2026-10-21
 
 Changes since [2.17.0](https://github.com/bacoco/ShipGuard/releases/tag/v2.17.0),
