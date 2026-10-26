@@ -55,6 +55,22 @@ Personal profiles stay outside the plugin; updating ShipGuard distributes the me
 profile distribution remains separate. No automatic transcript collection or permission inference.
 See [communication memory](plugins/shipguard/docs/communication-memory.md).
 
+## Start with your task
+
+Describe what you need in ordinary language. These examples lead to different kinds of evidence:
+
+| You need to… | Say… | ShipGuard path |
+|-------------|------|----------------|
+| Understand existing interfaces before editing | “Review the existing interfaces before I change this.” | [`sg-pre-review`](plugins/shipguard/skills/sg-pre-review/SKILL.md) |
+| Check a completed change | “Check whether my change is ready to ship.” | [`sg-ship`](plugins/shipguard/skills/sg-ship/SKILL.md) |
+| Look for implementation bugs | “Audit this change for technical bugs.” | [`sg-code-audit`](plugins/shipguard/skills/sg-code-audit/SKILL.md) |
+| Check a workflow rule or invariant | “Check that this workflow still respects its rules.” | [`sg-logic-audit`](plugins/shipguard/skills/sg-logic-audit/SKILL.md) |
+| Compare behavior before and after | “Compare this process before and after my change.” | [`sg-process-check`](plugins/shipguard/skills/sg-process-check/SKILL.md) |
+| Verify what changed on screen | “Test the affected screens.” | [`sg-visual-run`](plugins/shipguard/skills/sg-visual-run/SKILL.md) |
+| Capture a bug you can reproduce in the browser | “Record this browser flow as a test.” | [`sg-record`](plugins/shipguard/skills/sg-record/SKILL.md) |
+
+Each path reports the evidence it obtained and what remains unverified. You can ask for one path directly; checking a change does not require running every path.
+
 ## How it works
 
 ![ShipGuard Demo](docs/screenshots/code-audit-dark.png)
