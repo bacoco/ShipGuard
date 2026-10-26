@@ -1,6 +1,6 @@
 # ShipGuard Product Roadmap
 
-> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.18.0** — and git tags follow it from now on.
+> **Versioning note:** the plugin manifest version (`plugins/shipguard/.claude-plugin/plugin.json`) is the canonical ShipGuard version — currently **2.18.1** — and git tags follow it from now on.
 
 ## Shipped in v2.0.0
 
