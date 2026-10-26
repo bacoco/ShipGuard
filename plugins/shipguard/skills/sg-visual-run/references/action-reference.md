@@ -43,7 +43,7 @@ Before executing a step, replace variables in all string fields:
 
 **Internal variables** (resolved by the skill, not from config):
 
-- `{session_id}` → `visual-run-{timestamp}` (unique per execution)
+- `{session_id}` → the fresh ID allocated and recorded before pre-flight navigation (for example `visual-run-{timestamp}-{random_hex}`); use it with `--session` on every browser command
 - `{screenshots_dir}` → value of `screenshots_dir` in `_config.yaml`
 - `{report_path}` → value of `report_path` in `_config.yaml`
 - `{date}`, `{time}` → current date and time
@@ -71,11 +71,12 @@ accessibility tree. Without `selector:`, existing `target:` matching applies.
 ### `open`
 
 ```bash
-agent-browser open <url>
-agent-browser wait --load networkidle
+agent-browser --session {session_id} open <url>
+agent-browser --session {session_id} wait --load networkidle
 ```
 
 After every `open`, run session expiry detection (see SKILL.md Execution Strategy).
+The remaining `agent-browser` examples omit `--session {session_id}` for readability: they are shorthand only. Add that prefix before running **each** command, including included steps, authentication, assertions, screenshots, and recovery. Do not use the default session.
 
 ### `back` / `forward` (Retour / Avance)
 

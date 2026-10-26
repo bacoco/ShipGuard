@@ -1,5 +1,7 @@
 # Advanced agent-browser interactions
 
+For an `sg-visual-run` run, prefix every browser command below with `--session {session_id}` using the fresh ID recorded before pre-flight navigation. These examples omit the prefix for readability. `--session-name` is a legacy auth persistence key, not browser session selection; existing profiles and auto-connect attach to external browsers and are outside this run's owned-session workflow.
+
 Reference for testing patterns beyond `click`/`fill`/`snapshot`. These are commonly missed and cause tests to silently fail or skip assertions.
 
 `agent-browser` is a Playwright CLI under the hood — every Playwright capability has a CLI equivalent. The commands below all generate real CDP events (OS-level), so React synthetic events fire correctly.
@@ -251,10 +253,10 @@ agent-browser network unroute
 **Auth bypass (skip login):**
 ```bash
 # Login once, export state
-agent-browser --session-name myapp open http://localhost:6969
+agent-browser --session {session_id} --restore myapp open http://localhost:6969
 # ... login ...
 # State is auto-saved. Re-run with:
-agent-browser --session-name myapp open http://localhost:6969   # auth restored
+agent-browser --session {session_id} --restore myapp open http://localhost:6969   # auth restored in this run's browser
 ```
 
 **Direct manipulation:**
@@ -459,15 +461,15 @@ agent-browser click "my-component >> button.submit"
 **Optimal patterns:**
 
 ```bash
-# Option 1: Saved session (recommended)
-agent-browser --session-name myapp open http://localhost:6969
+# Option 1: Persisted auth within this run's owned session
+agent-browser --session {session_id} --restore myapp open http://localhost:6969
 # First time, login manually. Subsequent runs, auth restored.
 
-# Option 2: Existing Chrome profile
+# Option 2: Existing Chrome profile (outside sg-visual-run's owned-session workflow)
 agent-browser --profile Default open http://localhost:6969
 # Reuses cookies from active Chrome session
 
-# Option 3: Auto-connect to running Chrome
+# Option 3: Auto-connect to running Chrome (outside sg-visual-run's owned-session workflow)
 agent-browser --auto-connect snapshot
 # Attaches to Chrome already open (with `--remote-debugging-port=9222`)
 
