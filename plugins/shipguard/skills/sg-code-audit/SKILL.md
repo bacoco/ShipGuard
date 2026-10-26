@@ -74,6 +74,17 @@ instructions, including those in the reference templates.
   at `base_sha` per attempt. An available tool alone is not authorization. If the orchestrator
   supplies worktrees, verify their allocation and retention before use. Do not require Claude's
   `isolation` parameter or a branch for Codex report-only.
+- Artifact retention also runs `git add --intent-to-add --force` in that linked worktree. Resolve
+  its actual index and shared object-store paths with
+  `git -C {worktree_path} rev-parse --path-format=absolute --git-path index` and
+  `git -C {worktree_path} rev-parse --path-format=absolute --git-path objects`;
+  neither is guaranteed to lie under the worktree.
+  Check the applicable host policy for writes to both paths as well as the zone JSON. A writable
+  JSON path does not prove Git retention is authorized. Reading paths or filesystem permissions
+  cannot prove a sandbox write will succeed, and a preflight must not write to Git merely to test
+  access. If policy explicitly denies retention, name that missing capability and stop as below;
+  if it cannot be determined, state that limit and handle any actual retention refusal through
+  the existing incomplete transport path, without widening permissions.
 - A linked worktree separates files and the Git index, not the permissions of children sharing
   the parent's access. If policy requires per-child system confinement that the available executor
   cannot provide, stop explicitly; a prompt requiring read-only source access is not that boundary.
@@ -431,7 +442,9 @@ still read, copy, and validate the original file. Never reconstruct it from the 
    retry once with the validation error. Only the newest non-superseded successful attempt may set
    `accepted_artifact` for a zone. Print: `Zone {zone.id} complete: {N} bugs found`.
    **Missing worktree/file or failed retention:** record `reason: "artifact_missing"` or
-   `"artifact_retention_failed"`. Retry at most once using the same mandatory retention step and a
+   `"artifact_retention_failed"`. If Git refuses the intent-to-add write, name the resolved index
+   or object-store permission that failed when observable; do not call it a JSON write failure or
+   request broader access automatically. Retry at most once using the same mandatory retention step and a
    new `agent_id`, marking the original attempt `superseded` first. A second transport failure is
    terminal: set run `status: "incomplete_artifact_transport"`, persist the failed attempt and
    already accepted paths, and stop new dispatch. Collect any already-running agents without

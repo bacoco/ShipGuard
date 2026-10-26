@@ -31,7 +31,7 @@ Execute YAML test manifests using agent-browser (Playwright CLI). Hybrid executi
 
 Sandbox note: browser sockets, local network, and cache writes may require explicit permission in Codex/Claude. See [../../docs/sandbox.md](../../docs/sandbox.md).
 
-1. Verify `agent-browser --version` is available
+1. Verify `agent-browser --version` is available. This confirms the binary responds, not that its browser can launch; the owned-session `open` in step 4 is the launch check. Report a launch/socket failure there as infrastructure for this visual run, not as a product assertion failure.
 2. Load the CLI's own reference (`agent-browser skills get core --full`) as ground truth for command syntax when unsure.
 3. Read `visual-tests/_config.yaml` — fail if missing (tell user to run `/sg-visual-discover`)
 4. Check that browser connection options or inherited environment (`--cdp`, `--auto-connect`, `AGENT_BROWSER_CDP`, `AGENT_BROWSER_AUTO_CONNECT`, etc.) will not attach this run to an external browser. If they would, stop before opening or closing a browser. Before the first browser action, allocate a fresh, unpredictable `{session_id}` for this run (for example, `visual-run-$(date +%s)-$(openssl rand -hex 8)`) and record its literal value for every subsequent command, including recovery and cleanup. Use `agent-browser --session {session_id} open {base_url}` to check reachability. Never use an existing session name or attach to an external browser for this run.
