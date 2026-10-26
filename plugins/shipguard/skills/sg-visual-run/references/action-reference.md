@@ -76,7 +76,7 @@ agent-browser --session {session_id} wait --load networkidle
 ```
 
 After every `open`, run session expiry detection (see SKILL.md Execution Strategy).
-All remaining `agent-browser` examples in this reference use the same `--session {session_id}` prefix, including included steps, authentication, assertions, screenshots, and recovery. Do not use the default session.
+The remaining `agent-browser` examples omit `--session {session_id}` for readability: they are shorthand only. Add that prefix before running **each** command, including included steps, authentication, assertions, screenshots, and recovery. Do not use the default session.
 
 ### `back` / `forward` (Retour / Avance)
 

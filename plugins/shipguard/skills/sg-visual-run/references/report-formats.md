@@ -66,6 +66,7 @@ Write to `visual-tests/_results/visual-results.json` after every run (create the
     "skipped": 0,
     "duration_ms": 36800
   },
+  "cleanup_status": "closed",
   "cleanup_error": null,
   "tests": [
     {
@@ -84,7 +85,7 @@ Write to `visual-tests/_results/visual-results.json` after every run (create the
 
 Allowed test statuses: `PASS`, `FAIL`, `ERROR`, `STALE`, `SKIPPED`. `SKIPPED` means *this layer reached no verdict about this manifest*: the mechanical `shipguard run` emits it for a manifest in which no mechanical step ran at all (every step is agent-owned — `llm-check`, `llm-wait`, `include`), because `PASS` would claim an evaluation that never happened. The pending work stays declared in `llm_steps_pending` and in the `needs-agent` lane of `run.json`. `summary.skipped` counts these. A `deprecated: true` manifest is **not** counted there and produces no test entry at all — it never enters the suite.
 
-For the agent-run path, `cleanup_error` is an additive root field: `null` when the owned session closed successfully, or an object such as `{"session_id":"visual-run-...","message":"close timed out"}` when targeted cleanup failed. Preserve test statuses, `failure_reason`, and the primary run error; display cleanup failure separately in `report.md` and the final summary. If host interruption stopped execution before cleanup could be observed, do not write `null` as proof of closure; report cleanup as unverified when the host resumes, or leave the interrupted report incomplete.
+For the agent-run path, `cleanup_status` and `cleanup_error` are additive root fields. Set `cleanup_status` to `closed` after a successful targeted close (`cleanup_error: null`), `failed` after a refused or timed-out close (`cleanup_error: {"session_id":"visual-run-...","message":"close timed out"}`), `not_attempted` when no session was allocated (`cleanup_error: null`), or `unverified` when host interruption prevented observing cleanup (`cleanup_error: null`). A `failed` status requires the recorded session ID and failure message; the other statuses require `cleanup_error: null`. Preserve test statuses, `failure_reason`, and the primary run error; display failed or unverified cleanup separately in `report.md` and the final summary. If host interruption prevents writing a report at all, leave the interrupted report incomplete rather than presenting an earlier `closed` result as current proof.
 
 Additive optional per-test fields (producers may emit them; consumers must tolerate their absence):
 - `browser_errors`: `[{"level": "error"|"warn", "text": "..."}]` — normalized console/pageerror entries captured after the test's steps. **Measured** evidence; feeds `findings.json`.

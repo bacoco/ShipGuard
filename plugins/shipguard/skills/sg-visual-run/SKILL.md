@@ -167,6 +167,8 @@ Minimum JSON shape (stub — the authoritative full schema lives in [references/
   "base_url": "http://127.0.0.1:8001",
   "scope": {"type": "from-audit", "selected_total": 1, "full_suite_total": 28},
   "summary": {"total": 1, "pass": 1, "fail": 0, "error": 0, "stale": 0, "skipped": 0, "duration_ms": 36800},
+  "cleanup_status": "closed",
+  "cleanup_error": null,
   "tests": [{"id": "pages/root-index", "url": "/", "status": "PASS", "screenshot": "screenshots/root-index.png", "failure_reason": null}]
 }
 ```
