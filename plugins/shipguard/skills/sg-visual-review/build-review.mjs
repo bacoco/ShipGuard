@@ -674,6 +674,9 @@ function escapeHtml(value) {
 function isSafeEvidenceHref(href) {
   if (typeof href !== 'string' || !href.trim()) return false;
   try {
+    // Reject scheme-relative hosts: they become file:// in locally opened reports.
+    const normalizedHref = href.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+/, '');
+    if (/^[\\/]{2}/.test(normalizedHref)) return false;
     // Parse as the browser does, including whitespace/control normalization.
     // The base permits relative links; keep the original href for rendering.
     const { protocol } = new URL(href, 'https://shipguard.invalid/');

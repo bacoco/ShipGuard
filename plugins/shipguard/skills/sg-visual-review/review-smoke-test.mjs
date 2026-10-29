@@ -429,13 +429,17 @@ function checkEvidenceLinks() {
     const outputPath = join(root, '_results/persona-reports/demo/client.html');
     const safe = [
       '../../review.html', './screenshots/before.png', 'evidence.txt', '/evidence',
-      '#home', '?view=evidence', '//example.invalid/evidence',
+      '#home', '?view=evidence', String.raw`\evidence`,
       'https://example.invalid/evidence?a=1&b=2', 'http://example.invalid/evidence',
       'HTTPS://example.invalid/evidence', ' https://example.invalid/evidence ',
       'mailto:review@example.invalid', './file:name.txt',
       'java%73cript:void(0)', 'javascript&#58;void(0)',
     ].map((href, i) => ({ label: `Safe <${i}>`, href }));
     const unsafe = [
+      '//example.invalid/evidence', String.raw`\\example.invalid\evidence`,
+      '\u0000 //example.invalid/evidence', ' ' + String.raw`\\example.invalid\evidence`,
+      '/\t/example.invalid/evidence', '\\\r\n\\example.invalid\\evidence',
+      String.raw`/\example.invalid/evidence`, String.raw`\/example.invalid/evidence`,
       'javascript:void(0)', 'JaVaScRiPt:void(0)', '  javascript:void(0)',
       '\u0000javascript:void(0)', 'java\tscript:void(0)',
       'java\nscript:void(0)', 'java\rscript:void(0)',
