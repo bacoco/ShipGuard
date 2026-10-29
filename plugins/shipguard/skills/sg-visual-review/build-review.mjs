@@ -281,6 +281,13 @@ function normalizeTestId(value) {
   return id;
 }
 
+function visualResultKeys(test) {
+  const identifiers = [normalizeTestId(test.id), normalizeTestId(test.manifest)].filter(Boolean);
+  // A qualified manifest identifies the test even with a basename-only id.
+  const qualified = identifiers.filter(key => key.includes('/'));
+  return qualified.length ? qualified : identifiers;
+}
+
 // ── 2. Parse visual-results.json first, then report.md as a legacy fallback ──
 function parseVisualResults() {
   if (!existsSync(VISUAL_RESULTS_PATH)) return { statusMap: {}, source: 'missing' };
@@ -301,15 +308,7 @@ function parseVisualResults() {
       // only _regressions.yaml could supply one, so every reason produced by
       // this run was shown as "none".
       const reason = typeof test.failure_reason === 'string' && test.failure_reason ? test.failure_reason : null;
-      const identifiers = [
-        normalizeTestId(test.id),
-        normalizeTestId(test.manifest),
-      ].filter(Boolean);
-      // A qualified manifest identifies the test even if an older producer
-      // writes only its basename in id. Do not alias it to another category.
-      const qualified = identifiers.filter(key => key.includes('/'));
-      const keys = qualified.length ? qualified : identifiers;
-      for (const key of keys) {
+      for (const key of visualResultKeys(test)) {
         statusMap[key] = status;
         if (duration != null) durationMap[key] = duration;
         if (reason) reasonMap[key] = reason;
@@ -1357,6 +1356,24 @@ const errorCount = tests.filter(t => t.status === 'ERROR').length;
 const staleCount = tests.filter(t => t.status === 'STALE').length;
 const skippedCount = tests.filter(t => t.status === 'SKIPPED').length;
 
+// Run counters belong to the recorded results, independently of today's
+// manifest inventory. Keep this projection out of the producer contract.
+const lastRunTests = visualResults.source === 'json'
+  ? (visualRawForFindings.tests || []).filter(test => test && typeof test === 'object')
+  : Object.entries(report.statusMap).map(([id, status]) => ({ id, status }));
+const lastRunSummary = { total: lastRunTests.length, pass: 0, fail: 0, error: 0, stale: 0, skipped: 0 };
+for (const test of lastRunTests) lastRunSummary[displayStatus(test.status, test.id || test.manifest).toLowerCase()]++;
+lastRunSummary.passRate = lastRunSummary.total ? lastRunSummary.pass / lastRunSummary.total * 100 : 0;
+const inventoryIds = new Set(tests.map(test => test.id));
+const slugCounts = new Map();
+for (const test of tests) {
+  const slug = test.id.split('/').pop();
+  slugCounts.set(slug, (slugCounts.get(slug) || 0) + 1);
+}
+const orphanedResults = lastRunTests.filter(test => !visualResultKeys(test).some(key =>
+  inventoryIds.has(key) || (!key.includes('/') && slugCounts.get(key) === 1)
+)).map(test => ({ id: test.id || test.manifest || '(unknown test)', status: test.status }));
+
 const data = {
   generated: new Date().toISOString(),
   summary: {
@@ -1369,6 +1386,8 @@ const data = {
     passRate: tests.length > 0 ? (passCount / tests.length) * 100 : 0,
     lastRun: report.lastRun || new Date().toISOString().split('T')[0],
   },
+  lastRunSummary: visualResults.source === 'json' || lastRunTests.length ? lastRunSummary : null,
+  orphanedResults,
   categories: [...new Set(tests.map(t => t.category))],
   tests,
   visualResultsSource: visualResults.source,
