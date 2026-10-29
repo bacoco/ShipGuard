@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // crawl-smoke-test.mjs — extractAssets pure tests + end-to-end crawl on a fixture site
-import { extractAssets, crawl, isFollowablePage, resolveMaxPages, DEFAULT_MAX_PAGES, EXIT } from './shipguard.mjs';
+import { extractAssets, crawl, isFollowablePage, resolveMaxPages, DEFAULT_MAX_PAGES, resolveResourceBudget, DEFAULT_RESOURCE_BUDGET_MS, RESOURCE_CONCURRENCY, EXIT } from './shipguard.mjs';
 import { spawn } from 'child_process';
 
 // async subprocess runner — execFileSync would block the event loop and
@@ -56,6 +56,111 @@ assert(isFollowablePage('http://x/page.html') && isFollowablePage('http://x/docs
   'follow: html, directory, clean URL');
 assert(!isFollowablePage('http://x/logo.png') && !isFollowablePage('http://x/clip.mp4'),
   'follow: asset extensions excluded');
+
+// ── #197: simulated slow resources, including HEAD -> GET fallback ──
+assert(resolveResourceBudget({}) === 30000 && DEFAULT_RESOURCE_BUDGET_MS === 30000,
+  'resource budget: default 30 seconds');
+assert(resolveResourceBudget({ crawl: { resource_budget_ms: 80 } }) === 80,
+  'resource budget: config honoured');
+assert([true, 0, -1, 'nope'].every((n) => resolveResourceBudget({ crawl: { resource_budget_ms: n } }) === DEFAULT_RESOURCE_BUDGET_MS),
+  'resource budget: invalid declarations retain the default');
+const realFetch = globalThis.fetch;
+const slowBase = 'http://slow.test/';
+let mode = 'complete';
+let active = 0;
+let peak = 0;
+let requests = [];
+globalThis.fetch = async (url, { method = 'GET', signal } = {}) => {
+  signal?.throwIfAborted();
+  const path = new URL(url).pathname;
+  requests.push(`${method} ${path}`);
+  const html = mode === 'complete'
+    ? (path === '/' ? '<img src="a.png"><script src="a.png"></script><img src="b.png"><img src="c.png"><img src="d.png"><img src="e.png"><a href="next.html">next</a>' : '<img src="a.png"><img src="fallback.png"><img src="fallback501.png">')
+    : mode === 'cumulative'
+      ? (path === '/' ? '<img src="first.png"><a href="next.html">next</a>' : '<img src="second.png">')
+      : '<img src="broken.png">' + Array.from({ length: 100 }, (_, i) => `<img src="slow${i}.png">`).join('') + '<a href="next.html">next</a>';
+  if (path === '/' || path === '/next.html') return new Response(method === 'GET' ? html : null, { headers: { 'content-type': 'text/html' } });
+  active++;
+  peak = Math.max(peak, active);
+  const delay = mode === 'complete' ? (path === '/a.png' ? 30 : 5)
+    : mode === 'cumulative' ? 150
+      : path === '/broken.png' ? 1 : 1000;
+  try {
+    await new Promise((resolve, reject) => {
+      const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+      const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, delay);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const status = method === 'HEAD' && path.startsWith('/fallback') ? (path === '/fallback501.png' ? 501 : 405)
+      : ['/a.png', '/b.png', '/broken.png'].includes(path) ? 404 : 200;
+    return new Response(null, { status });
+  } finally { active--; }
+};
+try {
+  const complete = await crawl(slowBase);
+  assert(peak === RESOURCE_CONCURRENCY && peak === 4 && active === 0,
+    'resource concurrency: checks overlap without exceeding four requests');
+  assert(complete.pages === 2 && complete.assets_checked === 8 && !complete.truncated
+    && JSON.stringify(complete.broken) === JSON.stringify([
+      { url: `${slowBase}a.png`, status: 404, found_on: slowBase, tag: 'img' },
+      { url: `${slowBase}b.png`, status: 404, found_on: slowBase, tag: 'img' },
+      { url: `${slowBase}a.png`, status: 404, found_on: `${slowBase}next.html`, tag: 'img' },
+    ]), 'resource concurrency: completion order preserves findings, tags and source pages');
+  assert(requests.filter((r) => r === 'HEAD /a.png').length === 1
+    && requests.includes('GET /fallback.png') && requests.includes('GET /fallback501.png'),
+    'resource concurrency: URL deduplication and HEAD 405/501 fallback preserved');
+
+  mode = 'cumulative'; requests = []; peak = 0;
+  const cumulative = await crawl(slowBase, { resourceBudgetMs: 250 });
+  assert(cumulative.pages === 2 && cumulative.assets_checked === 2 && cumulative.broken.length === 0
+    && cumulative.truncated?.resources_unchecked === 1 && active === 0,
+    'resource budget: shared across pages, not reset for each resource batch');
+
+  mode = 'exhausted'; requests = []; peak = 0;
+  const started = performance.now();
+  const exhausted = await crawl(slowBase, { resourceBudgetMs: 100 });
+  assert(performance.now() - started < 800 && requests.length < 10 && peak <= 4 && active === 0,
+    'resource budget: aborts in-flight work and stops launching queued slow requests');
+  assert(exhausted.assets_checked === 1 && exhausted.broken.length === 1 && exhausted.broken[0].status === 404
+    && exhausted.truncated?.resources_unchecked === 101 && exhausted.truncated.queued_unvisited === 1
+    && exhausted.truncated.resource_budget_ms === 100 && exhausted.truncated.reason.includes('coverage is partial'),
+    'resource budget: retains measured failures and declares unchecked resources/pages without fake status-0 failures');
+
+  // Expiration also covers the GET fallback, without counting its HEAD as a completed check.
+  mode = 'complete'; requests = [];
+  const fallback = await crawl(`${slowBase}next.html`, { resourceBudgetMs: 8 });
+  assert(fallback.truncated?.resources_unchecked > 0 && active === 0
+    && requests.includes('GET /fallback.png') && !fallback.broken.some((b) => b.status === 0),
+    'resource budget: GET fallback shares the deadline and cancellation is not a finding');
+} finally { globalThis.fetch = realFetch; }
+
+// Both CLI entry points persist incomplete coverage and return declaration exit 3.
+const budgetServer = http.createServer((req, res) => {
+  if (req.url === '/') {
+    res.setHeader('content-type', 'text/html');
+    return res.end('<img src="slow.png">');
+  }
+  if (req.method === 'HEAD') { res.statusCode = 405; return res.end(); }
+  const timer = setTimeout(() => res.end('slow'), 1000);
+  res.once('close', () => clearTimeout(timer));
+});
+await new Promise((r) => budgetServer.listen(0, '127.0.0.1', r));
+const budgetRoot = mkdtempSync(join(tmpdir(), 'sg-resource-budget-'));
+mkdirSync(join(budgetRoot, 'visual-tests'), { recursive: true });
+writeFileSync(join(budgetRoot, 'visual-tests', '_config.yaml'), `base_url: "http://127.0.0.1:${budgetServer.address().port}/"\ncrawl:\n  resource_budget_ms: 80\nprofiles:\n  resources:\n    checks: [local-assets]\n`);
+writeFileSync(join(budgetRoot, 'visual-tests', 'build-review.mjs'), 'process.exit(0);');
+try {
+  const budgetCode = await runCli([CLI, 'crawl'], budgetRoot);
+  const budgetArtifact = JSON.parse(readFileSync(join(budgetRoot, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
+  assert(budgetCode === EXIT.CONFIG && budgetArtifact.assets_checked === 0 && budgetArtifact.broken.length === 0
+    && budgetArtifact.truncated?.resource_budget_ms === 80 && budgetArtifact.truncated.resources_unchecked === 1,
+    'cmdCrawl: resource budget config reaches the artifact and incomplete coverage never exits clean');
+  const budgetRunCode = await runCli([CLI, 'run', '--profile=resources'], budgetRoot);
+  const budgetRun = JSON.parse(readFileSync(join(budgetRoot, 'visual-tests', '_results', 'run.json'), 'utf8'));
+  assert(budgetRunCode === EXIT.CONFIG && budgetRun.lanes.crawl.truncated?.resources_unchecked === 1
+    && budgetRun.lanes.crawl.remedy === 'declaration',
+    'cmdRun: resource exhaustion reaches the crawl lane and exit aggregation');
+} finally { budgetServer.closeAllConnections(); budgetServer.close(); }
 
 // Redirected HTML resolves relative assets against the final response URL.
 const redirectServer = http.createServer((req, res) => {

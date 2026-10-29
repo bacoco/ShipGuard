@@ -270,6 +270,7 @@ build_command: null
 # "truncated" in crawl-results.json — raise it for a site larger than the cap.
 # crawl:
 #   max_pages: 200
+#   resource_budget_ms: 30000  # total time spent checking resources, across pages
 
 # Named recette profiles (used by: shipguard run --profile=NAME).
 # scope matches manifest paths and step URLs; checks pick the deterministic lanes.
@@ -449,18 +450,27 @@ export function isFollowablePage(url) {
   return last !== '' && !last.includes('.');
 }
 
-async function checkUrl(url) {
+async function checkUrl(url, budgetSignal) {
   try {
-    let r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-    if (r.status === 405 || r.status === 501) r = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
+    const signal = () => AbortSignal.any([budgetSignal, AbortSignal.timeout(5000)]);
+    let r = await fetch(url, { method: 'HEAD', signal: signal() });
+    if (r.status === 405 || r.status === 501) r = await fetch(url, { method: 'GET', signal: signal() });
     return r.status;
-  } catch { return 0; }
+  } catch { return budgetSignal.aborted ? undefined : 0; }
 }
 
 // The page cap bounds the RUN, not the site: a site larger than the cap is not
 // defective, so reaching it is declared (see `truncated` below), never a failure.
 // crawl.max_pages in _config.yaml / --max-pages=N raises it.
 export const DEFAULT_MAX_PAGES = 200;
+export const RESOURCE_CONCURRENCY = 4;
+export const DEFAULT_RESOURCE_BUDGET_MS = 30000;
+
+export function resolveResourceBudget(config) {
+  const raw = config?.crawl?.resource_budget_ms;
+  const n = typeof raw === 'boolean' ? NaN : Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_RESOURCE_BUDGET_MS;
+}
 
 export function resolveMaxPages(config, flags = {}) {
   const raw = flags['max-pages'] ?? (config && config.crawl ? config.crawl.max_pages : undefined);
@@ -472,6 +482,9 @@ export function resolveMaxPages(config, flags = {}) {
 
 export async function crawl(baseUrl, opts = {}) {
   const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES;
+  const resourceBudgetMs = opts.resourceBudgetMs ?? DEFAULT_RESOURCE_BUDGET_MS;
+  let resourceBudgetLeft = resourceBudgetMs;
+  let uncheckedResources = 0;
   const start = new URL(baseUrl).href;
   const queue = [start];
   const visitedPages = new Set();
@@ -508,20 +521,42 @@ export async function crawl(baseUrl, opts = {}) {
     const type = res.headers.get('content-type') || '';
     if (!type.includes('html')) continue;
     const html = await res.text();
-    for (const { url, tag } of extractAssets(html, res.url || pageUrl)) {
+    const assets = extractAssets(html, res.url || pageUrl);
+    const pending = [...new Set(assets.map((a) => a.url))].filter((url) => !checkedAssets.has(url));
+    if (pending.length && resourceBudgetLeft > 0) {
+      const started = performance.now();
+      const budget = new AbortController();
+      const timer = setTimeout(() => budget.abort(), resourceBudgetLeft);
+      let next = 0;
+      const worker = async () => {
+        while (next < pending.length && !budget.signal.aborted) {
+          const url = pending[next++];
+          const status = await checkUrl(url, budget.signal);
+          // Budget cancellation is missing evidence, never an HTTP failure.
+          if (status !== undefined) checkedAssets.set(url, status);
+        }
+      };
+      try { await Promise.all(Array.from({ length: Math.min(RESOURCE_CONCURRENCY, pending.length) }, worker)); }
+      finally {
+        clearTimeout(timer);
+        resourceBudgetLeft -= performance.now() - started;
+        if (budget.signal.aborted) resourceBudgetLeft = 0;
+      }
+    }
+    // Replay in document order: concurrency must not reorder findings, choose
+    // a different source tag, or change BFS order and cross-page provenance.
+    for (const { url, tag } of assets) {
       const isPageLink = tag === 'a' || tag === 'iframe';
       if (isPageLink && isFollowablePage(url) && !visitedPages.has(url)) queue.push(url);
-      if (!checkedAssets.has(url)) {
-        const status = await checkUrl(url);
-        checkedAssets.set(url, status);
-        if (status === 0 || status >= 400) broken.push({ url, status, found_on: pageUrl, tag });
-      } else {
+      if (checkedAssets.has(url)) {
         const status = checkedAssets.get(url);
         if ((status === 0 || status >= 400) && !broken.some((b) => b.url === url && b.found_on === pageUrl)) {
           broken.push({ url, status, found_on: pageUrl, tag });
         }
       }
     }
+    uncheckedResources = pending.filter((url) => !checkedAssets.has(url)).length;
+    if (uncheckedResources) break;
   }
   // Reason-carrying and present ONLY when there is a gap — the same asymmetry
   // buildRunJson enforces on lanes (a "ran" lane carries no reason). A non-empty
@@ -529,7 +564,8 @@ export async function crawl(baseUrl, opts = {}) {
   const queuedUnvisited = new Set(queue.filter((u) => !visitedPages.has(u))).size;
   const pages = visitedPages.size - unreachable;
   const out = { pages, assets_checked: checkedAssets.size, broken };
-  if (queuedUnvisited) out.truncated = { reason: `page cap ${maxPages} reached: crawled ${pages} page(s), at least ${queuedUnvisited} known URL(s) left unvisited (plus whatever they link to) — coverage is partial`, max_pages: maxPages, queued_unvisited: queuedUnvisited };
+  if (uncheckedResources) out.truncated = { reason: `resource budget ${resourceBudgetMs} ms exhausted: ${uncheckedResources} known resource(s) unchecked, ${queuedUnvisited} known page URL(s) unvisited (plus whatever they link to) — coverage is partial; raise crawl.resource_budget_ms in _config.yaml`, resource_budget_ms: resourceBudgetMs, resources_unchecked: uncheckedResources, queued_unvisited: queuedUnvisited };
+  else if (queuedUnvisited) out.truncated = { reason: `page cap ${maxPages} reached: crawled ${pages} page(s), at least ${queuedUnvisited} known URL(s) left unvisited (plus whatever they link to) — coverage is partial`, max_pages: maxPages, queued_unvisited: queuedUnvisited };
   return out;
 }
 
@@ -682,6 +718,8 @@ Subcommands:
                              Check local links/assets over HTTP -> _results/crawl-results.json
                              (page cap: --max-pages, else crawl.max_pages, else 200; reaching it
                              is declared as "truncated" in the artifact, not a failure)
+                             Resource checks: at most 4 concurrent; crawl.resource_budget_ms
+                             bounds their total time across pages (default 30000 ms).
   run     [--profile=NAME] [--scope=STR] [--serve] [--no-crawl] [--max-pages=N]
                              Full mechanical recette: serve if needed, execute manifests
                              (mechanical steps), checks, artifacts, dashboard
@@ -788,7 +826,7 @@ async function cmdCrawl(args) {
   const baseUrl = String(args.flags['base-url'] || resolveBaseUrl(config, root) || '');
   if (!baseUrl) { console.error('config: no base_url and no running app server'); return EXIT.CONFIG; }
   console.log(`crawling ${baseUrl} ...`);
-  const result = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags) });
+  const result = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags), resourceBudgetMs: resolveResourceBudget(config) });
   if (result.infra_error) { console.error(`crawl: ${result.infra_error}`); return EXIT.INFRA; }
   const resultsDir = join(root, 'visual-tests', '_results');
   mkdirSync(resultsDir, { recursive: true });
@@ -803,7 +841,7 @@ async function cmdCrawl(args) {
   if (result.truncated) artifact.truncated = result.truncated;
   writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify(artifact, null, 2));
   console.log(`crawl: ${result.pages} pages, ${result.assets_checked} assets checked, ${result.broken.length} broken`);
-  if (result.truncated) console.log(`crawl: INCOMPLETE — ${result.truncated.reason}; raise crawl.max_pages in _config.yaml or pass --max-pages=N`);
+  if (result.truncated) console.log(`crawl: INCOMPLETE — ${result.truncated.reason}${result.truncated.max_pages ? '; raise crawl.max_pages in _config.yaml or pass --max-pages=N' : ''}`);
   for (const b of result.broken) console.log(`  BROKEN [${b.tag}] ${b.url} (HTTP ${b.status}) on ${b.found_on}`);
   // Same aggregation rule as cmdRun, so the two entry points cannot disagree
   // about the same crawl: a bound below the site is a declaration a human must
@@ -1412,7 +1450,7 @@ async function cmdRun(args) {
       lanes.crawl = { status: 'skipped', reason: 'local-assets check disabled by --no-crawl' };
     }
     if (checks.includes('local-assets') && !args.flags['no-crawl']) {
-      crawlResult = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags) });
+      crawlResult = await crawl(baseUrl, { maxPages: resolveMaxPages(config, args.flags), resourceBudgetMs: resolveResourceBudget(config) });
       if (crawlResult.infra_error) { lanes.crawl = { status: 'error', reason: crawlResult.infra_error, remedy: LANE_REMEDIES.INFRA }; }
       else {
         const crawlArtifact = {
@@ -1423,8 +1461,8 @@ async function cmdRun(args) {
         writeFileSync(join(resultsDir, 'crawl-results.json'), JSON.stringify(crawlArtifact, null, 2));
         lanes.crawl = { status: 'ran', results: 'crawl-results.json' };
         // Declared coverage gap, not a lane error. The remedy is a human raising
-        // crawl.max_pages / --max-pages, never a retry: re-running an unchanged
-        // truncated crawl stops at exactly the same page. That is a declaration
+        // crawl.max_pages / --max-pages or crawl.resource_budget_ms. The bound
+        // must be widened to request complete coverage. That is a declaration
         // fault (3), and never EXIT.INFRA, whose whole sentence is "retry".
         if (crawlResult.truncated) {
           lanes.crawl.truncated = crawlResult.truncated;
