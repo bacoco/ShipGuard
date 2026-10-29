@@ -78,7 +78,12 @@ export function yamlParse(text) {
         const tail = v.slice(i + 1).trim();
         if (tail === '' || tail.startsWith('#')) {
           const inner = v.slice(1, i);
-          return q === '"' ? inner.replace(/\\(["\\])/g, '$1') : inner;
+          // Decode exactly the escapes emitted by sg-record, in one pass so
+          // literal backslash sequences are never decoded a second time.
+          return q === '"' ? inner.replace(/\\(x[0-9a-fA-F]{2}|["\\nrt])/g, (_, escape) => {
+            if (escape[0] === 'x') return String.fromCharCode(parseInt(escape.slice(1), 16));
+            return { n: '\n', r: '\r', t: '\t' }[escape] ?? escape;
+          }) : inner;
         }
       }
     }
