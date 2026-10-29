@@ -418,6 +418,55 @@ function createFixture() {
   return root;
 }
 
+function checkEvidenceLinks() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-links-'));
+  try {
+    copyFileSync(SOURCE_BUILD, join(root, 'build-review.mjs'));
+    copyFileSync(SOURCE_TEMPLATE, join(root, '_review-template.html'));
+    writeFileSync(join(root, '_config.yaml'), 'base_url: http://localhost:8001\n');
+    mkdirSync(join(root, '_results/change-reports/demo'), { recursive: true });
+    const reportPath = join(root, '_results/change-reports/demo/report.json');
+    const outputPath = join(root, '_results/persona-reports/demo/client.html');
+    const safe = [
+      '../../review.html', './screenshots/before.png', 'evidence.txt', '/evidence',
+      '#home', '?view=evidence', '//example.invalid/evidence',
+      'https://example.invalid/evidence?a=1&b=2', 'http://example.invalid/evidence',
+      'HTTPS://example.invalid/evidence', ' https://example.invalid/evidence ',
+      'mailto:review@example.invalid', './file:name.txt',
+      'java%73cript:void(0)', 'javascript&#58;void(0)',
+    ].map((href, i) => ({ label: `Safe <${i}>`, href }));
+    const unsafe = [
+      'javascript:void(0)', 'JaVaScRiPt:void(0)', '  javascript:void(0)',
+      '\u0000javascript:void(0)', 'java\tscript:void(0)',
+      'java\nscript:void(0)', 'java\rscript:void(0)',
+      'data:text/html,harmless', 'DATA:text/plain,harmless',
+      'vbscript:Empty', 'blob:https://example.invalid/id', 'file:///evidence',
+      'custom:evidence', 'https://[', '', ' \t\r\n', 42, {}, [], null,
+    ].map(href => ({ label: 'Unsupported evidence', href }));
+    const report = { id: 'demo', title: 'Evidence <review>', generated_at: '2026-10-29T00:00:00Z',
+      audiences: ['client'], changes: [{ id: 'home', title: 'Home', impact: 'Unchanged content' }] };
+    const build = links => {
+      writeJson(reportPath, { ...report, links });
+      const source = readFileSync(reportPath, 'utf8');
+      const result = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+      assert(result.status === 0, `evidence links build failed: ${result.stderr}`);
+      assert(readFileSync(reportPath, 'utf8') === source, 'evidence link validation changed the source report');
+      return readFileSync(outputPath, 'utf8');
+    };
+    const emptyHtml = build([]);
+    const safeHtml = build(safe);
+    const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const anchors = safe.map(({ label, href }) => `<a class="button" href="${escape(href)}">${escape(label)}</a>`).join('');
+    assert(safeHtml.includes(anchors), 'ordinary evidence hrefs, labels, order or escaping changed');
+    assert(safeHtml.replace(anchors, '') === emptyHtml, 'content outside evidence links changed');
+    assert(build([...safe, ...unsafe, null, {}]) === safeHtml,
+      'unsupported evidence destinations were rendered or changed surrounding content');
+    console.log(`Evidence links passed: ${safe.length} ordinary destinations preserved; ${unsafe.length} unsafe/malformed destinations omitted; surrounding HTML and source unchanged.`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 // #144: exercise YAML through the real generator and its embedded dashboard data.
 function checkYamlRegressions() {
   const root = mkdtempSync(join(tmpdir(), 'shipguard-review-yaml-'));
@@ -1078,6 +1127,7 @@ async function main() {
   let log = null;
   let passed = false;
   try {
+    checkEvidenceLinks();
     checkYamlRegressions();
     checkManifestDiscovery();
     checkLastRunBanner();

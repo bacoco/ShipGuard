@@ -671,6 +671,18 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function isSafeEvidenceHref(href) {
+  if (typeof href !== 'string' || !href.trim()) return false;
+  try {
+    // Parse as the browser does, including whitespace/control normalization.
+    // The base permits relative links; keep the original href for rendering.
+    const { protocol } = new URL(href, 'https://shipguard.invalid/');
+    return ['http:', 'https:', 'mailto:'].includes(protocol);
+  } catch {
+    return false;
+  }
+}
+
 function slugify(value) {
   return String(value || 'report')
     .toLowerCase()
@@ -872,7 +884,7 @@ function renderAudienceReport(report, audience) {
     </article>`).join('');
 
   const links = report.links.map(link => {
-    if (!link || !link.href) return '';
+    if (!link || !isSafeEvidenceHref(link.href)) return '';
     return `<a class="button" href="${escapeHtml(link.href)}">${escapeHtml(link.label || link.href)}</a>`;
   }).join('');
 
