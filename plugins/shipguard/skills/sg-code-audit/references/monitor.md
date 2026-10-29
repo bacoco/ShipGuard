@@ -64,6 +64,13 @@ If no matching server found:
 
 Store `monitor_active` (boolean) and `monitor_url` (string) as working variables for subsequent phases.
 
+Before sending monitor events, GET `{monitor_url}/api/session` and retain its JSON
+`token` only in memory as `monitor_session`. Include
+`X-ShipGuard-Session: {monitor_session}` on every POST below. The token belongs to
+the running review server; obtain a fresh one after a server restart. Never print
+or persist it. If session acquisition fails, disable monitoring under the existing
+failure policy.
+
 ## POST payloads
 
 ### audit-start (Phase 3.5)

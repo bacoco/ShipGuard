@@ -85,7 +85,8 @@ function formatFailure(error, root, port, log) {
   ].filter(Boolean).join('\n');
 }
 
-function request(port, method, path, body = null) {
+async function request(port, method, path, body = null, headers = {}, withSession = true) {
+  const token = method === 'POST' && withSession ? JSON.parse((await request(port, 'GET', '/api/session')).body).token : null;
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = httpRequest({
@@ -93,20 +94,67 @@ function request(port, method, path, body = null) {
       port,
       path,
       method,
-      headers: payload ? {
+      headers: { ...(payload ? {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
-      } : undefined,
+      } : {}), ...(token ? { 'X-ShipGuard-Session': token } : {}), ...headers },
     }, res => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', chunk => { text += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: text }));
+      res.on('end', () => resolve({ status: res.statusCode, body: text, headers: res.headers }));
     });
     req.on('error', reject);
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+async function checkRequestBoundary(port, root) {
+  const local = `http://127.0.0.1:${port}`;
+  const foreign = `http://untrusted.invalid:${port}`;
+  const persistedPaths = ['fix-manifest.json', 'audit-monitor.json'].map(name => join(root, '_results', name));
+  const persistedBefore = persistedPaths.map(path => existsSync(path) ? readFileSync(path, 'utf8') : null);
+  for (const path of ['/health', '/review.html', '/api/session', '/api/monitor/status']) {
+    for (const headers of [
+      { Host: `untrusted.invalid:${port}` },
+      { Host: `untrusted.invalid:${port}`, Origin: foreign },
+      { Origin: foreign }, { Origin: 'null' }, { Origin: '' },
+      { Origin: `${local}/` }, { Origin: `http://localhost:${port + 1}` },
+    ]) {
+      const res = await request(port, 'GET', path, null, headers);
+      assert(res.status === 403 && !res.headers['access-control-allow-origin'], `untrusted GET accepted: ${path}`);
+    }
+  }
+  const session = await request(port, 'GET', '/api/session');
+  const token = JSON.parse(session.body).token;
+  assert(/^[a-f0-9]{64}$/.test(token) && session.headers['cache-control'] === 'no-store', 'session proof missing or cacheable');
+  assert(!(await request(port, 'GET', '/review.html')).body.includes(token), 'session proof persisted in HTML');
+  for (const Origin of [local, `http://localhost:${port}`]) {
+    const res = await request(port, 'GET', '/api/session', null, { Origin });
+    assert(res.status === 200 && JSON.parse(res.body).token === token, 'trusted local origin lost its session');
+    const preflight = await request(port, 'OPTIONS', '/save-manifest', null, { Origin,
+      'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'X-ShipGuard-Session' });
+    assert(preflight.status === 204 && preflight.headers['access-control-allow-headers'].includes('X-ShipGuard-Session'), 'local preflight failed');
+  }
+  assert((await request(port, 'OPTIONS', '/save-manifest', null, { Origin: foreign })).status === 403, 'foreign preflight accepted');
+  for (const path of ['/save-manifest', '/api/monitor/audit-start', '/api/monitor/agent-update', '/api/monitor/audit-complete']) {
+    for (const headers of [
+      {}, { Origin: local }, { Origin: 'null', 'X-ShipGuard-Session': token },
+      { 'X-ShipGuard-Session': 'wrong-session' },
+      { Origin: foreign, 'X-ShipGuard-Session': token },
+      { Host: `untrusted.invalid:${port}`, Origin: foreign, 'X-ShipGuard-Session': token },
+      { Host: `untrusted.invalid:${port}`, 'X-ShipGuard-Session': token },
+    ]) {
+      assert((await request(port, 'POST', path, { action: 'validate-and-fix', tests: [] }, headers, false)).status === 403,
+        `write accepted without a trusted origin and session: ${path}`);
+    }
+  }
+  assert(persistedPaths.every((path, i) => (existsSync(path) ? readFileSync(path, 'utf8') : null) === persistedBefore[i]),
+    'rejected writes changed persisted state');
+  assert(JSON.parse((await request(port, 'GET', '/api/monitor/status')).body).status === 'idle', 'rejected writes changed monitor memory');
+  console.log('Request boundary passed: trusted hosts/origins, preflights, session proof, rejected writes leave state unchanged.');
+  return token;
 }
 
 async function waitForServer(port) {
@@ -1309,11 +1357,25 @@ async function main() {
     assert((await request(port, 'GET', '/visual-results.json')).status === 200, 'visual-results.json was not served');
     assert((await request(port, 'GET', '/persona-reports/demo/index.html')).status === 200, 'persona report was not served');
 
+    const oldToken = await checkRequestBoundary(port, root);
     const save = await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] });
     assert(save.status === 200, 'POST /save-manifest failed');
     assert(existsSync(join(root, '_results', 'fix-manifest.json')), 'fix-manifest.json was not written');
 
     assert((await request(port, 'GET', '/..%2Fsecret.txt')).status === 403, 'encoded path traversal was not rejected');
+    const stopped = new Promise(resolve => server.once('exit', resolve));
+    server.kill('SIGTERM');
+    await stopped;
+    server = spawn(process.execPath, ['build-review.mjs', '--serve', `--port=${port}`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    log = createProcessLog(server);
+    await waitForServer(port);
+    assert(JSON.parse((await request(port, 'GET', '/api/session')).body).token !== oldToken, 'session proof survived restart');
+    const manifestBefore = readFileSync(join(root, '_results', 'fix-manifest.json'), 'utf8');
+    assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [{ test: 'stale-session' }] },
+      { 'X-ShipGuard-Session': oldToken }, false)).status === 403, 'previous session proof accepted');
+    assert(readFileSync(join(root, '_results', 'fix-manifest.json'), 'utf8') === manifestBefore, 'stale session changed manifest');
+    assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] },
+      { Origin: `http://localhost:${port}` })).status === 200, 'fresh trusted session cannot write');
     passed = true;
     console.log('review smoke test passed');
     if (options.debug) console.error(log.tail());

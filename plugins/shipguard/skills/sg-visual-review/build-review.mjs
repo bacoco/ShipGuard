@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSy
 import { join, relative, basename, dirname, resolve, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
+import { randomBytes } from 'crypto';
 
 // Minimal YAML parser — handles flat keys, arrays, nested objects used in test manifests.
 // No external dependency needed.
@@ -1727,31 +1728,51 @@ if (process.argv.includes('--serve')) {
     return { path: target };
   }
 
-  // ── Origin policy (B3): no wildcard CORS on a server with writable endpoints.
-  // Allowed: requests without an Origin header (same-origin navigations, curl,
-  // Node clients) and browser requests originating from this server itself.
+  // Trust the configured listener and concrete local socket address, never a
+  // request-supplied Host or forwarded header, when establishing local origins.
   let actualPort = PORT; // updated on listen (supports --port=0)
+  const sessionToken = randomBytes(32).toString('hex');
+  function trustedAuthorities(req) {
+    const localAddress = req.socket.localAddress?.replace(/^::ffff:/, '');
+    return new Set(['127.0.0.1', 'localhost', HOST, localAddress].filter(Boolean).flatMap(host => {
+      const hostname = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+      const url = new URL(`http://${hostname}:${actualPort}`);
+      return [url.host, `${url.hostname}:${actualPort}`];
+    }));
+  }
   function originAllowed(req) {
+    const authorities = trustedAuthorities(req);
+    if (!authorities.has(req.headers.host)) return false;
     const origin = req.headers.origin;
-    if (!origin) return true;
-    if (origin === `http://127.0.0.1:${actualPort}` || origin === `http://localhost:${actualPort}`) return true;
-    // True same-origin on a non-loopback bind (e.g. --host=0.0.0.0 on a LAN)
-    if (req.headers.host && origin === `http://${req.headers.host}`) return true;
-    return false;
+    if (origin === undefined) return true; // local navigations and native clients
+    return [...authorities].some(authority => origin === new URL(`http://${authority}`).origin);
   }
   function corsHeaders(req) {
     const origin = req.headers.origin;
     if (!origin || !originAllowed(req)) return {};
-    return { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type' };
+    return { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET,POST', 'Access-Control-Allow-Headers': 'Content-Type, X-ShipGuard-Session' };
   }
 
   const server = http.createServer(async (req, res) => {
+    if (!originAllowed(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Untrusted request origin or host' }));
+      return;
+    }
     const CORS = corsHeaders(req);
 
-    // Reject cross-origin POSTs to writable endpoints (/save-manifest, monitor API)
-    if (req.method === 'POST' && !originAllowed(req)) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Cross-origin POST rejected' }));
+    // A custom header proves access to this process's session. It is never
+    // embedded in generated files, cookies, URLs, or server logs.
+    if (req.method === 'POST' && req.headers['x-shipguard-session'] !== sessionToken) {
+      res.writeHead(403, { 'Content-Type': 'application/json', ...CORS });
+      res.end(JSON.stringify({ error: 'Invalid review session' }));
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/session') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin', ...CORS });
+      res.end(JSON.stringify({ token: sessionToken }));
       return;
     }
 

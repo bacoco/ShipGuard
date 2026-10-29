@@ -1709,10 +1709,15 @@ function setTheme(t) {
         return e;
       })
     };
-    fetch('/save-manifest', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(manifest)
+    fetch('/api/session', {cache: 'no-store'}).then(function(r) {
+      if (!r.ok) throw new Error('Session failed: ' + r.status);
+      return r.json();
+    }).then(function(session) {
+      return fetch('/save-manifest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-ShipGuard-Session': session.token},
+        body: JSON.stringify(manifest)
+      });
     }).then(function(r){ if (!r.ok) throw new Error('Save failed: ' + r.status); return r.json(); }).then(function(d) {
       if (d.ok) {
         clearSession();
