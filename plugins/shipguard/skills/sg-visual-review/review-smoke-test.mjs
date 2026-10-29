@@ -9,7 +9,7 @@
  */
 
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { request as httpRequest } from 'http';
+import { createServer, request as httpRequest } from 'http';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -824,6 +824,108 @@ async function checkPidRegressions() {
   console.log(`PID regressions passed: ${checked} cases, signal spies only`);
 }
 
+// #190: the review must not attribute A's retained crawl to B's --no-crawl run.
+async function checkCrawlHistory() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-crawl-history-'));
+  const visual = join(root, 'visual-tests');
+  const results = join(visual, '_results');
+  mkdirSync(visual);
+  copyFileSync(SOURCE_BUILD, join(visual, 'build-review.mjs'));
+  copyFileSync(SOURCE_TEMPLATE, join(visual, '_review-template.html'));
+  let fixed = false;
+  let linkRequests = 0;
+  const server = createServer((req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    if (req.url === '/') return res.end('<a href="/missing.html">Link</a>');
+    linkRequests++;
+    res.statusCode = fixed ? 200 : 404;
+    res.end(fixed ? 'Fixed' : 'Missing');
+  });
+  const cli = join(SCRIPT_DIR, '..', '..', 'cli', 'shipguard.mjs');
+  const invoke = args => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, ...args], { cwd: root, stdio: 'pipe' });
+    const log = createProcessLog(child);
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, log: log.tail() }));
+  });
+  const run = flags => invoke(['run', '--profile=links', ...flags]);
+  const read = name => readFileSync(join(results, name), 'utf8');
+  const rebuild = () => {
+    const rebuilt = spawnSync(process.execPath, ['build-review.mjs'], { cwd: visual, encoding: 'utf8' });
+    assert(rebuilt.status === 0, `review rebuild failed: ${rebuilt.stderr}`);
+    return JSON.parse(read('findings.json')).findings.find(f => f.source === 'crawler');
+  };
+  let passed = false;
+  try {
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    writeFileSync(join(visual, '_config.yaml'), `base_url: http://127.0.0.1:${server.address().port}\nprofiles:\n  links:\n    checks: [local-assets]\n`);
+    const standalone = await invoke(['crawl']);
+    assert(standalone.code === 1, `standalone crawl: expected product findings, got ${standalone.code}: ${standalone.log}`);
+    const standaloneCrawl = read('crawl-results.json');
+    assert(!existsSync(join(results, 'run.json')), 'standalone crawl unexpectedly created a run');
+    const standaloneFinding = rebuild();
+    assert(standaloneFinding.title === 'Missing local resource (a)' && standaloneFinding.origin.historical === false
+      && standaloneFinding.origin.timestamp === JSON.parse(standaloneCrawl).timestamp,
+      'standalone crawl without run.json was mislabeled as historical');
+    assert(!existsSync(join(results, 'run.json')) && read('crawl-results.json') === standaloneCrawl,
+      'standalone review rebuild changed the source crawl or created a run');
+
+    const a = await run([]);
+    assert(a.code === 1, `crawl A: expected product findings, got ${a.code}: ${a.log}`);
+    const crawlA = read('crawl-results.json');
+    const source = JSON.parse(crawlA);
+    const findingA = JSON.parse(read('findings.json')).findings.find(f => f.source === 'crawler');
+    assert(source.broken.length === 1 && source.broken[0].status === 404, 'crawl A: broken link was not measured');
+    assert(findingA.title === 'Missing local resource (a)' && findingA.origin.timestamp === source.timestamp
+      && findingA.origin.historical === false, 'crawl A: current evidence was mislabeled');
+
+    fixed = true;
+    const requestsBeforeB = linkRequests;
+    const b = await run(['--no-crawl']);
+    assert(b.code === 3, `crawl B: empty run result changed, got ${b.code}: ${b.log}`);
+    const runB = read('run.json');
+    assert(JSON.parse(runB).lanes.crawl.status === 'skipped' && JSON.parse(runB).exit_code === b.code,
+      'crawl B: skipped lane or run outcome changed');
+    assert(linkRequests === requestsBeforeB && read('crawl-results.json') === crawlA,
+      'crawl B: skipped crawl made requests or changed the retained artifact');
+    const findingB = JSON.parse(read('findings.json')).findings.find(f => f.source === 'crawler');
+    assert(findingB.origin.historical === true && findingB.origin.timestamp === source.timestamp
+      && findingB.title === `Historical crawl (${source.timestamp}): ${findingA.title}`,
+      'crawl B: retained crawl was not explicitly dated and historical');
+    const { title: titleA, origin: originA, ...restA } = findingA;
+    const { title: titleB, origin: originB, ...restB } = findingB;
+    assert(JSON.stringify(restB) === JSON.stringify(restA), 'crawl B: historical evidence changed beyond attribution');
+
+    // A standalone review rebuild must also preserve the producer documents.
+    rebuild();
+    assert(read('run.json') === runB && read('crawl-results.json') === crawlA,
+      'review rebuild changed the source crawl or the current run');
+    assert(read('review.html').includes(findingB.title), 'historical attribution did not reach the review page');
+
+    fixed = false;
+    const fresh = await invoke(['crawl']);
+    assert(fresh.code === 1, `fresh crawl: expected product findings, got ${fresh.code}: ${fresh.log}`);
+    const freshCrawl = read('crawl-results.json');
+    const freshSource = JSON.parse(freshCrawl);
+    assert(Date.parse(freshSource.timestamp) > Date.parse(JSON.parse(runB).timestamp), 'fresh crawl did not postdate run B');
+    const freshFinding = rebuild();
+    assert(freshFinding.title === findingA.title && freshFinding.origin.historical === false
+      && freshFinding.origin.timestamp === freshSource.timestamp,
+      'fresh crawl newer than the --no-crawl run was mislabeled as historical');
+    const { title: freshTitle, origin: freshOrigin, ...freshRest } = freshFinding;
+    assert(JSON.stringify(freshRest) === JSON.stringify(restA), 'fresh crawl evidence changed beyond attribution');
+    assert(read('run.json') === runB && read('crawl-results.json') === freshCrawl,
+      'fresh review rebuild changed the source crawl or the skipped run');
+    passed = true;
+    console.log('crawl history regressions passed: no run, A then B --no-crawl, newer standalone crawl; artifacts and exits preserved');
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    if (passed) rmSync(root, { recursive: true, force: true });
+    else console.error(`crawl history fixture kept: ${root}`);
+  }
+}
+
 async function main() {
   const options = parseArgs();
   await checkPidRegressions();
@@ -838,6 +940,7 @@ async function main() {
     checkManifestDiscovery();
     checkLastRunBanner();
     checkAuditRegressions();
+    await checkCrawlHistory();
     root = createFixture();
     const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
     const auditBefore = readFileSync(join(root, '_results', 'audit-results.json'), 'utf8');
