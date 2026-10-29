@@ -1252,16 +1252,24 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
   }
   for (const t of (visual && Array.isArray(visual.tests) ? visual.tests : [])) {
     if (!t || typeof t !== 'object') continue;
-    if (t.status === 'FAIL' || t.status === 'ERROR') {
+    // Bootstrap contracts also contain STALE inventory placeholders. A real
+    // execution supplies a duration (including zero) or a failure reason;
+    // a discovered screenshot alone does not establish that this test ran.
+    const observedStale = t.status === 'STALE' && (Number.isFinite(t.duration_ms)
+      || (typeof t.failure_reason === 'string' && t.failure_reason.trim().length > 0));
+    if (t.status === 'FAIL' || t.status === 'ERROR' || observedStale) {
+      const declarationError = t.status === 'ERROR' && !!t.manifest_error;
       findings.push({
         title: `${t.name || t.id || 'visual test'}: ${t.status}`,
         severity: t.status === 'FAIL' ? 'high' : 'medium',
-        evidence: 'measured',
-        source: 'browser',
+        // Manifest validation is static; an ERROR without it records a tool
+        // failure. Neither is a measured observation about the product page.
+        evidence: declarationError ? 'reasoned' : 'measured',
+        source: t.status === 'ERROR' ? (declarationError ? 'declaration' : 'tooling') : 'browser',
         route: t.url || null,
         file: null,
         line: null,
-        detail: t.failure_reason || '',
+        detail: declarationError ? t.manifest_error : (t.failure_reason || ''),
         origin: { lane: 'visual', id: t.id || null },
       });
     }
