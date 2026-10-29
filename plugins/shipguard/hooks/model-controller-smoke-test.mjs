@@ -4,8 +4,23 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { makeView, validateController, outputFor } from './lib/dialogue-check.mjs';
 const script = fileURLToPath(new URL('./model-controller.mjs', import.meta.url));
+const temp = mkdtempSync(join(tmpdir(), 'shipguard-controller-transport-'));
+const fetchCalls = join(temp, 'fetch.json');
+const fetchFixture = join(temp, 'fetch-fixture.mjs');
+writeFileSync(fetchFixture, `
+import { writeFileSync } from 'node:fs';
+globalThis.fetch = async (url, options) => {
+  writeFileSync(${JSON.stringify(fetchCalls)}, JSON.stringify({ url: String(url), redirect: options.redirect }));
+  return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: {
+    content: JSON.stringify({ status: 'unknown', message: 'Transport fixture only.' })
+  } }] }));
+};
+`);
 let mode = 'valid', received = null, calls = 0;
 let reply = { status: 'unknown', message: 'Protocol fixture only: no semantic judgment.' };
 const input = { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: '65 active clients.' };
@@ -13,7 +28,10 @@ const view = makeView(input, { original_request: 'Count the union: 40 subscriber
   sources: [{ reference: 'fixture calculation', text: '40 + 25 - 18 = 47.', origin: 'tool' }] });
 const server = createServer(async (req, res) => {
   let text = ''; for await (const c of req) text += c;
-  received = { path: req.url, body: JSON.parse(text) }; calls++;
+  received = { path: req.url, body: text ? JSON.parse(text) : null }; calls++;
+  if (typeof mode === 'number' && req.url !== '/redirect-target') {
+    res.writeHead(mode, { Location: '/redirect-target' }); return res.end();
+  }
   if (mode === 'error') { res.writeHead(503); return res.end(); }
   if (mode === 'oversized') { return res.end('x'.repeat(65537)); }
   const content = mode === 'invalid' ? '{invalid JSON' : JSON.stringify(reply);
@@ -22,9 +40,9 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const endpoint = 'http://127.0.0.1:' + server.address().port + '/explicit/chat/completions';
-function run(target = endpoint, suppliedView = view, splitUtf8 = false) {
+function run(target = endpoint, suppliedView = view, splitUtf8 = false, preload = null) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script], { env: { ...process.env, SHIPGUARD_DIALOGUE_ENDPOINT: target,
+    const child = spawn(process.execPath, [...(preload ? ['--import', preload] : []), script], { env: { ...process.env, SHIPGUARD_DIALOGUE_ENDPOINT: target,
       SHIPGUARD_DIALOGUE_MODEL: 'protocol-fixture-not-a-model', SHIPGUARD_DIALOGUE_API_KEY: '' }, stdio: ['pipe','pipe','pipe'] });
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('fixture child exceeded deadline')); }, 8000);
     let out = ''; child.stdout.on('data', c => out += c); child.stderr.resume();
@@ -77,5 +95,33 @@ try {
   const before = calls;
   assert.notEqual((await run('http://user:password@127.0.0.1:1/')).code, 0);
   assert.equal(calls, before, 'invalid endpoint must not send a request');
+
+  for (const status of [301, 302, 303, 307, 308]) {
+    mode = status;
+    const before = calls;
+    const result = await run();
+    assert.notEqual(result.code, 0, `HTTP ${status} must be refused`);
+    assert.equal(result.out, '', 'a redirect must not produce a controller result');
+    assert.equal(calls, before + 1, `HTTP ${status} must not reach its target or retry`);
+    assert.equal(received.path, '/explicit/chat/completions');
+  }
+
+  // Intercept fetch in these children: endpoint-policy probes never use external networking.
+  for (const target of ['http://example.test/v1', 'http://192.168.1.1/v1', 'http://0.0.0.0/v1',
+    'http://[::]/v1', 'http://localhost.example.test/v1', 'http://127.0.0.1.example.test/v1',
+    'http://127.example.test/v1', 'http://[2001:db8::1]/v1']) {
+    rmSync(fetchCalls, { force: true });
+    assert.notEqual((await run(target, view, false, fetchFixture)).code, 0, target);
+    assert.equal(existsSync(fetchCalls), false, 'remote HTTP must be refused before fetch');
+  }
+  for (const target of ['https://example.test/explicit/chat/completions', 'http://localhost/v1',
+    'http://127.0.0.1/v1', 'http://127.1/v1', 'http://127.255.255.254/v1', 'http://[::1]/v1']) {
+    rmSync(fetchCalls, { force: true });
+    assert.equal((await run(target, view, false, fetchFixture)).code, 0, target);
+    assert.deepEqual(JSON.parse(readFileSync(fetchCalls, 'utf8')), { url: new URL(target).href, redirect: 'error' });
+  }
   console.log('model controller smoke: passed (HTTP contract/fault fixtures; no model calls)');
-} finally { await new Promise(resolve => server.close(resolve)); }
+} finally {
+  await new Promise(resolve => server.close(resolve));
+  rmSync(temp, { recursive: true, force: true });
+}

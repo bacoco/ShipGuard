@@ -3,6 +3,8 @@
 const endpoint = new URL(process.env.SHIPGUARD_DIALOGUE_ENDPOINT || 'invalid:');
 const model = process.env.SHIPGUARD_DIALOGUE_MODEL;
 if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || !model) throw new Error('Explicit endpoint and model required');
+const loopback = endpoint.hostname === 'localhost' || endpoint.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(endpoint.hostname);
+if (endpoint.protocol === 'http:' && !loopback) throw new Error('HTTPS required for non-loopback endpoints');
 const inputChunks = []; let inputBytes = 0;
 for await (const chunk of process.stdin) {
   inputBytes += chunk.length;
@@ -18,7 +20,7 @@ Interpretations and consequences must each be at most 180 characters, at most th
 const headers = { 'Content-Type': 'application/json' };
 if (process.env.SHIPGUARD_DIALOGUE_API_KEY) headers.Authorization = 'Bearer ' + process.env.SHIPGUARD_DIALOGUE_API_KEY;
 // Endpoint is the complete chat-completions URL; no provider discovery or fallback.
-const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ model,
+const response = await fetch(endpoint, { method: 'POST', redirect: 'error', headers, body: JSON.stringify({ model,
   messages: [{ role: 'system', content: prompt }, { role: 'user', content: JSON.stringify(view) }],
   temperature: 0, max_tokens: 1200, response_format: { type: 'json_object' } }), signal: AbortSignal.timeout(5000) });
 if (!response.ok) throw new Error('Controller HTTP request failed');
