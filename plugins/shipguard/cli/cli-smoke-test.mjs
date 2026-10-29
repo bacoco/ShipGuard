@@ -237,6 +237,49 @@ assert(Array.from({ length: png.length - 1 }, (_, i) => i + 1).every(length => {
 }), 'screenshot: every truncated prefix of the real PNG is rejected');
 assert(rf(goodShot).equals(png), 'screenshot: validation preserves stored bytes');
 
+// Real 2x2 RGB JPEG, encoded from the PNG screenshot by macOS sips.
+// Keep the .png path: agent-browser's user config can override its encoding.
+const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAqADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgACAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+L6KKK/lM/38P//Z', 'base64');
+const goodJpeg = join(shotDir, 'jpeg.png');
+wf(goodJpeg, jpeg);
+// Real 2x2 progressive JPEG encoded by Pillow/libjpeg; no runtime dependency.
+const progressiveJpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wgARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAVAQEBAAAAAAAAAAAAAAAAAAAFBv/aAAwDAQACEAMQAAABigy4/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAH/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=', 'base64');
+for (const [label, bytes] of [['sequential', jpeg], ['progressive', progressiveJpeg]]) {
+  const file = join(shotDir, `jpeg-${label}.png`);
+  wf(file, bytes);
+  assert(deepEq(validateScreenshot(file), { ok: true, size: bytes.length }),
+    `screenshot: valid ${label} JPEG at a .png path accepted with unchanged result shape`);
+  assert(Array.from({ length: bytes.length - 1 }, (_, i) => i + 1).every(length => {
+    const prefixFile = join(shotDir, 'jpeg-prefix.png');
+    wf(prefixFile, bytes.subarray(0, length));
+    return !validateScreenshot(prefixFile).ok;
+  }), `screenshot: every truncated prefix of the real ${label} JPEG is rejected`);
+}
+assert(rf(goodJpeg).equals(jpeg), 'screenshot: JPEG validation preserves stored bytes');
+const sof = jpeg.indexOf(Buffer.from([0xff, 0xc0]));
+const sos = jpeg.indexOf(Buffer.from([0xff, 0xda]));
+const scanStart = sos + 2 + jpeg.readUInt16BE(sos + 2);
+const invalidJpegs = {
+  'JPEG disguised text': Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from('not an image'), jpeg.subarray(-2)]),
+  'JPEG truncated': jpeg.subarray(0, -1),
+  'JPEG zero width': Buffer.from(jpeg),
+  'JPEG zero height': Buffer.from(jpeg),
+  'JPEG bad segment length': Buffer.from(jpeg),
+  'JPEG missing frame': Buffer.concat([jpeg.subarray(0, sof), jpeg.subarray(sof + 2 + jpeg.readUInt16BE(sof + 2))]),
+  'JPEG missing scan': Buffer.concat([jpeg.subarray(0, sos), jpeg.subarray(-2)]),
+  'JPEG no scan data': Buffer.concat([jpeg.subarray(0, scanStart), jpeg.subarray(-2)]),
+  'JPEG trailing bytes': Buffer.concat([jpeg, Buffer.from([0])]),
+};
+invalidJpegs['JPEG zero width'].writeUInt16BE(0, sof + 7);
+invalidJpegs['JPEG zero height'].writeUInt16BE(0, sof + 5);
+invalidJpegs['JPEG bad segment length'].writeUInt16BE(1, sof + 2);
+for (const [label, bytes] of Object.entries(invalidJpegs)) {
+  wf(join(shotDir, `${label}.png`), bytes);
+  const result = validateScreenshot(join(shotDir, `${label}.png`));
+  assert(!result.ok && result.size === bytes.length && result.reason === 'invalid JPEG',
+    `screenshot: ${label} rejected`);
+}
+
 // ── matchSnapshotRef ──
 // Line shape copied from real `agent-browser 0.27.0 snapshot -i` output (element
 // names kept from the original fixture). The previous fixture invented an `@eN`
@@ -674,14 +717,23 @@ assert(fExpectedMismatch.code === EXIT.FINDINGS && fExpectedMismatch.visual?.tes
 const fTool = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'], env: { SG_EMPTY_SHOT: '1' } });
 assert(fTool.code === EXIT.INFRA, 'exit: a per-test tooling ERROR -> 2 (unchanged)');
 assert(fTool.run?.lanes?.visual?.remedy === 'infrastructure', 'exit: the errored visual lane names an infrastructure remedy');
-for (const label of ['non-image', 'truncated', 'truncated compressed pixels']) {
+for (const explicit of [false, true]) {
+  const fShot = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST
+    + (explicit ? '  - action: screenshot\n    filename: explicit.png\n' : '') },
+    flags: ['--no-crawl'], env: { SG_SHOT_FILE: goodJpeg } });
+  const test = fShot.visual?.tests?.[0];
+  assert(fShot.code === EXIT.CLEAN && test?.status === 'PASS' && test.screenshot?.endsWith('.png')
+    && rf(join(fShot.root, 'visual-tests', '_results', test.screenshot)).equals(jpeg),
+    `screenshot run: JPEG (${explicit ? 'explicit step' : 'automatic check'}) keeps its path and bytes`);
+}
+for (const label of ['non-image', 'truncated', 'truncated compressed pixels', 'JPEG truncated', 'JPEG zero width']) {
   for (const explicit of [false, true]) {
     const fShot = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST
       + (explicit ? '  - action: screenshot\n    filename: explicit.png\n' : '') },
       flags: ['--no-crawl'], env: { SG_SHOT_FILE: join(shotDir, `${label}.png`) } });
     const test = fShot.visual?.tests?.[0];
     assert(fShot.code === EXIT.INFRA && test?.status === 'ERROR' && !test.screenshot
-      && /invalid PNG/.test(test.screenshot_error || test.failure_reason || '')
+      && (test.screenshot_error || test.failure_reason || '').includes(`invalid ${label.startsWith('JPEG') ? 'JPEG' : 'PNG'}`)
       && fShot.run?.lanes?.visual?.remedy === 'infrastructure',
       `screenshot run: ${label} (${explicit ? 'explicit step' : 'automatic check'}) cannot produce a green run or image reference`);
   }

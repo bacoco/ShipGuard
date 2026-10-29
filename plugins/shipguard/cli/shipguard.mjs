@@ -562,14 +562,121 @@ export function normalizeConsole(text) {
   return out;
 }
 
+// Validate the marker/scan structure of the Huffman JPEGs used by browsers.
+// Segment lengths alone are insufficient: require a frame, referenced tables,
+// nonempty scans and an actual end marker, including after byte-stuffed data.
+function validJpeg(jpeg) {
+  let offset = 2, frame, scans = 0, restartInterval = 0;
+  const quant = new Set(), huffman = new Set(), covered = new Set();
+  while (offset < jpeg.length) {
+    if (jpeg[offset++] !== 0xff) return false;
+    while (jpeg[offset] === 0xff) offset++;
+    const marker = jpeg[offset++];
+    if (marker === 0xd9) {
+      return !!frame && scans > 0 && covered.size === frame.components.size && offset === jpeg.length;
+    }
+    if (offset + 2 > jpeg.length) return false;
+    const length = jpeg.readUInt16BE(offset), end = offset + length;
+    if (length < 2 || end > jpeg.length) return false;
+    const data = jpeg.subarray(offset + 2, end);
+    if ([0xc0, 0xc1, 0xc2].includes(marker)) { // Sequential or progressive DCT.
+      if (frame || data.length < 6 || data[0] !== 8 || !data.readUInt16BE(1)
+        || !data.readUInt16BE(3) || !data[5] || data.length !== 6 + 3 * data[5]) return false;
+      const components = new Map();
+      for (let p = 6; p < data.length; p += 3) {
+        const h = data[p + 1] >> 4, v = data[p + 1] & 15;
+        if (components.has(data[p]) || h < 1 || h > 4 || v < 1 || v > 4 || data[p + 2] > 3) return false;
+        components.set(data[p], { quant: data[p + 2], blocks: h * v });
+      }
+      frame = { components, progressive: marker === 0xc2 };
+    } else if (marker === 0xdb) { // Quantization tables.
+      if (!data.length) return false;
+      for (let p = 0; p < data.length;) {
+        const spec = data[p++], precision = spec >> 4;
+        const tableEnd = p + 64 * (precision + 1);
+        if (precision > 1 || (spec & 15) > 3 || tableEnd > data.length) return false;
+        for (; p < tableEnd; p += precision + 1) {
+          if (!(precision ? data.readUInt16BE(p) : data[p])) return false;
+        }
+        quant.add(spec & 15);
+      }
+    } else if (marker === 0xc4) { // Huffman tables and their symbol counts.
+      if (!data.length) return false;
+      for (let p = 0; p < data.length;) {
+        const spec = data[p++];
+        if ((spec >> 4) > 1 || (spec & 15) > 3 || p + 16 > data.length) return false;
+        let symbols = 0, slots = 1;
+        for (let i = 0; i < 16; i++) {
+          const count = data[p++];
+          symbols += count; slots = slots * 2 - count;
+          if (slots < 1) return false; // Oversubscribed or forbidden all-ones code.
+        }
+        if (!symbols || symbols > 256 || p + symbols > data.length) return false;
+        p += symbols;
+        huffman.add(spec);
+      }
+    } else if (marker === 0xdd) {
+      if (data.length !== 2) return false;
+      restartInterval = data.readUInt16BE(0);
+    } else if (marker === 0xda) { // Start of scan, then entropy-coded bytes.
+      const n = data[0];
+      if (!frame || !n || n > 4 || data.length !== 4 + 2 * n) return false;
+      const [first, last, approx] = data.subarray(1 + 2 * n);
+      const high = approx >> 4, low = approx & 15;
+      if (frame.progressive
+        ? first > last || last > 63 || (first === 0 ? last !== 0 : n !== 1)
+          || high > 13 || low > 13 || (high !== 0 && high !== low + 1)
+        : first !== 0 || last !== 63 || approx !== 0) return false;
+      const selected = new Set();
+      let blocks = 0;
+      for (let p = 1; p <= 2 * n; p += 2) {
+        const id = data[p], component = frame.components.get(id), tables = data[p + 1];
+        if (!component || selected.has(id) || !quant.has(component.quant)
+          || (tables >> 4) > 3 || (tables & 15) > 3
+          || (first === 0 && high === 0 && !huffman.has(tables >> 4))
+          || (last > 0 && !huffman.has(0x10 | (tables & 15)))
+          || (!frame.progressive && covered.has(id))) return false;
+        selected.add(id); blocks += component.blocks;
+        if (first === 0 && high === 0) covered.add(id);
+      }
+      if (n > 1 && blocks > 10) return false;
+      offset = end;
+      let bytes = 0, restart = 0;
+      while (offset < jpeg.length) {
+        if (jpeg[offset] !== 0xff) { offset++; bytes++; continue; }
+        if (jpeg[offset + 1] === 0) { offset += 2; bytes++; continue; }
+        const start = offset++;
+        while (jpeg[offset] === 0xff) offset++;
+        const next = jpeg[offset];
+        if (next >= 0xd0 && next <= 0xd7) {
+          if (!restartInterval || next !== 0xd0 + (restart++ % 8) || !bytes) return false;
+          offset++; bytes = 0;
+        } else { offset = start; break; }
+      }
+      if (!bytes) return false;
+      scans++;
+      continue;
+    } else if (!(marker >= 0xe0 && marker <= 0xef) && marker !== 0xfe) {
+      return false; // Unexpected standalone, reserved or unsupported marker.
+    }
+    offset = end;
+  }
+  return false;
+}
+
 export function validateScreenshot(path) {
   if (!existsSync(path)) return { ok: false, size: 0, reason: 'missing' };
   const size = statSync(path).size;
   if (size === 0) return { ok: false, size, reason: 'empty file' };
-  const invalid = () => ({ ok: false, size, reason: 'invalid PNG' });
+  let format = 'PNG';
+  const invalid = () => ({ ok: false, size, reason: `invalid ${format}` });
   try {
-    // agent-browser's .png captures must contain a complete, decodable image.
+    // User config can make agent-browser emit JPEG even at a .png path.
     const png = readFileSync(path);
+    if (png[0] === 0xff && png[1] === 0xd8) {
+      format = 'JPEG';
+      return validJpeg(png) ? { ok: true, size } : invalid();
+    }
     if (!png.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return invalid();
     const crc32 = bytes => {
       let crc = 0xffffffff;
