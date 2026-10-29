@@ -6,7 +6,7 @@
  *        node visual-tests/sg-record.mjs --check
  * Flags accept both `--flag value` and `--flag=value` forms.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, openSync, fstatSync, ftruncateSync, closeSync, constants } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { actionsToYaml, uploadDataKey } from './lib/actions-to-yaml.mjs';
@@ -571,7 +571,25 @@ async function main() {
     if (saveStorageArg) {
       try {
         const state = await context.storageState();
-        writeFileSync(saveStorageArg, JSON.stringify(state, null, 2));
+        const data = JSON.stringify(state, null, 2);
+        if (typeof constants.O_NOFOLLOW !== 'number') {
+          throw new Error('Safe auth state export is unavailable on this platform');
+        }
+        // Do not truncate until the opened entry itself has been checked.
+        // NOFOLLOW rejects symlinks; NONBLOCK keeps a FIFO from hanging here.
+        const fd = openSync(saveStorageArg,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+        try {
+          const entry = fstatSync(fd);
+          if (!entry.isFile() || entry.nlink !== 1 || (entry.mode & 0o077) !== 0
+              || entry.uid !== process.getuid()) {
+            throw new Error('Auth state destination must be a private, singly linked regular file owned by the current user');
+          }
+          ftruncateSync(fd, 0);
+          writeFileSync(fd, data);
+        } finally {
+          closeSync(fd);
+        }
         console.log(`  Auth state saved to ${saveStorageArg}`);
       } catch (e) {
         console.error('  Warning: could not save auth state:', e.message);

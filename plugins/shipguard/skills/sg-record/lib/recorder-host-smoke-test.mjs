@@ -2,8 +2,8 @@
 // Exercise the real recorder main/bridge lifecycle with an isolated Playwright
 // boundary. Browser capture itself is covered by recorder-audit-browser-smoke-test.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync, chmodSync, lstatSync, statSync, symlinkSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,7 +45,7 @@ page.goto=async()=>{page.emit('framenavigated',frame);page.emit('load');
 context.exposeBinding=async()=>{};context.addInitScript=async()=>{};
 context.exposeFunction=async(name,fn)=>{bridge=fn};context.newPage=async()=>page;
 context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const paths=['/start','/paused','/manual','/one','/two'];return {currentIndex:paths.indexOf(new URL(current).pathname),entries:paths.map((path,id)=>({id,url:'http://local'+path,transitionType:['/one','/two'].includes(path)?'link':'typed'}))}},detach:async()=>{}}};
-context.storageState=async()=>({cookies:[],origins:[]});
+context.storageState=async()=>JSON.parse(process.env.SG_TEST_AUTH_STATE||'{"cookies":[],"origins":[]}');
 export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async options=>{writeFileSync(new URL('./context-options.json',import.meta.url),JSON.stringify(options));return context},close:async()=>{}}}};
 `);
 let failures=0;function check(id,fn){try{fn();console.log('PASS '+id)}catch(e){failures++;console.error('FAIL '+id+': '+e.message)}}
@@ -88,4 +88,74 @@ for(const [label,target,storage] of [
   assert.equal(options.storageState,storage??undefined);
  });
 }
+const exportedState = {
+ cookies: [{ name: 'fixture', value: 'example', domain: 'local', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Lax' }],
+ origins: [{ origin: 'http://local', localStorage: [{ name: 'fixture', value: 'example' }] }],
+};
+function exportStorage(path, mask = 0o022) {
+ const run = spawnSync(process.execPath, ['--input-type=module', '-e',
+  'process.umask(Number(process.argv[1])); process.argv.splice(1, 1); await import(process.argv[1]);',
+  String(mask), join(root, 'sg-record.mjs'), 'http://local/start', '--name=storage-export', '--save-storage='+path],
+  { cwd: root, env: { ...process.env, SG_TEST_AUTH_STATE: JSON.stringify(exportedState) }, timeout: 10000, killSignal: 'SIGKILL', encoding: 'utf8' });
+ assert.ifError(run.error);
+ assert.equal(run.status, 0, run.stderr);
+ assert.ok(readFileSync(join(root, 'manifests/recorded-storage-export.yaml'), 'utf8').includes('Alpha'));
+ return run.stdout + run.stderr;
+}
+for (const mask of [0o000, 0o022, 0o027, 0o077]) {
+ check('storage export creates a private file under umask '+mask.toString(8), () => {
+  const path = join(root, 'auth-umask-'+mask.toString(8)+'.json');
+  assert.match(exportStorage(path, mask), /Auth state saved to/);
+  assert.equal(statSync(path).mode & 0o777, 0o600);
+  assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+ });
+}
+check('storage export overwrites an existing private file at the same location', () => {
+ const path = join(root, 'auth-private.json');
+ writeFileSync(path, 'old state that is longer than the replacement'.repeat(30)); chmodSync(path, 0o600);
+ const before = statSync(path);
+ assert.match(exportStorage(path), /Auth state saved to/);
+ assert.equal(statSync(path).ino, before.ino);
+ assert.equal(statSync(path).mode & 0o777, 0o600);
+ assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+});
+for (const mode of [0o644, 0o620]) {
+ check('storage export refuses a pre-existing file with mode '+mode.toString(8), () => {
+  const path = join(root, 'auth-unsafe-'+mode.toString(8)+'.json');
+  writeFileSync(path, 'unchanged'); chmodSync(path, mode);
+  assert.match(exportStorage(path), /Warning: could not save auth state:/);
+  assert.equal(readFileSync(path, 'utf8'), 'unchanged');
+  assert.equal(statSync(path).mode & 0o777, mode);
+ });
+}
+check('storage export refuses a symlink without changing its target', () => {
+ const target = join(root, 'auth-symlink-target.json'), path = join(root, 'auth-symlink.json');
+ writeFileSync(target, 'unchanged'); chmodSync(target, 0o600); symlinkSync(target, path);
+ assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.ok(lstatSync(path).isSymbolicLink());
+ assert.equal(readFileSync(target, 'utf8'), 'unchanged');
+});
+check('storage export refuses a dangling symlink without creating its target', () => {
+ const target = join(root, 'auth-missing-target.json'), path = join(root, 'auth-dangling.json');
+ symlinkSync(target, path);
+ assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.ok(lstatSync(path).isSymbolicLink()); assert.ok(!existsSync(target));
+});
+check('storage export refuses a hard link without changing either entry', () => {
+ const target = join(root, 'auth-hardlink-target.json'), path = join(root, 'auth-hardlink.json');
+ writeFileSync(target, 'unchanged'); chmodSync(target, 0o600); linkSync(target, path);
+ assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.equal(readFileSync(target, 'utf8'), 'unchanged'); assert.equal(readFileSync(path, 'utf8'), 'unchanged');
+ assert.equal(statSync(target).nlink, 2);
+});
+check('storage export refuses a directory', () => {
+ const path = join(root, 'auth-directory'); mkdirSync(path);
+ assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.deepEqual(readdirSync(path), []);
+});
+check('storage export refuses a FIFO without blocking', () => {
+ const path = join(root, 'auth-fifo'); execFileSync('mkfifo', [path]);
+ assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.ok(lstatSync(path).isFIFO());
+});
 console.log('Fixture: '+root);process.exitCode=failures?1:0;
