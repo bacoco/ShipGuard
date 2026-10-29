@@ -1170,7 +1170,7 @@ function readJsonSafe(path) {
 
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
 
-function buildFindings({ audit, logicResults, processResults, visual, crawlResults, fixManifest }) {
+function buildFindings({ audit, logicResults, processResults, visual, crawlResults, runData, fixManifest }) {
   const findings = [];
   for (const bug of (audit && Array.isArray(audit.bugs) ? audit.bugs : [])) {
     if (!bug || typeof bug !== 'object') continue;
@@ -1292,10 +1292,13 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
       });
     }
   }
+  // A retained crawl is still useful evidence, but a skipped/error/missing
+  // current lane cannot claim it as an observation from this run.
+  const historicalCrawl = runData?.lanes?.crawl?.status !== 'ran';
   for (const b of (crawlResults && Array.isArray(crawlResults.broken) ? crawlResults.broken : [])) {
     if (!b || typeof b !== 'object') continue;
     findings.push({
-      title: `Missing local resource (${b.tag || 'asset'})`,
+      title: `${historicalCrawl ? `Historical crawl (${crawlResults.timestamp || 'date unknown'}): ` : ''}Missing local resource (${b.tag || 'asset'})`,
       severity: b.tag === 'a' ? 'medium' : 'high',
       evidence: 'measured',
       source: 'crawler',
@@ -1303,7 +1306,7 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
       file: null,
       line: null,
       detail: `${b.url} → HTTP ${b.status}`,
-      origin: { lane: 'crawl', id: b.url || null },
+      origin: { lane: 'crawl', id: b.url || null, timestamp: crawlResults.timestamp || null, historical: historicalCrawl },
     });
   }
   for (const t of (fixManifest && Array.isArray(fixManifest.tests) ? fixManifest.tests : [])) {
@@ -1507,6 +1510,7 @@ const findingsData = buildFindings({
   processResults,
   visual: visualRawForFindings,
   crawlResults,
+  runData,
   fixManifest: fixManifestData,
 });
 writeFileSync(FINDINGS_PATH, JSON.stringify(findingsData, null, 2), 'utf8');
