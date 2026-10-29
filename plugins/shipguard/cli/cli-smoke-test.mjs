@@ -70,6 +70,38 @@ assert(man.steps[0].action === 'open' && man.steps[0].url === '{base_url}/index.
 assert(man.steps[1].screenshot === 'home.png', 'yaml: list-of-maps item 2');
 assert(man.requires_auth === false, 'yaml: boolean');
 
+// ── sg-record → CLI scalar round-trip (#193) ──
+const recordedValues = [
+  'Première ligne\nseconde\tcolonne\r\n"cité" # contenu',
+  String.raw`C:\notes\draft \n \r \t \x41 \"fin"`,
+  Array.from({ length: 32 }, (_, code) => String.fromCharCode(code)).join('') + '\x7f',
+];
+const recordedManifest = yamlParse(actionsToYaml(
+  recordedValues.map(value => ({ type: 'fill', selector: '#notes', value })),
+  { name: 'recorded-escapes', baseUrl: 'http://example.test' }));
+assert(deepEq(recordedManifest.steps.filter(step => step.action === 'fill').map(step => step.value), recordedValues),
+  'yaml: recorder values round-trip newlines, tabs, control characters, quotes and literal backslashes');
+const literalEscapes = String.raw`\n\t\r\x41\u0041\b\q\xZZ\x1`;
+const preservedEscapes = yamlParse(String.raw`
+double: "\\n\\t\\r\\x41\u0041\b\q\xZZ\x1" # outside
+single: '\n\t\r\x41\u0041\b\q\xZZ\x1'
+plain: \n\t\r\x41\u0041\b\q\xZZ\x1
+comment: "line\n# inside\tend" # outside
+`);
+assert(['double', 'single', 'plain'].every(key => preservedEscapes[key] === literalEscapes),
+  'yaml: literal backslashes, unknown escapes and non-double-quoted scalars retain their behavior');
+assert(preservedEscapes.comment === 'line\n# inside\tend',
+  'yaml: decoded escapes preserve quoted hashes and trailing comments');
+for (const [label, text] of [
+  ['malformed indentation', 'a:\n  b: one\n c: two\n'],
+  ['multiline block scalar', 'a: |\n  multi\n'],
+  ['top-level list', '- top-level-list\n'],
+]) {
+  let rejected = false;
+  try { yamlParse(text); } catch { rejected = true; }
+  assert(rejected, `yaml: ${label} remains rejected`);
+}
+
 // ── exit codes constant ──
 assert(EXIT.CLEAN === 0 && EXIT.FINDINGS === 1 && EXIT.INFRA === 2 && EXIT.CONFIG === 3, 'EXIT contract');
 
@@ -390,6 +422,19 @@ const auditExec = (id, steps, extra = {}, checks = []) => executeManifest(
   { baseUrl: 'http://example.test', config: {}, checks, screenshotsDir: auditShotDir, projectRoot: auditDir });
 process.env.SHIPGUARD_AGENT_BROWSER = auditBin;
 try {
+  // Exercise the real recorder/parser/executor path up to the browser boundary.
+  // NUL is covered by the parser round-trip above; OS arguments cannot carry it.
+  wf(auditLog, '');
+  const recordedReplay = await executeManifest(
+    { id: 'pages/recorded-escapes', url: '', manifest: {
+      ...recordedManifest, steps: recordedManifest.steps.filter(step => step.action === 'fill').slice(0, 2),
+    } },
+    { baseUrl: 'http://example.test', config: {}, checks: [], screenshotsDir: auditShotDir });
+  const recordedCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).map(call => call.args)
+    .filter(args => args[0] === 'fill');
+  assert(recordedReplay.status === 'PASS'
+    && deepEq(recordedCalls, recordedValues.slice(0, 2).map(value => ['fill', '#notes', value])),
+    'recorder integration: fill receives original newlines, tabs and literal escape text');
   wf(auditLog, '');
   const history = await auditExec('pages/history', [{action:'back'}, {action:'forward'}]);
   const historyCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).map(c => c.args)
