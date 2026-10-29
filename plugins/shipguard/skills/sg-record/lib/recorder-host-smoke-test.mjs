@@ -46,7 +46,7 @@ context.exposeBinding=async()=>{};context.addInitScript=async()=>{};
 context.exposeFunction=async(name,fn)=>{bridge=fn};context.newPage=async()=>page;
 context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const paths=['/start','/paused','/manual','/one','/two'];return {currentIndex:paths.indexOf(new URL(current).pathname),entries:paths.map((path,id)=>({id,url:'http://local'+path,transitionType:['/one','/two'].includes(path)?'link':'typed'}))}},detach:async()=>{}}};
 context.storageState=async()=>({cookies:[],origins:[]});
-export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async()=>context,close:async()=>{}}}};
+export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async options=>{writeFileSync(new URL('./context-options.json',import.meta.url),JSON.stringify(options));return context},close:async()=>{}}}};
 `);
 let failures=0;function check(id,fn){try{fn();console.log('PASS '+id)}catch(e){failures++;console.error('FAIL '+id+': '+e.message)}}
 execFileSync(process.execPath,[join(root,'sg-record.mjs'),'http://local/start','--name=host'],{cwd:root,timeout:10000,stdio:'pipe'});
@@ -72,4 +72,20 @@ check('CE-01 CDP failure saves captured steps and auth, with a failing exit stat
  assert.ok(saved.includes('action: open'));assert.ok(saved.includes('Alpha'));
  assert.deepEqual(JSON.parse(readFileSync(authPath,'utf8')),{cookies:[],origins:[]});
 });
+// All targets use the real CLI and a fake Playwright boundary: no DNS, TLS
+// connection, credentials, or browser trust settings are involved.
+for(const [label,target,storage] of [
+ ['remote','https://recorder.example.invalid/start',null],
+ ['remote-storage','https://recorder.example.invalid/start',authPath],
+ ['localhost','https://localhost/start',null],
+ ['loopback','https://127.0.0.1/start',null],
+]){
+ execFileSync(process.execPath,[join(root,'sg-record.mjs'),target,'--name='+label,...(storage?['--storage='+storage]:[])],{cwd:root,timeout:10000,stdio:'pipe'});
+ const options=JSON.parse(readFileSync(join(root,'node_modules/playwright/context-options.json'),'utf8'));
+ check('TLS verification is enabled for '+label,()=>assert.equal(options.ignoreHTTPSErrors??false,false));
+ check('existing context options are preserved for '+label,()=>{
+  assert.deepEqual(options.viewport,{width:1440,height:900});assert.equal(options.bypassCSP,true);
+  assert.equal(options.storageState,storage??undefined);
+ });
+}
 console.log('Fixture: '+root);process.exitCode=failures?1:0;

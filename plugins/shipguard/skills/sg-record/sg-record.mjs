@@ -377,7 +377,6 @@ async function main() {
   try {
     const contextOptions = {
       viewport: { width: 1440, height: 900 },
-      ignoreHTTPSErrors: true,
       bypassCSP: true,
     };
     if (storageArg && existsSync(storageArg)) {
