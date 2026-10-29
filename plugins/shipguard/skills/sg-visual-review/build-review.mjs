@@ -1624,8 +1624,8 @@ if (process.argv.includes('--serve')) {
   }
 
   const http = await import('http');
-  const { createReadStream, existsSync: fExists } = await import('fs');
-  const { extname } = await import('path');
+  const { createReadStream, lstatSync, realpathSync, openSync, fstatSync, closeSync, constants } = await import('fs');
+  const { extname, sep } = await import('path');
 
   const MIME = { '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.css': 'text/css', '.js': 'text/javascript' };
   const portArg = process.argv.find(a => a.startsWith('--port='))?.split('=')[1];
@@ -1636,6 +1636,7 @@ if (process.argv.includes('--serve')) {
   }
   const HOST = process.argv.find(a => a.startsWith('--host='))?.split('=')[1] || '127.0.0.1';
   const RESULTS_ROOT = resolve(RESULTS_DIR);
+  const RESULTS_REAL_ROOT = realpathSync(RESULTS_ROOT);
   if (HOST === '0.0.0.0') {
     console.warn('  WARN: --host=0.0.0.0 exposes the review server on your local network.');
   }
@@ -1728,6 +1729,48 @@ if (process.argv.includes('--serve')) {
     return { path: target };
   }
 
+  function openServedFile(filePath) {
+    let fileStat, realPath;
+    try {
+      // Anchor at the physical root, including when a system temp path has an alias.
+      let current = RESULTS_REAL_ROOT;
+      fileStat = lstatSync(current);
+      if (fileStat.isSymbolicLink()) return { error: 'Forbidden', status: 403 };
+      for (const component of relative(RESULTS_ROOT, filePath).split(sep).filter(Boolean)) {
+        current = join(current, component);
+        fileStat = lstatSync(current);
+        if (fileStat.isSymbolicLink()) return { error: 'Forbidden', status: 403 };
+      }
+      if (!fileStat.isFile()) return { error: 'Forbidden', status: 403 };
+      realPath = realpathSync(current);
+      const rel = relative(RESULTS_REAL_ROOT, realPath);
+      if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        return { error: 'Forbidden', status: 403 };
+      }
+    } catch {
+      return { error: 'Not found', status: 404 };
+    }
+
+    let fd;
+    try {
+      fd = openSync(realPath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+      const opened = fstatSync(fd);
+      // Verify the opened descriptor, then stream it without reopening a pathname.
+      // A component replaced between validation and open must not select another file.
+      if (!opened.isFile() || opened.dev !== fileStat.dev || opened.ino !== fileStat.ino) {
+        throw Object.assign(new Error('Forbidden'), { code: 'UNSAFE_STATIC_FILE' });
+      }
+      return { fd };
+    } catch (error) {
+      if (fd !== undefined) closeSync(fd);
+      const forbidden = error.code === 'ELOOP' || error.code === 'UNSAFE_STATIC_FILE';
+      return { error: forbidden ? 'Forbidden' : 'Internal server error', status: forbidden ? 403 : 500 };
+    }
+  }
+
+  // ── Origin policy (B3): no wildcard CORS on a server with writable endpoints.
+  // Allowed: requests without an Origin header (same-origin navigations, curl,
+  // Node clients) and browser requests originating from this server itself.
   // Trust the configured listener and concrete local socket address, never a
   // request-supplied Host or forwarded header, when establishing local origins.
   let actualPort = PORT; // updated on listen (supports --port=0)
@@ -1957,18 +2000,13 @@ if (process.argv.includes('--serve')) {
     const served = resolveServedPath(req.url);
     if (served.error) { res.writeHead(served.status); res.end(served.error); return; }
     const filePath = served.path;
-    if (!fExists(filePath)) { res.writeHead(404); res.end('Not found'); return; }
-    // B2: only serve regular files — a directory GET must not crash the server
-    let fileStat;
-    try { fileStat = statSync(filePath); } catch { res.writeHead(404); res.end('Not found'); return; }
-    if (!fileStat.isFile()) { res.writeHead(403); res.end('Forbidden'); return; }
+    const opened = openServedFile(filePath);
+    if (opened.error) { res.writeHead(opened.status); res.end(opened.error); return; }
     const ext = extname(filePath);
     const noCache = { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' };
-    const stream = createReadStream(filePath);
-    stream.on('open', () => {
-      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', ...noCache });
-      stream.pipe(res);
-    });
+    const stream = createReadStream(filePath, { fd: opened.fd, autoClose: true });
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', ...noCache });
+    stream.pipe(res);
     stream.on('error', () => {
       // B2: a failing read must not crash the server
       stream.destroy();

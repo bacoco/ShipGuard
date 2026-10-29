@@ -8,10 +8,10 @@
  * dashboard data surface.
  */
 
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { dirname, isAbsolute, join, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import { runInNewContext } from 'vm';
@@ -169,6 +169,100 @@ async function waitForServer(port) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('review server did not become ready');
+}
+
+async function checkStaticConfinement(port, root) {
+  // Every target, including those outside _results, is harmless temporary data.
+  const results = join(root, '_results');
+  const fixtures = join(results, 'static-fixtures');
+  const outside = join(root, '_results-neighbor');
+  mkdirSync(join(fixtures, 'nested'), { recursive: true });
+  mkdirSync(outside);
+  const regular = join(fixtures, 'nested', 'ordinary file.json');
+  const regularBody = '{"fixture":"ordinary file"}\n';
+  const outsideFile = join(outside, 'outside.txt');
+  const outsideBody = 'harmless outside fixture\n';
+  writeFileSync(regular, regularBody);
+  writeFileSync(outsideFile, outsideBody);
+  symlinkSync(outsideFile, join(fixtures, 'outside-file'));
+  symlinkSync(outside, join(fixtures, 'outside-dir'), 'dir');
+  symlinkSync(regular, join(fixtures, 'inside-file'));
+  symlinkSync(join(fixtures, 'nested'), join(fixtures, 'inside-dir'), 'dir');
+  symlinkSync(join(outside, 'missing.txt'), join(fixtures, 'dangling'));
+  symlinkSync(join(fixtures, 'outside-file'), join(fixtures, 'chain'));
+
+  for (const path of ['outside-file', 'outside-dir/outside.txt', 'inside-file',
+    'inside-dir/ordinary%20file.json', 'dangling', 'chain', '%6futside-file']) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await request(port, method, `/static-fixtures/${path}`);
+      assert(response.status === 403, `${method} symlink ${path} was not rejected (${response.status})`);
+      assert(!response.body.includes(outsideBody), 'temporary outside content was served');
+    }
+  }
+  const response = await request(port, 'GET', '/static-fixtures/nested/ordinary%20file.json?cache=1');
+  assert(response.status === 200 && response.body === regularBody, 'ordinary nested file changed');
+  assert(response.headers['content-type'] === 'application/json', 'ordinary file MIME type changed');
+  assert(response.headers['cache-control'] === 'no-cache, no-store, must-revalidate', 'cache policy changed');
+  const head = await request(port, 'HEAD', '/static-fixtures/nested/ordinary%20file.json');
+  assert(head.status === 200 && head.body === '', 'ordinary file HEAD changed');
+  assert((await request(port, 'GET', '/static-fixtures/nested')).status === 403, 'directory was served');
+  assert((await request(port, 'GET', '/static-fixtures/missing')).status === 404, 'missing-file status changed');
+  assert((await request(port, 'GET', '/health')).status === 200, 'rejected paths stopped the server');
+  assert(readFileSync(regular, 'utf8') === regularBody && readFileSync(outsideFile, 'utf8') === outsideBody,
+    'static requests modified temporary files');
+  console.log('Static confinement passed: symlinks refused; regular files, HEAD, MIME and cache policy preserved.');
+}
+
+function checkStaticOpenRaces() {
+  const source = readFileSync(SOURCE_BUILD, 'utf8');
+  const start = source.indexOf('  function openServedFile(');
+  const end = source.indexOf('  // ── Origin policy', start);
+  assert(start >= 0 && end > start, 'static opener boundaries missing');
+  for (const phase of ['realpath', 'open-file', 'open-directory']) {
+    const root = mkdtempSync(join(tmpdir(), 'shipguard-review-open-'));
+    const results = join(root, '_results');
+    const outside = join(root, '_results-neighbor');
+    const descriptors = new Set();
+    try {
+      mkdirSync(join(results, 'nested'), { recursive: true });
+      mkdirSync(outside);
+      writeFileSync(join(results, 'nested', 'file.txt'), 'ordinary temporary fixture');
+      writeFileSync(join(outside, 'file.txt'), 'outside temporary fixture');
+      const filePath = join(results, 'nested', 'file.txt');
+      const swap = () => {
+        if (phase === 'open-file') {
+          rmSync(filePath);
+          symlinkSync(join(outside, 'file.txt'), filePath);
+        } else {
+          renameSync(join(results, 'nested'), join(results, 'original'));
+          symlinkSync(outside, join(results, 'nested'), 'dir');
+        }
+      };
+      const context = {
+        RESULTS_ROOT: results, RESULTS_REAL_ROOT: realpathSync(results), filePath,
+        join, relative, isAbsolute, sep, lstatSync, fstatSync, constants,
+        realpathSync(path) {
+          if (phase === 'realpath') swap();
+          return realpathSync(path);
+        },
+        openSync(path, flags) {
+          if (phase !== 'realpath') swap();
+          if (constants.O_NOFOLLOW) assert(flags & constants.O_NOFOLLOW, 'no-follow flag missing');
+          const fd = openSync(path, flags);
+          descriptors.add(fd);
+          return fd;
+        },
+        closeSync(fd) { closeSync(fd); descriptors.delete(fd); },
+      };
+      const result = runInNewContext(source.slice(start, end) + '\nopenServedFile(filePath);', context);
+      assert(result.status === 403 && result.fd === undefined, `${phase} replacement was not refused`);
+      assert(descriptors.size === 0, `${phase} replacement leaked a descriptor`);
+    } finally {
+      for (const fd of descriptors) closeSync(fd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+  console.log('Static open races passed: realpath escape, final-link swap and directory swap refused without reading data.');
 }
 
 function createFixture() {
@@ -1376,6 +1470,8 @@ async function main() {
     assert(readFileSync(join(root, '_results', 'fix-manifest.json'), 'utf8') === manifestBefore, 'stale session changed manifest');
     assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] },
       { Origin: `http://localhost:${port}` })).status === 200, 'fresh trusted session cannot write');
+    await checkStaticConfinement(port, root);
+    checkStaticOpenRaces();
     passed = true;
     console.log('review smoke test passed');
     if (options.debug) console.error(log.tail());
