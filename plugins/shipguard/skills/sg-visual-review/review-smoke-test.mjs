@@ -398,6 +398,65 @@ function checkYamlRegressions() {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+function checkManifestDiscovery() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-discovery-'));
+  try {
+    copyFileSync(SOURCE_BUILD, join(root, 'build-review.mjs'));
+    copyFileSync(SOURCE_TEMPLATE, join(root, '_review-template.html'));
+    mkdirSync(join(root, '_results'), { recursive: true });
+    writeFileSync(join(root, '_config.yaml'), 'base_url: http://localhost:8001\n');
+    const cases = [
+      ['pages/existing.yaml', 'PASS'],
+      ['pages/nested/flow.yaml-copy.yml', 'FAIL'],
+      ['root-yaml.yaml', 'PASS'],
+      ['root-yml.yml', 'ERROR'],
+    ];
+    const ignored = [
+      '_helper.yaml', '_helper.yml', '.hidden.yaml', '.hidden.yml',
+      '_shared/login.yml', '.private/login.yaml', 'lib/helper.yml',
+      'node_modules/helper.yaml', 'manifests/recorded.yaml', 'notes.txt',
+    ];
+    for (const path of [...cases.map(([path]) => path), ...ignored, 'old.yml', 'pages/old.yml']) {
+      mkdirSync(join(root, dirname(path)), { recursive: true });
+      writeFileSync(join(root, path), `name: ${path}\n${path.endsWith('old.yml') ? 'deprecated: true\n' : ''}steps:\n  - action: open\n    url: /example\n`);
+    }
+    const producer = {
+      schema_version: '1.0',
+      run_id: 'manifest-discovery',
+      summary: { total: 4, pass: 2, fail: 1, error: 1, stale: 0, skipped: 0 },
+      scope: { type: 'full', selected_total: 4 },
+      tests: cases.map(([path, status], index) => ({
+        id: path.replace(/\.ya?ml$/, ''), manifest: `visual-tests/${path}`, status,
+        duration_ms: index + 1, screenshot: null, failure_reason: status === 'PASS' ? null : 'measured reason',
+      })),
+    };
+    writeJson(join(root, '_results/visual-results.json'), producer);
+    const build = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+    assert(build.status === 0, `manifest discovery build failed: ${build.stderr}`);
+    const html = readFileSync(join(root, '_results/review.html'), 'utf8');
+    const data = JSON.parse(html.match(/var __VISUAL_DATA__ = ([\s\S]*?);\nvar __RECORDED_DATA__/)[1]);
+    assert(data.tests.length === cases.length, 'manifest discovery omitted a supported path or included a private/deprecated file');
+    for (const result of producer.tests) {
+      const test = data.tests.find(test => test.id === result.id);
+      assert(test, `manifest missing from review: ${result.manifest}`);
+      assert(test.status === result.status && test.durationMs === result.duration_ms && test.inLastRun,
+        `producer result not matched to ${result.manifest}`);
+      assert(test.failureReason === result.failure_reason, `failure reason changed for ${result.manifest}`);
+      assert(data.categories.includes(test.category), `sidebar category missing for ${result.manifest}`);
+    }
+    for (const key of ['total', 'pass', 'fail', 'error', 'stale', 'skipped']) {
+      assert(data.summary[key] === producer.summary[key], `review ${key} count disagrees with discovered manifests`);
+    }
+    const persisted = JSON.parse(readFileSync(join(root, '_results/visual-results.json'), 'utf8'));
+    assert(persisted.generated_at, 'manifest discovery build did not retain its generated_at contract');
+    delete persisted.generated_at;
+    assert(JSON.stringify(persisted) === JSON.stringify(producer), 'manifest discovery changed producer storage');
+    const recorded = JSON.parse(html.match(/var __RECORDED_DATA__ = ([\s\S]*?);\n/)[1]);
+    assert(recorded.length === 1 && recorded[0].file === 'recorded.yaml', 'recorded manifests changed category or storage');
+    console.log('Manifest discovery regressions passed (.yml nested, .yaml/.yml root, exclusions, producer storage).');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
 function checkAuditRegressions() {
   const root = mkdtempSync(join(tmpdir(), 'shipguard-review-regressions-'));
   const failures = [];
@@ -574,6 +633,7 @@ async function main() {
   let passed = false;
   try {
     checkYamlRegressions();
+    checkManifestDiscovery();
     checkAuditRegressions();
     root = createFixture();
     const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
