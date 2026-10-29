@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const ignoredDirectories = new Set(['.git', 'node_modules']);
 const smokeTestPattern = /-smoke-test.*\.mjs$/;
+const recorderLibrary = resolve(repositoryRoot, 'plugins/shipguard/skills/sg-record/lib');
+const recorderIntegrationTest = resolve(recorderLibrary, 'integration-test.mjs');
+const additionalTests = new Set([
+  resolve(recorderLibrary, 'actions-to-yaml.test.mjs'),
+  recorderIntegrationTest,
+]);
 // Git tracks files, so include their parent directories while still discovering
 // new or renamed tests from the working tree inside those directories.
 const trackedDirectories = new Set([repositoryRoot]);
@@ -31,12 +38,39 @@ function discoverSmokeTests(directory) {
       if (!ignoredDirectories.has(entry.name) && trackedDirectories.has(resolve(directory, entry.name))) {
         tests.push(...discoverSmokeTests(resolve(directory, entry.name)));
       }
-    } else if (entry.isFile() && smokeTestPattern.test(entry.name)) {
+    } else if (entry.isFile() && (smokeTestPattern.test(entry.name) || additionalTests.has(resolve(directory, entry.name)))) {
       tests.push(resolve(directory, entry.name));
     }
   }
 
   return tests;
+}
+
+function runSmokeTest(test) {
+  const options = { cwd: repositoryRoot, env: process.env, stdio: 'inherit' };
+  if (test !== recorderIntegrationTest) return spawnSync(process.execPath, [test], options);
+
+  // The integration test resolves its project from its own file location and
+  // writes review results. Copy only its dependencies into a disposable project.
+  const fixture = mkdtempSync(resolve(tmpdir(), 'shipguard-recorder-integration-'));
+  const visualTests = resolve(fixture, 'visual-tests');
+  const library = resolve(visualTests, 'lib');
+  try {
+    mkdirSync(library, { recursive: true });
+    for (const name of ['integration-test.mjs', 'actions-to-yaml.mjs']) {
+      copyFileSync(resolve(recorderLibrary, name), resolve(library, name));
+    }
+    for (const name of ['build-review.mjs', '_review-template.html']) {
+      copyFileSync(resolve(repositoryRoot, 'plugins/shipguard/skills/sg-visual-review', name), resolve(visualTests, name));
+    }
+    writeFileSync(resolve(visualTests, '_config.yaml'), 'base_url: "http://localhost:6969"\n');
+    return spawnSync(process.execPath, [resolve(library, 'integration-test.mjs')], { ...options, cwd: fixture });
+  } catch (error) {
+    console.error(error.message);
+    return { status: 1, error };
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 }
 
 function formatDuration(milliseconds) {
@@ -98,11 +132,7 @@ for (const [index, test] of tests.entries()) {
   const startedAt = Date.now();
   console.log(`\n[${index + 1}/${tests.length}] RUN  ${displayPath}`);
 
-  const result = spawnSync(process.execPath, [test], {
-    cwd: repositoryRoot,
-    env: process.env,
-    stdio: 'inherit',
-  });
+  const result = runSmokeTest(test);
   const durationMs = Date.now() - startedAt;
   const duration = formatDuration(durationMs);
   testResults.push(measuredResult(displayPath, result, durationMs));
