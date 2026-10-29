@@ -406,19 +406,23 @@ function collectTests() {
     if (!existsSync(catDir)) continue;
     walkDir(catDir, cat, tests);
   }
+  // Root-level manifests share the CLI's extension and private-file rules.
+  // Keep category traversal (including the recorded-manifests exclusion) intact.
+  walkDir(ROOT, 'root', tests, false);
   return tests;
 }
 
-function walkDir(dir, category, tests) {
+function walkDir(dir, category, tests, recursive = true) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!recursive && (entry.name.startsWith('_') || entry.name.startsWith('.'))) continue;
     if (entry.isDirectory()) {
-      walkDir(join(dir, entry.name), category, tests);
-    } else if (entry.name.endsWith('.yaml')) {
+      if (recursive) walkDir(join(dir, entry.name), category, tests);
+    } else if (/\.ya?ml$/.test(entry.name)) {
       try {
         const fullPath = join(dir, entry.name);
         const manifest = yaml.load(readFileSync(fullPath, 'utf8'), fullPath);
         if (!manifest || manifest.deprecated) continue;
-        const relPath = relative(ROOT, fullPath).replace('.yaml', '');
+        const relPath = relative(ROOT, fullPath).replace(/\.ya?ml$/, '');
         tests.push(buildEntry(relPath, category, manifest));
       } catch (e) {
         if (e.code === 'UNSUPPORTED_YAML') throw e;
@@ -1365,7 +1369,7 @@ const data = {
     passRate: tests.length > 0 ? (passCount / tests.length) * 100 : 0,
     lastRun: report.lastRun || new Date().toISOString().split('T')[0],
   },
-  categories: CATEGORIES.filter(c => tests.some(t => t.category === c)),
+  categories: [...new Set(tests.map(t => t.category))],
   tests,
   visualResultsSource: visualResults.source,
   visualResultsError: visualResults.error || null,
