@@ -1558,6 +1558,8 @@ async function cmdRun(args) {
         })()) {
           console.log(`review server: ${reviewUrl} (stop with: shipguard stop --all)`);
         } else {
+          lanes.review = { ...lanes.review, status: 'error',
+            reason: lanes.review.reason || 'review server did not come up', remedy: LANE_REMEDIES.INFRA };
           console.error('review server did not come up — run "shipguard review --serve" manually');
         }
       }
