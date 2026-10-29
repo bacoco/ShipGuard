@@ -92,13 +92,13 @@ const exportedState = {
  cookies: [{ name: 'fixture', value: 'example', domain: 'local', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Lax' }],
  origins: [{ origin: 'http://local', localStorage: [{ name: 'fixture', value: 'example' }] }],
 };
-function exportStorage(path, mask = 0o022) {
+function exportStorage(path, mask = 0o022, expectedStatus = 0, recorder = 'sg-record.mjs') {
  const run = spawnSync(process.execPath, ['--input-type=module', '-e',
   'process.umask(Number(process.argv[1])); process.argv.splice(1, 1); await import(process.argv[1]);',
-  String(mask), join(root, 'sg-record.mjs'), 'http://local/start', '--name=storage-export', '--save-storage='+path],
+  String(mask), join(root, recorder), 'http://local/start', '--name=storage-export', '--save-storage='+path],
   { cwd: root, env: { ...process.env, SG_TEST_AUTH_STATE: JSON.stringify(exportedState) }, timeout: 10000, killSignal: 'SIGKILL', encoding: 'utf8' });
  assert.ifError(run.error);
- assert.equal(run.status, 0, run.stderr);
+ assert.equal(run.status, expectedStatus, run.stderr);
  assert.ok(readFileSync(join(root, 'manifests/recorded-storage-export.yaml'), 'utf8').includes('Alpha'));
  return run.stdout + run.stderr;
 }
@@ -123,7 +123,9 @@ for (const mode of [0o644, 0o620]) {
  check('storage export refuses a pre-existing file with mode '+mode.toString(8), () => {
   const path = join(root, 'auth-unsafe-'+mode.toString(8)+'.json');
   writeFileSync(path, 'unchanged'); chmodSync(path, mode);
-  assert.match(exportStorage(path), /Warning: could not save auth state:/);
+  const output = exportStorage(path, 0o022, 1);
+  assert.match(output, /Warning: could not save auth state:/);
+  assert.match(output, /run: chmod 600 '/);
   assert.equal(readFileSync(path, 'utf8'), 'unchanged');
   assert.equal(statSync(path).mode & 0o777, mode);
  });
@@ -131,31 +133,41 @@ for (const mode of [0o644, 0o620]) {
 check('storage export refuses a symlink without changing its target', () => {
  const target = join(root, 'auth-symlink-target.json'), path = join(root, 'auth-symlink.json');
  writeFileSync(target, 'unchanged'); chmodSync(target, 0o600); symlinkSync(target, path);
- assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
  assert.ok(lstatSync(path).isSymbolicLink());
  assert.equal(readFileSync(target, 'utf8'), 'unchanged');
 });
 check('storage export refuses a dangling symlink without creating its target', () => {
  const target = join(root, 'auth-missing-target.json'), path = join(root, 'auth-dangling.json');
  symlinkSync(target, path);
- assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
  assert.ok(lstatSync(path).isSymbolicLink()); assert.ok(!existsSync(target));
 });
 check('storage export refuses a hard link without changing either entry', () => {
  const target = join(root, 'auth-hardlink-target.json'), path = join(root, 'auth-hardlink.json');
  writeFileSync(target, 'unchanged'); chmodSync(target, 0o600); linkSync(target, path);
- assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
  assert.equal(readFileSync(target, 'utf8'), 'unchanged'); assert.equal(readFileSync(path, 'utf8'), 'unchanged');
  assert.equal(statSync(target).nlink, 2);
 });
 check('storage export refuses a directory', () => {
  const path = join(root, 'auth-directory'); mkdirSync(path);
- assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
  assert.deepEqual(readdirSync(path), []);
 });
 check('storage export refuses a FIFO without blocking', () => {
  const path = join(root, 'auth-fifo'); execFileSync('mkfifo', [path]);
- assert.match(exportStorage(path), /Warning: could not save auth state:/);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
  assert.ok(lstatSync(path).isFIFO());
+});
+check('Windows branch simulation preserves the existing export path with a clear ACL warning', () => {
+ const source = readFileSync(join(root, 'sg-record.mjs'), 'utf8');
+ assert.equal(source.split("process.platform === 'win32'").length, 2);
+ writeFileSync(join(root, 'sg-record-win.mjs'), source.replace("process.platform === 'win32'", 'true'));
+ const path = join(root, 'auth-win-simulated.json');
+ writeFileSync(path, 'old state'); chmodSync(path, 0o644);
+ const output = exportStorage(path, 0o022, 0, 'sg-record-win.mjs');
+ assert.match(output, /ACLs are not verified/);
+ assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
 });
 console.log('Fixture: '+root);process.exitCode=failures?1:0;
