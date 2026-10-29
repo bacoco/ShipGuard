@@ -196,7 +196,7 @@ body.light #bug-search{background:var(--surface)}
 #layout{display:flex;min-height:calc(100vh - 140px)}
 #sidebar{width:200px;padding:16px 12px;border-right:1px solid var(--border);flex-shrink:0;background:var(--bg)}
 #sidebar ul{list-style:none}
-.cat-item{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;justify-content:space-between;transition:.15s}
+.cat-item{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;justify-content:space-between;transition:.15s;background:none;border:0;width:100%;text-align:left;font-family:inherit}
 .cat-item:hover{background:var(--card);color:var(--fg)}
 .cat-item.active{background:#6366f122;color:var(--accent);font-weight:600}
 .cat-count{font-size:11px;opacity:.7}
@@ -208,6 +208,10 @@ body.light #bug-search{background:var(--surface)}
   transform-style:preserve-3d;perspective:800px}
 .card:hover{border-color:var(--accent);transform:translateY(-4px) rotateX(2deg);box-shadow:0 12px 32px rgba(0,0,0,.4),0 0 0 1px #6366f133}
 .card.selected{border-color:var(--red);box-shadow:0 0 0 2px #ef444444,0 8px 24px rgba(239,68,68,.15)}
+.card-open{position:absolute;inset:0;width:100%;height:100%;background:none;border:0;border-radius:inherit;cursor:pointer;z-index:1}
+.card-open:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.cat-item:focus-visible,.card-check:focus-within,.rec-check:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.card-select{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
 .card .thumb{width:100%;aspect-ratio:16/10;object-fit:cover;background:var(--secondary);display:block;transition:transform .3s ease}
 .card:hover .thumb{transform:scale(1.02)}
 .card .thumb-placeholder{width:100%;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:var(--secondary);color:var(--muted);font-size:12px}
@@ -230,7 +234,7 @@ body.light #bug-search{background:var(--surface)}
 .badge-priority{background:var(--border);color:var(--muted);font-size:9px}
 .card-desc{font-size:11px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card-check{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:4px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.4);cursor:pointer;opacity:0;transition:.15s;display:flex;align-items:center;justify-content:center;z-index:2}
-.card:hover .card-check,.card.selected .card-check{opacity:1}
+.card:hover .card-check,.card.selected .card-check,.card:focus-within .card-check{opacity:1}
 .card.selected .card-check{background:var(--red);border-color:var(--red)}
 .card-check-mark{display:none;color:white;font-size:14px;font-weight:700}
 .card.selected .card-check-mark{display:block}
@@ -862,13 +866,20 @@ function setTheme(t) {
     var cats = [{id:'all',label:'All'}].concat(D.categories.map(function(c){return {id:c,label:c};}));
     var ul = document.getElementById('cat-list');
     ul.textContent = '';
-    cats.forEach(function(c) {
+    cats.forEach(function(c, index) {
       var li = document.createElement('li');
-      li.className = 'cat-item' + (c.id === activeCat ? ' active' : '');
+      var btn = document.createElement('button'); btn.type = 'button';
+      btn.className = 'cat-item' + (c.id === activeCat ? ' active' : '');
+      btn.setAttribute('aria-pressed', String(c.id === activeCat));
       var ns = document.createElement('span'); ns.textContent = c.label;
       var cs = document.createElement('span'); cs.className='cat-count'; cs.textContent = counts[c.id]||0;
-      li.appendChild(ns); li.appendChild(cs);
-      li.addEventListener('click', function(){activeCat=c.id;renderSidebar();renderGrid();});
+      btn.appendChild(ns); btn.appendChild(cs);
+      btn.addEventListener('click', function(){
+        var focused = document.activeElement === btn;
+        activeCat=c.id;renderSidebar();renderGrid();
+        if (focused) ul.children[index].firstChild.focus({preventScroll:true});
+      });
+      li.appendChild(btn);
       ul.appendChild(li);
     });
   }
@@ -896,14 +907,26 @@ function setTheme(t) {
     grid.textContent = '';
     var tests = getFiltered();
     if (!tests.length) { var e=document.createElement('div');e.className='empty';e.textContent='No tests match the current filters.';grid.appendChild(e);return; }
-    tests.forEach(function(t) {
+    tests.forEach(function(t, index) {
       var card = document.createElement('div');
       card.className = 'card' + (selected[t.id] ? ' selected' : '') + (annotationData[t.id] && annotationData[t.id].length ? ' annotated' : '');
       card.setAttribute('data-id', t.id);
+      var open = document.createElement('button'); open.type='button'; open.className='card-open';
+      open.setAttribute('aria-label', 'Open ' + t.name);
+      card.appendChild(open);
       var check = document.createElement('div'); check.className='card-check';
+      var input = document.createElement('input'); input.type='checkbox'; input.className='card-select';
+      input.checked=!!selected[t.id]; input.setAttribute('aria-label', 'Select ' + t.name);
+      check.appendChild(input);
       var cm = document.createElement('span'); cm.className='card-check-mark'; cm.textContent='\u2713';
+      cm.setAttribute('aria-hidden', 'true'); cm.style.pointerEvents='none';
       check.appendChild(cm);
-      check.addEventListener('click', function(e){e.stopPropagation();toggleSelect(t.id);});
+      check.addEventListener('click', function(e){
+        e.stopPropagation();
+        var focused = document.activeElement === input;
+        toggleSelect(t.id);
+        if (focused) grid.children[index].querySelector('.card-select').focus({preventScroll:true});
+      });
       card.appendChild(check);
       var ac = (annotationData[t.id]||[]).length + (redoFlags[t.id]?1:0);
       if (ac > 0) {
@@ -943,7 +966,7 @@ function setTheme(t) {
         else if (t.fixCycles >= 1) { sc.className+='card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
         card.appendChild(sc);
       }
-      card.addEventListener('click', function(){openLightbox(t.id);});
+      card.addEventListener('click', function(){openLightbox(t.id, open);});
       grid.appendChild(card);
     });
   }
@@ -1496,14 +1519,28 @@ function setTheme(t) {
   // ── Lightbox ──
   var currentLbIndex = -1;
   var baViewMode = 'after';
+  var lightboxOpener = null;
+  var lightboxOpenerId = null;
+  var lightboxBackground = [];
   function getLbList() { return getFiltered().filter(function(t){return t.screenshot;}); }
 
-  function openLightbox(id) {
+  function openLightbox(id, opener) {
     var t = D.tests.find(function(x){return x.id===id;});
     if (!t) return;
     var list = getLbList();
     for (var li=0;li<list.length;li++){if(list[li].id===id){currentLbIndex=li;break;}}
     var lb = document.getElementById('lightbox');
+    var opening = !lb.classList.contains('visible');
+    if (opening) {
+      lightboxOpener = opener || document.activeElement;
+      lightboxOpenerId = id;
+      Array.prototype.forEach.call(document.body.children, function(node) {
+        // The annotation editor is a sibling overlay and must stay interactive.
+        if (node === lb || node.id === 'note-overlay' || node.tagName === 'SCRIPT') return;
+        lightboxBackground.push({ node: node, inert: node.inert });
+        node.inert = true;
+      });
+    }
     var img = document.getElementById('lb-img');
     if (t.screenshot) { img.src=t.screenshot; img.style.display='block'; }
     else { img.style.display='none'; }
@@ -1546,6 +1583,7 @@ function setTheme(t) {
     lb.classList.add('visible');
     if (typeof resetZoom === 'function') resetZoom();
     if (window._annotSetup) window._annotSetup(id);
+    if (opening) document.getElementById('lb-close').focus({preventScroll:true});
   }
 
   document.getElementById('lb-ba-after').addEventListener('click', function() {
@@ -1569,7 +1607,26 @@ function setTheme(t) {
     renderGrid();
   });
 
-  function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); }
+  function closeLightbox() {
+    var lb = document.getElementById('lightbox');
+    if (!lb.classList.contains('visible')) return;
+    lb.classList.remove('visible');
+    lightboxBackground.forEach(function(entry) { entry.node.inert = entry.inert; });
+    lightboxBackground = [];
+    // An annotation can rebuild the grid while the lightbox is open.
+    if (lightboxOpener && !lightboxOpener.isConnected) {
+      var cards = document.getElementById('grid').querySelectorAll('.card');
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].getAttribute('data-id') === lightboxOpenerId) {
+          lightboxOpener = cards[i].querySelector('.card-open');
+          break;
+        }
+      }
+    }
+    if (lightboxOpener && lightboxOpener.isConnected) lightboxOpener.focus({preventScroll:true});
+    lightboxOpener = null;
+    lightboxOpenerId = null;
+  }
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
   document.getElementById('lb-img-area').addEventListener('click', function(e) {
     if (addMode) return;
@@ -1587,6 +1644,19 @@ function setTheme(t) {
 
   // ── Keyboard ──
   document.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && document.getElementById('lightbox').classList.contains('visible')) {
+      var note = document.getElementById('note-overlay');
+      var root = note.classList.contains('visible') ? note : document.getElementById('lightbox');
+      var controls = Array.prototype.filter.call(root.querySelectorAll('button, input, textarea, select, a[href], [tabindex]'), function(node) {
+        return !node.disabled && node.tabIndex >= 0 && node.getClientRects().length;
+      });
+      var first = controls[0], last = controls[controls.length - 1];
+      if (controls.length && (!root.contains(document.activeElement) ||
+          (e.shiftKey ? document.activeElement === first : document.activeElement === last))) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus({preventScroll:true});
+      }
+    }
     if (e.key==='Escape') {
       if (document.getElementById('note-overlay').classList.contains('visible')) {
         // r1-z02-008: cancel annotation instead of saving empty string
@@ -3215,18 +3285,32 @@ function renderRecordedGrid() {
   }
 
   grid.textContent = '';
-  recData.forEach(function(rec) {
+  recData.forEach(function(rec, index) {
     var isSelected = !!recSelected[rec.id];
 
     var card = document.createElement('div');
     card.style.cssText = 'background:var(--card);border:1px solid ' + (isSelected ? 'var(--accent)' : 'var(--border)') + ';border-radius:var(--radius);overflow:hidden;cursor:pointer;position:relative;transition:border-color .2s,transform .2s,box-shadow .2s';
     card.setAttribute('data-id', rec.id);
+    var name = rec.name || rec.id || 'Untitled';
+    var toggle = document.createElement('button'); toggle.type='button'; toggle.className='card-open';
+    toggle.setAttribute('aria-label', 'Select ' + name);
+    toggle.setAttribute('aria-pressed', String(isSelected));
+    card.appendChild(toggle);
 
     // Checkbox (top-right)
     var check = document.createElement('div');
+    check.className = 'rec-check';
     check.style.cssText = 'position:absolute;top:8px;right:8px;width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;z-index:1;' + (isSelected ? 'background:var(--accent);color:#fff;border:none' : 'background:transparent;border:1px solid var(--muted);color:transparent');
     check.textContent = '\u2713';
-    check.addEventListener('click', function(e) { e.stopPropagation(); recToggle(rec.id); });
+    var input = document.createElement('input'); input.type='checkbox'; input.className='card-select';
+    input.checked=isSelected; input.setAttribute('aria-label', 'Select ' + name);
+    check.appendChild(input);
+    check.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var focused = document.activeElement === input;
+      recToggle(rec.id);
+      if (focused) grid.children[index].querySelector('.card-select').focus({preventScroll:true});
+    });
     card.appendChild(check);
 
     // Status badge (top-left, only if status exists)
@@ -3294,7 +3378,11 @@ function renderRecordedGrid() {
     body.appendChild(tags);
     card.appendChild(body);
 
-    card.addEventListener('click', function() { recToggle(rec.id); });
+    card.addEventListener('click', function() {
+      var focused = document.activeElement === toggle;
+      recToggle(rec.id);
+      if (focused) grid.children[index].querySelector('.card-open').focus({preventScroll:true});
+    });
 
     // Hover effect
     card.addEventListener('mouseenter', function() { card.style.borderColor = 'var(--accent)'; card.style.transform = 'translateY(-2px)'; card.style.boxShadow = '0 4px 16px rgba(0,0,0,.2)'; });

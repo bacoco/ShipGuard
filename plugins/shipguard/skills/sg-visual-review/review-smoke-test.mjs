@@ -574,14 +574,33 @@ function checkAuditRegressions() {
       return html.slice(a, b);
     };
     const nodes = new Map();
-    function element() {
+    function element(tag = 'div') {
       const classes = new Set();
-      return { style: {}, value: '', children: [], handlers: {}, focus() {}, appendChild(x) { this.children.push(x); },
+      const node = { tagName: tag.toUpperCase(), style: {}, value: '', children: [], handlers: {}, attributes: {},
+        inert: false, isConnected: true, tabIndex: 0,
+        focus() { document.activeElement = this; },
+        getAttribute(name) { return this.attributes[name]; },
+        getClientRects() { return this.style.display === 'none' ? [] : [{}]; },
+        get firstChild() { return this.children[0]; },
+        appendChild(x) { this.children.push(x); },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        querySelector(selector) {
+          for (const child of this.children) {
+            if ((child.className || '').split(' ').includes(selector.slice(1))) return child;
+            const found = child.querySelector(selector);
+            if (found) return found;
+          }
+          return null;
+        },
         addEventListener(name, fn) { this.handlers[name] = fn; },
         classList: { add(c) { classes.add(c); }, remove(c) { classes.delete(c); }, contains(c) { return classes.has(c); } } };
+      let text = '';
+      Object.defineProperty(node, 'textContent', { get() { return text; }, set(value) { text = value; this.children = []; } });
+      return node;
     }
-    const document = { createElement: element, handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; },
-      getElementById(id) { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); } };
+    const document = { createElement: element, createTextNode(text) { return { textContent: text }; },
+      handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; },
+      getElementById(id) { if (!nodes.has(id)) { const node = element(); node.id = id; nodes.set(id, node); } return nodes.get(id); } };
     check('r1-z04-002', () => {
       const context = { document, pendingAnnot: {}, editingIndex: 0, selectedCount: 0 };
       runInNewContext(slice('function showNoteInput(', 'function saveAnnotation(') + slice("document.addEventListener('keydown', function(e) {", '// ── Toast'), context);
@@ -607,7 +626,119 @@ function checkAuditRegressions() {
       assert(ids.includes('pages/error'), 'last-run error without screenshot hidden');
       assert(!ids.includes('pages/old') && !ids.includes('admin/login'), 'unexecuted tests included');
       context.renderSidebar();
-      assert(document.getElementById('cat-list').children[0].children[1].textContent === ids.length, 'sidebar count disagrees with last-run grid');
+      assert(document.getElementById('cat-list').children[0].firstChild.children[1].textContent === ids.length, 'sidebar count disagrees with last-run grid');
+    });
+    // Native elements provide Tab/Enter/Space behavior in the browser. Here,
+    // check the rendered controls, state synchronization and focus after rebuilds.
+    check('#198 native visual controls', () => {
+      const opened = [];
+      const context = { document, D: data, lastRunOnly: false, activeCat: 'all', activeStatus: 'ALL', query: '',
+        selected: {}, selectedCount: 0, annotationData: {}, revertFlags: {}, isUpdated() { return false; },
+        openLightbox(id) { opened.push(id); } };
+      runInNewContext(slice('function renderSidebar(', '// ── Annotation State'), context);
+      context.renderSidebar(); context.renderGrid();
+      const list = document.getElementById('cat-list');
+      const category = list.children[1].firstChild;
+      assert(category.tagName === 'BUTTON' && category.type === 'button', 'category is not a native button');
+      category.focus(); category.handlers.click();
+      assert(context.activeCat === data.categories[0], 'category activation did not filter');
+      assert(list.children[1].firstChild.attributes['aria-pressed'] === 'true', 'active category not exposed');
+      assert(document.activeElement === list.children[1].firstChild, 'category rebuild lost focus');
+      assert(list.children[0].firstChild.attributes['aria-pressed'] === 'false', 'old category still pressed');
+      context.activeCat = 'all'; context.renderGrid();
+      const grid = document.getElementById('grid');
+      const card = grid.firstChild;
+      const open = card.querySelector('.card-open');
+      assert(open.tagName === 'BUTTON' && open.type === 'button' && open.attributes['aria-label'].includes(context.getFiltered()[0].name), 'card opener has no native named button');
+      card.handlers.click();
+      assert(opened[0] === card.attributes['data-id'], 'card no longer opens the matching test');
+      const input = card.querySelector('.card-select');
+      assert(input.tagName === 'INPUT' && input.type === 'checkbox' && !input.checked && input.attributes['aria-label'], 'selection is not a named unchecked checkbox');
+      let stopped = false;
+      input.focus(); card.querySelector('.card-check').handlers.click({ stopPropagation() { stopped = true; } });
+      assert(stopped && opened.length === 1, 'selection opened the card');
+      assert(context.selectedCount === 1 && grid.firstChild.querySelector('.card-select').checked, 'selection state not synchronized');
+      assert(document.activeElement === grid.firstChild.querySelector('.card-select'), 'selection rebuild lost focus');
+      grid.firstChild.querySelector('.card-check').handlers.click({ stopPropagation() {} });
+      assert(context.selectedCount === 0 && !grid.firstChild.querySelector('.card-select').checked, 'deselection state not synchronized');
+    });
+    check('#198 lightbox modal focus and return after grid rebuild', () => {
+      const lb = document.getElementById('lightbox');
+      const note = document.getElementById('note-overlay');
+      note.classList.remove('visible');
+      const close = document.getElementById('lb-close');
+      const next = document.getElementById('lb-next');
+      const hidden = element('button'); hidden.style.display = 'none';
+      const disabled = element('button'); disabled.disabled = true;
+      lb.querySelectorAll = () => [close, next, hidden, disabled];
+      lb.contains = node => [close, next, hidden, disabled].includes(node);
+      const input = document.getElementById('note-input');
+      const save = document.getElementById('note-save');
+      note.querySelectorAll = () => [input, save];
+      note.contains = node => [input, save].includes(node);
+      const background = element('main'), alreadyInert = element();
+      alreadyInert.inert = true;
+      document.body = { children: [background, alreadyInert, lb, note] };
+      const opener = element('button'), replacement = element('button');
+      const tests = ['a', 'b'].map(id => ({ id, name: id, status: 'PASS', screenshot: id + '.png', steps: [] }));
+      const context = { document, D: { tests }, getFiltered: () => tests, window: {},
+        selected: { a: true }, selectedCount: 1, annotationData: { a: [{ note: 'Keep me' }] },
+        pendingAnnot: null, editingIndex: null };
+      const originalState = JSON.stringify([context.selected, context.annotationData]);
+      runInNewContext(slice('var currentLbIndex =', '// ── Last Run Only toggle') +
+        slice("document.addEventListener('keydown', function(e) {", '// ── Toast') +
+        slice('function navLightbox(', "document.getElementById('lb-prev')"), context);
+      opener.focus(); context.openLightbox('a', opener);
+      assert(document.activeElement === close, 'opening left focus on the card behind the lightbox');
+      assert(background.inert && alreadyInert.inert && !lb.inert && !note.inert, 'background not inert or annotation editor blocked');
+      function tab(shiftKey) {
+        let prevented = false;
+        document.handlers.keydown({ key: 'Tab', shiftKey, preventDefault() { prevented = true; } });
+        return prevented;
+      }
+      assert(tab(true) && document.activeElement === next, 'Shift+Tab escaped or reached hidden/disabled controls');
+      assert(tab(false) && document.activeElement === close, 'Tab escaped the lightbox');
+      assert(!tab(false), 'ordinary Tab navigation was intercepted');
+      note.classList.add('visible'); input.focus();
+      assert(tab(true) && document.activeElement === save, 'annotation editor cannot retain keyboard focus');
+      note.classList.remove('visible');
+      assert(tab(false) && document.activeElement === close, 'focus did not return inside after annotation editor closed');
+      next.focus(); context.navLightbox(1);
+      assert(document.activeElement === next, 'image navigation reset focus or replaced the original opener');
+      opener.isConnected = false;
+      document.getElementById('grid').querySelectorAll = () => [{
+        getAttribute: () => 'a', querySelector: () => replacement,
+      }];
+      document.handlers.keydown({ key: 'Escape' });
+      assert(!lb.classList.contains('visible') && !background.inert && alreadyInert.inert, 'close did not restore background inert states');
+      assert(document.activeElement === replacement, 'close did not return to the rebuilt original card button');
+      assert(JSON.stringify([context.selected, context.annotationData]) === originalState, 'modal focus changed selection or annotations');
+      context.openLightbox('a', replacement);
+      document.getElementById('lb-close').handlers.click();
+      assert(document.activeElement === replacement && !background.inert, 'mouse close did not restore focus and background');
+    });
+    check('#198 native recorded controls', () => {
+      const context = { document, recSelected: {}, recData: [{ id: 'login', name: 'Recorded Login', stepCount: 2 }, { id: 'search', name: 'Recorded Search' }] };
+      runInNewContext(slice('function renderRecordedGrid(', 'function recRunSelected('), context);
+      context.renderRecordedGrid();
+      const grid = document.getElementById('rec-grid');
+      const card = grid.firstChild;
+      const toggle = card.querySelector('.card-open');
+      const input = card.querySelector('.card-select');
+      assert(toggle.tagName === 'BUTTON' && toggle.type === 'button' && toggle.attributes['aria-pressed'] === 'false' && toggle.attributes['aria-label'].includes('Recorded Login'), 'recorded card is not a named native toggle');
+      assert(input.tagName === 'INPUT' && input.type === 'checkbox' && input.attributes['aria-label'] && !input.checked, 'recorded selection is not a named checkbox');
+      toggle.focus(); card.handlers.click();
+      assert(grid.firstChild.querySelector('.card-open').attributes['aria-pressed'] === 'true' && grid.firstChild.querySelector('.card-select').checked, 'recorded card selection not synchronized');
+      assert(document.activeElement === grid.firstChild.querySelector('.card-open'), 'recorded toggle rebuild lost focus');
+      grid.firstChild.querySelector('.card-select').focus();
+      let stopped = false;
+      grid.firstChild.querySelector('.rec-check').handlers.click({ stopPropagation() { stopped = true; } });
+      assert(stopped && !grid.firstChild.querySelector('.card-select').checked && grid.firstChild.querySelector('.card-open').attributes['aria-pressed'] === 'false', 'recorded checkbox did not deselect independently');
+      assert(document.activeElement === grid.firstChild.querySelector('.card-select'), 'recorded checkbox rebuild lost focus');
+      context.recSelectAll();
+      assert(grid.children.every(c => c.querySelector('.card-select').checked && c.querySelector('.card-open').attributes['aria-pressed'] === 'true'), 'Select All did not synchronize native states');
+      context.recSelectAll();
+      assert(grid.children.every(c => !c.querySelector('.card-select').checked && c.querySelector('.card-open').attributes['aria-pressed'] === 'false'), 'Select All did not clear native states');
     });
     check('r1-z04-006', () => {
       const context = { document };
