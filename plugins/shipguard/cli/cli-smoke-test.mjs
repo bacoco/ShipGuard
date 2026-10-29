@@ -197,11 +197,45 @@ assert(cons[2].level === 'error' && cons[2].text.includes('TypeError'), 'console
 
 // ── validateScreenshot ──
 const shotDir = mkdtempSync(join(tmpdir(), 'sg-shot-'));
-wf(join(shotDir, 'good.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+// Real 2x2 RGB PNG emitted by agent-browser 0.39.1 (two IDAT chunks).
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGJh+M8ABEwMYAAAAAD//yRdExIAAAAGSURBVAMADEgBBnJFnNoAAAAASUVORK5CYII=';
+const png = Buffer.from(PNG_BASE64, 'base64');
+const goodShot = join(shotDir, 'good.png');
+const goodShotShell = "'" + goodShot.replace(/'/g, "'\\''") + "'";
+wf(goodShot, png);
 wf(join(shotDir, 'empty.png'), '');
-assert(validateScreenshot(join(shotDir, 'good.png')).ok, 'screenshot: non-empty ok');
+assert(deepEq(validateScreenshot(goodShot), { ok: true, size: png.length }), 'screenshot: real PNG accepted with unchanged result shape');
 assert(validateScreenshot(join(shotDir, 'empty.png')).ok === false, 'screenshot: empty rejected');
 assert(validateScreenshot(join(shotDir, 'ghost.png')).reason === 'missing', 'screenshot: missing rejected');
+const invalidShots = {
+  'non-image': Buffer.from('PNGFAKE'),
+  truncated: png.subarray(0, 4),
+  'missing IDAT': Buffer.concat([png.subarray(0, 33), png.subarray(-12)]),
+  'bad CRC': Buffer.from(png),
+  'trailing bytes': Buffer.concat([png, Buffer.from([0])]),
+};
+invalidShots['bad CRC'][29] ^= 1;
+// Complete chunk framing and CRCs isolate dimension and compressed-data checks.
+for (const [label, base64] of [
+  ['zero width', 'iVBORw0KGgoAAAANSUhEUgAAAAAAAAACCAIAAAD5IUpOAAAAEUlEQVR4nGNh+M8ABEwMYAAADEgBBuenLbEAAAAASUVORK5CYII='],
+  ['zero height', 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAAACAIAAACwHDt4AAAAEUlEQVR4nGNh+M8ABEwMYAAADEgBBuenLbEAAAAASUVORK5CYII='],
+  ['dimensions mismatch', 'iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAEUlEQVR4nGNh+M8ABEwMYAAADEgBBuenLbEAAAAASUVORK5CYII='],
+  ['truncated compressed pixels', 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGJh+M8ABEwMYAAAAAD//wMADEgBCj/h5AAAAABJRU5ErkJggg=='],
+  ['short pixel rows', 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGNh+M8ABEwgggEAC0IBBoZdg1wAAAAASUVORK5CYII='],
+  ['invalid row filter', 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGNl+M8ABEwMYAAADFYBB5+0HEYAAAAASUVORK5CYII='],
+]) invalidShots[label] = Buffer.from(base64, 'base64');
+for (const [label, bytes] of Object.entries(invalidShots)) {
+  const file = join(shotDir, `${label}.png`);
+  wf(file, bytes);
+  const result = validateScreenshot(file);
+  assert(!result.ok && result.size === bytes.length && !!result.reason, `screenshot: ${label} rejected`);
+}
+assert(Array.from({ length: png.length - 1 }, (_, i) => i + 1).every(length => {
+  const file = join(shotDir, 'prefix.png');
+  wf(file, png.subarray(0, length));
+  return !validateScreenshot(file).ok;
+}), 'screenshot: every truncated prefix of the real PNG is rejected');
+assert(rf(goodShot).equals(png), 'screenshot: validation preserves stored bytes');
 
 // ── matchSnapshotRef ──
 // Line shape copied from real `agent-browser 0.27.0 snapshot -i` output (element
@@ -292,7 +326,9 @@ const APP_U = `node -e "require('http').createServer((q,s)=>{s.end('<html>Ok</ht
 wf(join(projU, 'visual-tests', '_config.yaml'),
   `version: 2\napp:\n  start: "${APP_U.replace(/"/g, '\\"')}"\n  healthcheck: "/"\n  startup_timeout_ms: 15000\n`);
 const FAKE_BIN = join(projU, 'fake-agent-browser');
-wf(FAKE_BIN, '#!/bin/sh\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n  screenshot) printf \'PNGFAKE\' > "$2" ;;\n  get) [ "$2" = url ] && printf \'%s\\n\' \'http://127.0.0.1/ok.html\' ;;\nesac\nexit 0\n');
+wf(FAKE_BIN, '#!/bin/sh\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n'
+  + `  screenshot) cp ${goodShotShell} "$2" ;;\n`
+  + '  get) [ "$2" = url ] && printf \'%s\\n\' \'http://127.0.0.1/ok.html\' ;;\nesac\nexit 0\n');
 chmodSync(FAKE_BIN, 0o755);
 let codeU = 0;
 try {
@@ -411,7 +447,7 @@ if (a[0] === 'upload' && !fs.existsSync(require('path').resolve(${JSON.stringify
 if (process.env.SG_AUDIT_HISTORY_FAIL && ['back','forward'].includes(a[0])) { console.error('history failed'); process.exit(7); }
 if (a[0] === 'screenshot') {
   if (process.env.SG_AUDIT_SHOT_FAIL) process.exit(7);
-  fs.writeFileSync(a[1], 'PNGFAKE');
+  fs.writeFileSync(a[1], Buffer.from(${JSON.stringify(PNG_BASE64)}, 'base64'));
 }
 `);
 chmodSync(auditBin, 0o755);
@@ -518,7 +554,7 @@ try {
   const second = await auditExec('docs/index', [{ action: 'open', url: '/' }], {}, ['screenshots']);
   assert(first.screenshot !== second.screenshot && ex(join(auditDir, first.screenshot)) && ex(join(auditDir, second.screenshot)),
     'r1-z01-003: same leaf name in different folders keeps separate screenshot evidence');
-  wf(join(auditShotDir, 'old.png'), 'OLD-VALID-PROOF');
+  wf(join(auditShotDir, 'old.png'), png);
   process.env.SG_AUDIT_SHOT_FAIL = '1';
   const old = await auditExec('old', [{ action: 'open', url: '/' }], {}, ['screenshots']);
   delete process.env.SG_AUDIT_SHOT_FAIL;
@@ -559,7 +595,7 @@ assert(runJson.lanes.audit.status === 'not-applicable', 'run: audit lane declare
 // the aggregation reads lanes that only a real run produces.
 const FAKE_F = join(mkdtempSync(join(tmpdir(), 'sg-fbin-')), 'fake-agent-browser');
 wf(FAKE_F, '#!/bin/sh\nif [ -n "$SG_BROWSER_CALLS" ]; then printf \'%s|%s\\n\' "$1" "$AGENT_BROWSER_SESSION" >> "$SG_BROWSER_CALLS"; fi\ncase "$1" in\n  snapshot) printf \'%s\\n\' \'- heading "Ok" @e1\' ;;\n'
-  + '  screenshot) if [ "$SG_EMPTY_SHOT" = 1 ]; then : > "$2"; else printf \'PNGFAKE\' > "$2"; fi ;;\n'
+  + `  screenshot) if [ "$SG_EMPTY_SHOT" = 1 ]; then : > "$2"; elif [ -n "$SG_SHOT_FILE" ]; then cp "$SG_SHOT_FILE" "$2"; else cp ${goodShotShell} "$2"; fi ;;\n`
   + '  get) [ "$2" = url ] && printf \'%s\\n\' \'http://127.0.0.1/ok.html\' ;;\nesac\nexit 0\n');
 chmodSync(FAKE_F, 0o755);
 const OK_MANIFEST = 'name: "Ok"\nsteps:\n  - action: open\n    url: "{base_url}/ok.html"\n  - action: assert_text\n    text: "Ok"\n';
@@ -638,6 +674,18 @@ assert(fExpectedMismatch.code === EXIT.FINDINGS && fExpectedMismatch.visual?.tes
 const fTool = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST }, flags: ['--no-crawl'], env: { SG_EMPTY_SHOT: '1' } });
 assert(fTool.code === EXIT.INFRA, 'exit: a per-test tooling ERROR -> 2 (unchanged)');
 assert(fTool.run?.lanes?.visual?.remedy === 'infrastructure', 'exit: the errored visual lane names an infrastructure remedy');
+for (const label of ['non-image', 'truncated', 'truncated compressed pixels']) {
+  for (const explicit of [false, true]) {
+    const fShot = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST
+      + (explicit ? '  - action: screenshot\n    filename: explicit.png\n' : '') },
+      flags: ['--no-crawl'], env: { SG_SHOT_FILE: join(shotDir, `${label}.png`) } });
+    const test = fShot.visual?.tests?.[0];
+    assert(fShot.code === EXIT.INFRA && test?.status === 'ERROR' && !test.screenshot
+      && /invalid PNG/.test(test.screenshot_error || test.failure_reason || '')
+      && fShot.run?.lanes?.visual?.remedy === 'infrastructure',
+      `screenshot run: ${label} (${explicit ? 'explicit step' : 'automatic check'}) cannot produce a green run or image reference`);
+  }
+}
 const fBoth = runFixture({ files: { 'pages/ok.yaml': OK_MANIFEST, 'pages/typo.yaml': 'name: "T"\nsteps:\n  - action: assert_txt\n    text: "Ok"\n' },
   flags: ['--no-crawl'], env: { SG_EMPTY_SHOT: '1' } });
 assert(fBoth.code === EXIT.INFRA, 'exit: tooling and declaration faults together -> 2 outranks 3');

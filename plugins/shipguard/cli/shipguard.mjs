@@ -37,6 +37,7 @@ import { join, dirname, relative, sep, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
+import { inflateSync } from 'zlib';
 import net from 'net';
 
 export const EXIT = { CLEAN: 0, FINDINGS: 1, INFRA: 2, CONFIG: 3 };
@@ -565,7 +566,77 @@ export function validateScreenshot(path) {
   if (!existsSync(path)) return { ok: false, size: 0, reason: 'missing' };
   const size = statSync(path).size;
   if (size === 0) return { ok: false, size, reason: 'empty file' };
-  return { ok: true, size };
+  const invalid = () => ({ ok: false, size, reason: 'invalid PNG' });
+  try {
+    // agent-browser's .png captures must contain a complete, decodable image.
+    const png = readFileSync(path);
+    if (!png.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return invalid();
+    const crc32 = bytes => {
+      let crc = 0xffffffff;
+      for (const byte of bytes) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+      }
+      return (crc ^ 0xffffffff) >>> 0;
+    };
+    let width, height, depth, color, interlace, ended = false, palette = false, dataEnded = false;
+    const idat = [];
+    const depths = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+    for (let offset = 8; offset < png.length;) {
+      if (offset + 12 > png.length) return invalid();
+      const length = png.readUInt32BE(offset);
+      const end = offset + 12 + length;
+      const type = png.toString('latin1', offset + 4, offset + 8);
+      if (length > 0x7fffffff || end > png.length || !/^[A-Za-z]{2}[A-Z][A-Za-z]$/.test(type)
+        || (offset === 8 && type !== 'IHDR')
+        || crc32(png.subarray(offset + 4, end - 4)) !== png.readUInt32BE(end - 4)) return invalid();
+      const data = png.subarray(offset + 8, end - 4);
+      if (type === 'IHDR') {
+        if (offset !== 8 || length !== 13) return invalid();
+        width = data.readUInt32BE(0); height = data.readUInt32BE(4);
+        [depth, color, , , interlace] = data.subarray(8);
+        if (!width || !height || width > 0x7fffffff || height > 0x7fffffff
+          || !depths[color]?.includes(depth) || data[10] !== 0 || data[11] !== 0 || interlace > 1) return invalid();
+      } else if (type === 'PLTE') {
+        if (palette || idat.length || !length || length % 3 || length > 768 || [0, 4].includes(color)
+          || (color === 3 && length / 3 > 2 ** depth)) return invalid();
+        palette = true;
+      } else if (type === 'IDAT') {
+        if (dataEnded || (color === 3 && !palette)) return invalid();
+        idat.push(data);
+      } else if (type === 'IEND') {
+        if (length || end !== png.length || !idat.length) return invalid();
+        ended = true;
+      } else {
+        if (!(type.charCodeAt(0) & 32)) return invalid(); // Unknown critical chunk.
+        if (idat.length) dataEnded = true;
+      }
+      offset = end;
+    }
+    if (!ended) return invalid();
+    const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[color];
+    // Each nonempty Adam7 pass, or the single noninterlaced image, has a
+    // filter byte followed by a complete row of packed samples.
+    const passes = interlace
+      ? [[0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4], [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2]]
+      : [[0, 0, 1, 1]];
+    const rows = passes.map(([x, y, dx, dy]) => [Math.ceil((width - x) / dx), Math.ceil((height - y) / dy)])
+      .filter(([w, h]) => w > 0 && h > 0).map(([w, h]) => [1 + Math.ceil(w * depth * channels / 8), h]);
+    const expected = rows.reduce((sum, [stride, count]) => sum + stride * count, 0);
+    if (!Number.isSafeInteger(expected)) return invalid();
+    const compressed = Buffer.concat(idat);
+    const decoded = inflateSync(compressed, { maxOutputLength: expected, info: true });
+    if (decoded.buffer.length !== expected || decoded.engine.bytesWritten !== compressed.length) return invalid();
+    let offset = 0;
+    for (const [stride, count] of rows) {
+      for (let row = 0; row < count; row++, offset += stride) {
+        if (decoded.buffer[offset] > 4) return invalid();
+      }
+    }
+    return { ok: true, size };
+  } catch {
+    return invalid();
+  }
 }
 
 // agent-browser spells element refs two ways across versions: the bracketed
