@@ -375,6 +375,7 @@ fs.appendFileSync(${JSON.stringify(auditLog)}, JSON.stringify({args:a, session:p
 if (a[0] === 'get' && a[1] === 'url') console.log('http://example.test/login?next=/dashboard');
 if (a[0] === 'snapshot') console.log(a.includes('-i') ? '- button "Unrelated" [ref=e3]' : '- region "Main" [ref=e1]\\n  - text: empty\\n- region "Other" [ref=e2]\\n  - text: Success');
 if (a[0] === 'get' && a[1] === 'text') console.log(['@e1', '#empty'].includes(a[2]) ? 'empty' : 'Success');
+if (a[0] === 'upload' && !fs.existsSync(require('path').resolve(${JSON.stringify(auditDir)}, a[2]))) process.exit(7);
 if (process.env.SG_AUDIT_HISTORY_FAIL && ['back','forward'].includes(a[0])) { console.error('history failed'); process.exit(7); }
 if (a[0] === 'screenshot') {
   if (process.env.SG_AUDIT_SHOT_FAIL) process.exit(7);
@@ -418,6 +419,26 @@ try {
     && cssCalls.findIndex(c => deepEq(c, ['focus', '#input'])) < cssCalls.findIndex(c => deepEq(c, ['press', 'Enter']))
     && cssCalls.some(c => deepEq(c, ['focus', '#input'])),
     'recorder integration: explicit CSS selector is replayed and press restores its focus');
+  // Recorded uploads keep their targets through the real YAML parser and
+  // executor, even when selectors contain quotes, backslashes, or YAML syntax.
+  const uploadSelectors = ['#attachment', String.raw`input[type="file"][data-name="draft: #1\\final"]`];
+  const recordedUpload = yamlParse(actionsToYaml(uploadSelectors.map(selector =>
+    ({ type: 'upload', selector, files: ['attachment.txt'] })),
+  { name: 'recorded-upload', baseUrl: 'http://example.test' }));
+  assert(deepEq(recordedUpload.steps.filter(step => step.action === 'upload'), uploadSelectors.map((selector, index) =>
+    ({ action: 'upload', selector, file: index === 0 ? '{data.upload_file}' : '{data.upload_file_2}' }))),
+  'recorded upload: selectors and numbered file placeholders survive YAML round-trip');
+  wf(join(auditDir, 'attachment.txt'), 'Recorded upload fixture');
+  recordedUpload.data.upload_file = 'attachment.txt';
+  recordedUpload.data.upload_file_2 = 'attachment.txt';
+  wf(auditLog, '');
+  const uploadReplay = await auditExec('pages/recorded-upload', recordedUpload.steps, recordedUpload);
+  const uploadCalls = rf(auditLog, 'utf8').trim().split('\n').map(JSON.parse).map(call => call.args);
+  assert(uploadReplay.status === 'PASS' && deepEq(uploadCalls.filter(call => call[0] === 'upload'),
+    uploadSelectors.map(selector => ['upload', selector, 'attachment.txt'])),
+  'recorded upload: replay dispatches each saved target with its configured file instead of STALE');
+  assert(!uploadCalls.some(call => call[0] === 'snapshot'),
+    'recorded upload: explicit file input selectors bypass accessibility-tree matching');
   const scopedCss = await auditExec('pages/css-text', [{ action: 'assert_text', target: 'Other', selector: '#empty', expected: 'Success' }]);
   assert(scopedCss.status === 'FAIL', 'recorder integration: explicit CSS assertion scope takes precedence over label');
   const malformedStep = await auditExec('pages/typo', [{ action: 'open', url: '/' }, { acton: 'assert_text', expected: 'absent' }]);

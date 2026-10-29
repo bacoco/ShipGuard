@@ -181,6 +181,7 @@ export function actionsToYaml(actions, opts) {
         const safeComment = recordedFile.replace(/[\r\n]+/g, ' ');
         lines.push(`  # Recorded upload of "${safeComment}" — set data.${key} to a real project-relative file`);
         lines.push(`  - action: upload`);
+        if (action.selector) lines.push(`    selector: "${escYaml(action.selector)}"`);
         lines.push(`    file: "{data.${key}}"`);
         lastWasCheck = false;
         break;

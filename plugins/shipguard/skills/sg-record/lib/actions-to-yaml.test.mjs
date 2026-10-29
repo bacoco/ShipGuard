@@ -160,7 +160,7 @@ describe('actionsToYaml', () => {
     assert.ok(yaml.includes('upload_file: "<path to a real file — set me>"'));
     // comment on the step tells the user what was recorded
     assert.ok(yaml.includes('# Recorded upload of "doc.pdf"'));
-    assert.ok(!yaml.includes('selector:'), 'should NOT emit selector — runner finds input via snapshot');
+    assert.ok(yaml.includes('selector: "input[type=file]"'), 'recorded file input selector must be preserved');
     assert.ok(!yaml.includes('files:'), 'should use file: (singular) not files: (array)');
   });
 
@@ -185,6 +185,7 @@ describe('actionsToYaml', () => {
     assert.ok(yaml.includes('file: "{data.upload_file_2}"'));
     assert.ok(yaml.includes('upload_file: "<path to a real file — set me>"'));
     assert.ok(yaml.includes('upload_file_2: "<path to a real file — set me>"'));
+    assert.ok(!yaml.includes('selector:'), 'uploads without a recorded selector must not invent a target');
   });
 
   test('strips base_url from open URLs', () => {
