@@ -457,6 +457,76 @@ function checkManifestDiscovery() {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+function checkLastRunBanner() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-last-run-'));
+  try {
+    copyFileSync(SOURCE_BUILD, join(root, 'build-review.mjs'));
+    copyFileSync(SOURCE_TEMPLATE, join(root, '_review-template.html'));
+    mkdirSync(join(root, 'pages'));
+    mkdirSync(join(root, '_results/screenshots'), { recursive: true });
+    writeFileSync(join(root, '_config.yaml'), 'base_url: http://localhost:8001\n');
+    for (const id of ['a', 'b']) writeFileSync(join(root, 'pages', id + '.yaml'), `name: ${id}\n`);
+    const producer = {
+      schema_version: '1.0', run_id: 'removed-manifest', timestamp: '2026-10-29T12:00:00Z',
+      summary: { total: 2, pass: 1, fail: 1, error: 0, stale: 0, skipped: 0 },
+      scope: { type: 'full', selected_total: 2 },
+      tests: [
+        { id: 'pages/a', manifest: 'visual-tests/pages/a.yaml', status: 'PASS', screenshot: null },
+        { id: 'pages/b', manifest: 'visual-tests/pages/b.yaml', status: 'FAIL', screenshot: 'screenshots/b.png', failure_reason: 'observed failure', browser_errors: [] },
+      ],
+    };
+    // An orphan's screenshot and every producer field must survive rebuilding.
+    const screenshot = Buffer.from('retained screenshot artifact');
+    writeFileSync(join(root, '_results/screenshots/b.png'), screenshot);
+    writeJson(join(root, '_results/visual-results.json'), producer);
+    const build = () => {
+      const result = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+      assert(result.status === 0, `last-run banner build failed: ${result.stderr}`);
+      const html = readFileSync(join(root, '_results/review.html'), 'utf8');
+      const data = JSON.parse(html.match(/var __VISUAL_DATA__ = ([\s\S]*?);\nvar __RECORDED_DATA__/)[1]);
+      for (const id of ['stats', 'meta', 'visual-orphan-warning']) assert(html.includes(`id="${id}"`), `banner mount missing: ${id}`);
+      const nodes = new Map();
+      const document = {
+        createElement() { return {}; },
+        getElementById(id) {
+          if (!nodes.has(id)) nodes.set(id, { style: {}, children: [], appendChild(child) { this.children.push(child); } });
+          return nodes.get(id);
+        },
+      };
+      const start = html.indexOf('function renderStats()');
+      const end = html.indexOf('function renderVisualContractWarning()', start);
+      assert(start >= 0 && end > start, 'stats renderer missing');
+      runInNewContext(html.slice(start, end) + '\nrenderStats();', { D: data, document });
+      const stats = nodes.get('stats').children.map(node => node.textContent);
+      assert(stats.includes('Last run: 2 tests') && stats.includes('1 pass') && stats.includes('1 fail') && stats.includes('50.0%'),
+        `last-run banner misrepresents A PASS/B FAIL: ${stats.join(', ')}`);
+      return { data, nodes };
+    };
+    const before = build();
+    assert(before.data.summary.total === 2 && before.data.orphanedResults.length === 0, 'intact inventory reported as orphaned');
+    assert(before.nodes.get('visual-orphan-warning').style.display === 'none', 'orphan warning shown for intact inventory');
+    rmSync(join(root, 'pages/b.yaml'));
+    for (const hasSummary of [true, false]) {
+      if (!hasSummary) {
+        delete producer.summary;
+        writeJson(join(root, '_results/visual-results.json'), producer);
+      }
+      const { data, nodes } = build();
+      assert(data.tests.length === 1 && data.tests[0].id === 'pages/a' && data.summary.total === 1,
+        'run counters changed the current inventory or its selection surface');
+      assert(nodes.get('meta').textContent.includes('Current inventory: 1 manifests'), 'current inventory not distinguished from run');
+      assert(data.orphanedResults.length === 1 && data.orphanedResults[0].id === 'pages/b', 'removed result not identified');
+      const warning = nodes.get('visual-orphan-warning');
+      assert(warning.style.display === 'block' && warning.textContent.includes('pages/b (FAIL)'), 'orphaned failure not signaled');
+      const persisted = JSON.parse(readFileSync(join(root, '_results/visual-results.json'), 'utf8'));
+      delete persisted.generated_at;
+      assert(JSON.stringify(persisted) === JSON.stringify(producer), 'banner changed producer results, summary or scope');
+      assert(readFileSync(join(root, '_results/screenshots/b.png')).equals(screenshot), 'orphan screenshot changed or disappeared');
+    }
+    console.log('Last-run banner passed: A PASS/B FAIL, removal of B, orphan warning, unchanged inventory and artifacts (with/without summary).');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
 function checkAuditRegressions() {
   const root = mkdtempSync(join(tmpdir(), 'shipguard-review-regressions-'));
   const failures = [];
@@ -491,6 +561,7 @@ function checkAuditRegressions() {
       assert(byId('admin/login').status === 'STALE', 'unexecuted same-basename test inherited PASS');
       assert(byId('admin/login').durationMs === undefined, 'duration crossed identities');
       assert(byId('pages/unique').status === 'PASS', 'unique legacy slug no longer resolves');
+      assert(data.orphanedResults.length === 0, 'qualified manifest or unique legacy slug falsely reported as orphaned');
     });
     check('r1-z04-004', () => assert(byId('user/login').screenshot === 'screenshots/nested/custom.png', 'producer screenshot path ignored'));
     check('r1-z04-007', () => {
@@ -634,6 +705,7 @@ async function main() {
   try {
     checkYamlRegressions();
     checkManifestDiscovery();
+    checkLastRunBanner();
     checkAuditRegressions();
     root = createFixture();
     const producerDoc = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));

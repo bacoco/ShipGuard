@@ -180,6 +180,12 @@ body.light #bug-search{background:var(--surface)}
 .mc-empty code{background:var(--card);padding:3px 10px;border-radius:6px;color:var(--accent);font-size:14px}
 
 /* ── Visual tab toolbar ── */
+#visual-summary{padding:12px 24px;border-bottom:1px solid var(--border)}
+#stats{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;font-weight:600}
+#meta{margin-top:6px;font-size:12px;color:var(--muted)}
+.stat-pass{color:var(--green)}
+.stat-fail{color:var(--red)}
+#visual-orphan-warning{margin:10px 0 0}
 #toolbar{display:flex;gap:12px;padding:12px 24px;align-items:center;flex-wrap:wrap;background:var(--bg);border-bottom:1px solid var(--border)}
 .filter-group{display:flex;gap:4px}
 #search{flex:1;min-width:200px;padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:13px;outline:none}
@@ -552,6 +558,11 @@ body.light #bug-search{background:var(--surface)}
 <!-- ════════════════ VISUAL TESTS TAB ════════════════ -->
 <div id="visual-view" style="display:none">
 <div class="session-banner" id="session-banner">Previous session found — click to restore your annotations</div>
+<div id="visual-summary">
+  <div id="stats"></div>
+  <div id="meta"></div>
+  <div id="visual-orphan-warning" class="visual-contract-warning"></div>
+</div>
 <div id="toolbar">
   <div class="filter-group" id="filters"></div>
   <button class="filter-btn" id="btn-last-run" title="Show only tests from the last run (with screenshots)">Last run only</button>
@@ -783,11 +794,11 @@ function setTheme(t) {
 
   // ── Stats ──
   function renderStats() {
-    var s = D.summary;
+    var s = D.lastRunSummary || D.summary;
     var el = document.getElementById('stats');
     if (!el) return;
     el.textContent = '';
-    var stats = [['stat-total', s.total+' tests'],['stat-pass', s.pass+' pass'],['stat-fail', s.fail+' fail']];
+    var stats = [['stat-total', (D.lastRunSummary ? 'Last run: ' : 'Current inventory: ')+s.total+' tests'],['stat-pass', s.pass+' pass'],['stat-fail', s.fail+' fail']];
     if (s.error) stats.push(['stat-fail', s.error + ' error']);
     if (s.skipped) stats.push(['stat-total', s.skipped + ' skipped']);
     stats.push(['stat-rate', s.passRate.toFixed(1)+'%']);
@@ -798,7 +809,15 @@ function setTheme(t) {
       el.appendChild(span);
     });
     var metaEl = document.getElementById('meta');
-    if (metaEl) metaEl.textContent = 'Last run: ' + s.lastRun;
+    if (metaEl) metaEl.textContent = 'Last run: ' + D.summary.lastRun + ' · Current inventory: ' + D.summary.total + ' manifests';
+    var orphanEl = document.getElementById('visual-orphan-warning');
+    if (orphanEl) {
+      var orphans = D.orphanedResults || [];
+      orphanEl.style.display = orphans.length ? 'block' : 'none';
+      orphanEl.textContent = orphans.length ? 'Results without a current manifest: ' + orphans.map(function(t) {
+        return t.id + ' (' + t.status + ')';
+      }).join(', ') + '. Last-run counters retain these results.' : '';
+    }
   }
 
   function renderVisualContractWarning() {
