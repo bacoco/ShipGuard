@@ -866,6 +866,43 @@ async function main() {
       `scoped run: ${scoped.tests.length} tests written for a 1-test run — manifests that never ran were invented into it`);
     assert(scoped.summary.stale === 0, 'scoped run: unrun manifests were counted as STALE results of this run');
 
+    // Observed selector drift belongs in Findings; inventory-only STALE does not.
+    // Declaration failures and tool failures must not claim browser evidence.
+    const visualFindingsDoc = {
+      ...scopedDoc,
+      tests: [
+        { id: 'pages/stale-zero', status: 'STALE', duration_ms: 0, failure_reason: null },
+        { id: 'pages/stale-legacy', status: 'STALE', failure_reason: 'Element not found: #submit' },
+        { id: 'pages/unrun', status: 'STALE', duration_ms: null, failure_reason: null, screenshot: 'screenshots/root-index.png' },
+        { id: 'pages/pending', status: 'SKIPPED', failure_reason: 'agent steps pending' },
+        { id: 'pages/invalid', status: 'ERROR', duration_ms: 0, failure_reason: 'a different general failure', manifest_error: 'unknown action "clik"',
+          browser_errors: [{ level: 'error', text: 'An independently captured console error' }] },
+        { id: 'pages/tooling', status: 'ERROR', duration_ms: 1, failure_reason: 'open: browser process exited' },
+      ],
+      summary: { total: 6, pass: 0, fail: 0, error: 2, stale: 3, skipped: 1, duration_ms: 1 },
+    };
+    writeJson(join(root, '_results', 'visual-results.json'), visualFindingsDoc);
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    const visualFindings = JSON.parse(readFileSync(join(root, '_results', 'findings.json'), 'utf8'));
+    const visualRows = visualFindings.findings.filter(f => f.origin.lane === 'visual');
+    for (const id of ['pages/stale-zero', 'pages/stale-legacy']) {
+      assert(visualRows.some(f => f.origin.id === id && f.source === 'browser' && f.evidence === 'measured' && f.title.endsWith(': STALE')),
+        `findings: observed STALE ${id} was lost`);
+    }
+    assert(!visualRows.some(f => ['pages/unrun', 'pages/pending'].includes(f.origin.id)),
+      'findings: a never-executed manifest was promoted to an observed defect');
+    assert(visualRows.some(f => f.origin.id === 'pages/invalid' && f.source === 'declaration' && f.evidence === 'reasoned' && f.detail === 'unknown action "clik"'),
+      'findings: manifest validation was presented as measured browser evidence');
+    assert(visualRows.some(f => f.origin.id === 'pages/tooling' && f.source === 'tooling' && f.detail === 'open: browser process exited'),
+      'findings: tooling failure was presented as a browser finding');
+    assert(visualRows.some(f => f.origin.id === 'pages/invalid' && f.source === 'browser' && f.evidence === 'measured' && f.title === 'Browser console error'),
+      'findings: an independent console observation was lost alongside a declaration error');
+    assert(visualRows.length === 5 && visualFindings.summary.by_source.declaration === 1 && visualFindings.summary.by_source.tooling === 1,
+      'findings: visual projection count or source tallies are wrong');
+    const visualAfterProjection = JSON.parse(readFileSync(join(root, '_results', 'visual-results.json'), 'utf8'));
+    assert(eq(visualAfterProjection, { ...visualFindingsDoc, generated_at: visualAfterProjection.generated_at }),
+      'findings: visual producer document was changed beyond the existing generated_at enrichment');
+
     // ── An unparseable producer document is the only evidence of its own
     // fault. Report it, do not overwrite it. ──
     writeFileSync(join(root, '_results', 'visual-results.json'), '{ this is not json', 'utf8');
@@ -886,6 +923,12 @@ async function main() {
     assert(bootstrapped.tests.length === 2 && bootstrapped.tests.every(t => t.status === 'STALE'),
       'bootstrap: manifests on disk were not written as STALE');
     assert(bootstrapped.summary.total === 2 && bootstrapped.summary.stale === 2, 'bootstrap: summary not derived');
+    // A second build now sees the synthesized contract as input; it must still
+    // distinguish inventory placeholders from results of an actual execution.
+    execFileSync(process.execPath, ['build-review.mjs'], { cwd: root, stdio: 'pipe' });
+    const bootstrapFindings = JSON.parse(readFileSync(join(root, '_results', 'findings.json'), 'utf8'));
+    assert(!bootstrapFindings.findings.some(f => f.origin.lane === 'visual'),
+      'bootstrap: rebuilding a never-run suite invented measured STALE findings');
 
     port = options.port || DEFAULT_PORT_BASE + Math.floor(Math.random() * 10000);
     console.error(`review smoke test: fixture=${root} port=${port}`);
