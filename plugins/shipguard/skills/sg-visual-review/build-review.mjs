@@ -1292,9 +1292,10 @@ function buildFindings({ audit, logicResults, processResults, visual, crawlResul
       });
     }
   }
-  // A retained crawl is still useful evidence, but a skipped/error/missing
-  // current lane cannot claim it as an observation from this run.
-  const historicalCrawl = runData?.lanes?.crawl?.status !== 'ran';
+  // Only a crawl predating an existing run whose crawl lane did not run
+  // is historical; a standalone or newer crawl remains current evidence.
+  const historicalCrawl = !!runData && runData.lanes?.crawl?.status !== 'ran'
+    && Date.parse(crawlResults?.timestamp) < Date.parse(runData.timestamp);
   for (const b of (crawlResults && Array.isArray(crawlResults.broken) ? crawlResults.broken : [])) {
     if (!b || typeof b !== 'object') continue;
     findings.push({
