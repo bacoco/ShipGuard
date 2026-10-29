@@ -947,7 +947,7 @@ function setTheme(t) {
         else if (t.fixCycles >= 1) { sc.className+='card-score-fragile'; sc.textContent=t.fixCycles+'x fixed'; }
         card.appendChild(sc);
       }
-      card.addEventListener('click', function(){openLightbox(t.id);});
+      card.addEventListener('click', function(){openLightbox(t.id, open);});
       grid.appendChild(card);
     });
   }
@@ -1500,14 +1500,28 @@ function setTheme(t) {
   // ── Lightbox ──
   var currentLbIndex = -1;
   var baViewMode = 'after';
+  var lightboxOpener = null;
+  var lightboxOpenerId = null;
+  var lightboxBackground = [];
   function getLbList() { return getFiltered().filter(function(t){return t.screenshot;}); }
 
-  function openLightbox(id) {
+  function openLightbox(id, opener) {
     var t = D.tests.find(function(x){return x.id===id;});
     if (!t) return;
     var list = getLbList();
     for (var li=0;li<list.length;li++){if(list[li].id===id){currentLbIndex=li;break;}}
     var lb = document.getElementById('lightbox');
+    var opening = !lb.classList.contains('visible');
+    if (opening) {
+      lightboxOpener = opener || document.activeElement;
+      lightboxOpenerId = id;
+      Array.prototype.forEach.call(document.body.children, function(node) {
+        // The annotation editor is a sibling overlay and must stay interactive.
+        if (node === lb || node.id === 'note-overlay' || node.tagName === 'SCRIPT') return;
+        lightboxBackground.push({ node: node, inert: node.inert });
+        node.inert = true;
+      });
+    }
     var img = document.getElementById('lb-img');
     if (t.screenshot) { img.src=t.screenshot; img.style.display='block'; }
     else { img.style.display='none'; }
@@ -1550,6 +1564,7 @@ function setTheme(t) {
     lb.classList.add('visible');
     if (typeof resetZoom === 'function') resetZoom();
     if (window._annotSetup) window._annotSetup(id);
+    if (opening) document.getElementById('lb-close').focus({preventScroll:true});
   }
 
   document.getElementById('lb-ba-after').addEventListener('click', function() {
@@ -1573,7 +1588,26 @@ function setTheme(t) {
     renderGrid();
   });
 
-  function closeLightbox() { document.getElementById('lightbox').classList.remove('visible'); }
+  function closeLightbox() {
+    var lb = document.getElementById('lightbox');
+    if (!lb.classList.contains('visible')) return;
+    lb.classList.remove('visible');
+    lightboxBackground.forEach(function(entry) { entry.node.inert = entry.inert; });
+    lightboxBackground = [];
+    // An annotation can rebuild the grid while the lightbox is open.
+    if (lightboxOpener && !lightboxOpener.isConnected) {
+      var cards = document.getElementById('grid').querySelectorAll('.card');
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].getAttribute('data-id') === lightboxOpenerId) {
+          lightboxOpener = cards[i].querySelector('.card-open');
+          break;
+        }
+      }
+    }
+    if (lightboxOpener && lightboxOpener.isConnected) lightboxOpener.focus({preventScroll:true});
+    lightboxOpener = null;
+    lightboxOpenerId = null;
+  }
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
   document.getElementById('lb-img-area').addEventListener('click', function(e) {
     if (addMode) return;
@@ -1591,6 +1625,19 @@ function setTheme(t) {
 
   // ── Keyboard ──
   document.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && document.getElementById('lightbox').classList.contains('visible')) {
+      var note = document.getElementById('note-overlay');
+      var root = note.classList.contains('visible') ? note : document.getElementById('lightbox');
+      var controls = Array.prototype.filter.call(root.querySelectorAll('button, input, textarea, select, a[href], [tabindex]'), function(node) {
+        return !node.disabled && node.tabIndex >= 0 && node.getClientRects().length;
+      });
+      var first = controls[0], last = controls[controls.length - 1];
+      if (controls.length && (!root.contains(document.activeElement) ||
+          (e.shiftKey ? document.activeElement === first : document.activeElement === last))) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus({preventScroll:true});
+      }
+    }
     if (e.key==='Escape') {
       if (document.getElementById('note-overlay').classList.contains('visible')) {
         // r1-z02-008: cancel annotation instead of saving empty string
