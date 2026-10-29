@@ -10,6 +10,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdtempSync, readFileSync as rf, writeFileSync as wf, existsSync as ex, mkdirSync, symlinkSync, copyFileSync, chmodSync } from 'fs';
 import { tmpdir } from 'os';
+import zlib from 'zlib';
+import { syncBuiltinESMExports } from 'module';
 import { actionsToYaml } from '../skills/sg-record/lib/actions-to-yaml.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -236,6 +238,61 @@ assert(Array.from({ length: png.length - 1 }, (_, i) => i + 1).every(length => {
   return !validateScreenshot(file).ok;
 }), 'screenshot: every truncated prefix of the real PNG is rejected');
 assert(rf(goodShot).equals(png), 'screenshot: validation preserves stored bytes');
+
+// Encode complete PNGs with correct CRCs so memory guards, not broken framing,
+// decide the result. A lying IHDR deliberately describes fewer rows than IDAT.
+function memoryTestPng(width, height, pixels, depth = 8, color = 2) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    const length = Buffer.alloc(4), checksum = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, checksum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width); header.writeUInt32BE(height, 4);
+  header[8] = depth; header[9] = color;
+  return Buffer.concat([png.subarray(0, 8), chunk('IHDR', header),
+    chunk('IDAT', zlib.deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
+}
+const bombShot = join(shotDir, 'pixel-bomb.png');
+// 90 million 1-bit pixels expand to valid rows from a tiny compressed file.
+wf(bombShot, memoryTestPng(10000, 9000, Buffer.alloc(9000 * (1 + 1250)), 1, 0));
+const lyingShot = join(shotDir, 'lying-header.png');
+wf(lyingShot, memoryTestPng(1, 1, Buffer.alloc(4 * 1024 * 1024)));
+const tallShot = join(shotDir, 'tall.png');
+const tallRowBytes = 1 + 1440 * 3;
+wf(tallShot, memoryTestPng(1440, 20000, Buffer.alloc(20000 * tallRowBytes)));
+// Observe the real inflater used by the imported validator: the pixel guard
+// must run before inflation, and a small IHDR must not permit a large output.
+const originalInflate = zlib.inflateSync;
+const inflationLimits = [];
+zlib.inflateSync = (data, options) => {
+  inflationLimits.push(options.maxOutputLength);
+  return originalInflate(data, options);
+};
+syncBuiltinESMExports();
+try {
+  const bomb = validateScreenshot(bombShot);
+  assert(!bomb.ok && bomb.size === rf(bombShot).length
+    && /PNG exceeds pixel limit \(\d+ pixels\)/.test(bomb.reason)
+    && inflationLimits.length === 0, 'screenshot: PNG pixel bomb rejected clearly before decompression');
+  const lying = validateScreenshot(lyingShot);
+  assert(!lying.ok && lying.reason === 'invalid PNG'
+    && deepEq(inflationLimits, [5]), 'screenshot: lying IHDR rejected with header-sized output plus one byte');
+  const tall = validateScreenshot(tallShot);
+  assert(deepEq(tall, { ok: true, size: rf(tallShot).length })
+    && deepEq(inflationLimits, [5, 20000 * tallRowBytes + 1]),
+  'screenshot: complete 1440x20000 PNG accepted with bounded decompression');
+} finally {
+  zlib.inflateSync = originalInflate;
+  syncBuiltinESMExports();
+}
 
 // Real 2x2 RGB JPEG, encoded from the PNG screenshot by macOS sips.
 // Keep the .png path: agent-browser's user config can override its encoding.

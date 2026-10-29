@@ -664,6 +664,8 @@ function validJpeg(jpeg) {
   return false;
 }
 
+const MAX_PNG_PIXELS = 89_000_000;
+
 export function validateScreenshot(path) {
   if (!existsSync(path)) return { ok: false, size: 0, reason: 'missing' };
   const size = statSync(path).size;
@@ -704,6 +706,9 @@ export function validateScreenshot(path) {
         [depth, color, , , interlace] = data.subarray(8);
         if (!width || !height || width > 0x7fffffff || height > 0x7fffffff
           || !depths[color]?.includes(depth) || data[10] !== 0 || data[11] !== 0 || interlace > 1) return invalid();
+        if (width * height > MAX_PNG_PIXELS) {
+          return { ok: false, size, reason: `PNG exceeds pixel limit (${MAX_PNG_PIXELS} pixels)` };
+        }
       } else if (type === 'PLTE') {
         if (palette || idat.length || !length || length % 3 || length > 768 || [0, 4].includes(color)
           || (color === 3 && length / 3 > 2 ** depth)) return invalid();
@@ -732,7 +737,8 @@ export function validateScreenshot(path) {
     const expected = rows.reduce((sum, [stride, count]) => sum + stride * count, 0);
     if (!Number.isSafeInteger(expected)) return invalid();
     const compressed = Buffer.concat(idat);
-    const decoded = inflateSync(compressed, { maxOutputLength: expected, info: true });
+    // One byte of headroom detects excess data; the exact row size is still required below.
+    const decoded = inflateSync(compressed, { maxOutputLength: expected + 1, info: true });
     if (decoded.buffer.length !== expected || decoded.engine.bytesWritten !== compressed.length) return invalid();
     let offset = 0;
     for (const [stride, count] of rows) {
