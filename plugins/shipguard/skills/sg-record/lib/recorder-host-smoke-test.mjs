@@ -169,5 +169,6 @@ check('Windows branch simulation preserves the existing export path with a clear
  const output = exportStorage(path, 0o022, 0, 'sg-record-win.mjs');
  assert.match(output, /ACLs are not verified/);
  assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+ assert.equal(statSync(path).mode & 0o777, 0o644);
 });
 console.log('Fixture: '+root);process.exitCode=failures?1:0;
