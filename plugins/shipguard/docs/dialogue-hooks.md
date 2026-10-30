@@ -34,9 +34,12 @@ To use an existing OpenAI-compatible chat-completions service, explicitly set it
 and model name. There is no discovery, default model, default provider or fallback:
 
 ```bash
-export SHIPGUARD_DIALOGUE_ENDPOINT='http://YOUR_HOST:YOUR_PORT/v1/chat/completions'
+export SHIPGUARD_DIALOGUE_ENDPOINT='https://YOUR_HOST:YOUR_PORT/v1/chat/completions'
 export SHIPGUARD_DIALOGUE_MODEL='YOUR_MODEL_NAME'
 ```
+
+Remote endpoints require HTTPS. HTTP is accepted only for loopback endpoints such as
+`http://127.0.0.1:YOUR_PORT/v1/chat/completions`.
 
 If that chosen service requires authentication, use `SHIPGUARD_DIALOGUE_API_KEY` in the session
 environment. Never put credentials in the URL. No model service is installed or started by ShipGuard.

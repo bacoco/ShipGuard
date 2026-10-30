@@ -175,6 +175,70 @@ const redirected = await crawl(`http://127.0.0.1:${redirectServer.address().port
 assert(redirected.pages === 2 && redirected.broken.length === 0, 'r1-z01-012: redirected page keeps its directory when resolving links');
 redirectServer.close();
 
+// Redirect checks use two harmless loopback origins. The second must never
+// receive a request, even through a same-origin hop or a HEAD -> GET fallback.
+let outsideRequests = 0;
+const outsideServer = http.createServer((req, res) => {
+  outsideRequests++;
+  res.setHeader('content-type', 'text/html');
+  res.end('<p>outside</p>');
+});
+await new Promise(r => outsideServer.listen(0, '127.0.0.1', r));
+const outside = `http://127.0.0.1:${outsideServer.address().port}`;
+const redirectRequests = [];
+const originServer = http.createServer((req, res) => {
+  redirectRequests.push(`${req.method} ${req.url}`);
+  const redirect = (location, status = 302) => { res.writeHead(status, { location }); res.end(); };
+  if (req.url === '/outside-start') return redirect(`${outside}/start`);
+  if (req.url === '/page.html' && req.method === 'GET') return redirect('/page-hop');
+  if (req.url === '/page-hop') return redirect(`${outside}/page`, 307);
+  if (req.url === '/asset.png') return redirect('/asset-hop', 301);
+  if (req.url === '/asset-hop') return redirect(`//127.0.0.1:${outsideServer.address().port}/asset`, 308);
+  if (req.url === '/fallback405.png' || req.url === '/fallback501.png') {
+    if (req.method === 'HEAD') { res.statusCode = req.url.includes('405') ? 405 : 501; return res.end(); }
+    return redirect(`${outside}/fallback`, 303);
+  }
+  if (req.url === '/inside.png') return redirect('ok.png', 303);
+  if (req.url === '/ok.png') return res.end('ok');
+  res.setHeader('content-type', 'text/html');
+  if (req.url === '/') return res.end('<a href="page.html">page</a><img src="asset.png"><img src="fallback405.png"><img src="fallback501.png"><img src="inside.png"><a href="good.html">good</a>');
+  res.end('<p>inside</p>');
+});
+await new Promise(r => originServer.listen(0, '127.0.0.1', r));
+const origin = `http://127.0.0.1:${originServer.address().port}`;
+const redirectRoot = mkdtempSync(join(tmpdir(), 'sg-origin-redirect-'));
+mkdirSync(join(redirectRoot, 'visual-tests'), { recursive: true });
+writeFileSync(join(redirectRoot, 'visual-tests', '_config.yaml'), `base_url: "${origin}/"\nprofiles:\n  resources:\n    checks: [local-assets]\n`);
+writeFileSync(join(redirectRoot, 'visual-tests', 'build-review.mjs'), 'process.exit(0);');
+try {
+  const refusedStart = await crawl(`${origin}/outside-start`);
+  assert(refusedStart.pages === 0 && !refusedStart.infra_error && refusedStart.truncated?.redirects_blocked === 1,
+    'redirect: refused start page declares incomplete coverage, not an unreachable server');
+  const refused = await crawl(`${origin}/`);
+  assert(outsideRequests === 0, 'redirect: no request reaches a different origin');
+  assert(refused.pages === 2 && refused.assets_checked === 3 && refused.broken.length === 0
+    && refused.truncated?.redirects_blocked === 4 && refused.truncated.reason.includes('coverage is partial'),
+    'redirect: refused page, asset and GET fallbacks leave honest counts and incomplete coverage');
+  assert(redirectRequests.includes('HEAD /ok.png') && redirectRequests.includes('GET /good.html')
+    && redirectRequests.includes('GET /fallback405.png') && redirectRequests.includes('GET /fallback501.png'),
+    'redirect: same-origin redirects, page traversal and both HEAD fallbacks remain active');
+  const boundedRedirects = await crawl(`${origin}/`, { maxPages: 1 });
+  assert(boundedRedirects.truncated?.max_pages === 1 && boundedRedirects.truncated.redirects_blocked === 3,
+    'redirect: refusal preserves an existing page-cap coverage gap');
+  const redirectCode = await runCli([CLI, 'crawl'], redirectRoot);
+  const redirectArtifact = JSON.parse(readFileSync(join(redirectRoot, 'visual-tests', '_results', 'crawl-results.json'), 'utf8'));
+  assert(redirectCode === EXIT.CONFIG && redirectArtifact.truncated?.redirects_blocked === 4,
+    'cmdCrawl: refused redirects persist incomplete coverage and exit 3');
+  const redirectRunCode = await runCli([CLI, 'run', '--profile=resources'], redirectRoot);
+  const redirectRun = JSON.parse(readFileSync(join(redirectRoot, 'visual-tests', '_results', 'run.json'), 'utf8'));
+  assert(redirectRunCode === EXIT.CONFIG && redirectRun.lanes.crawl.truncated?.redirects_blocked === 4
+    && redirectRun.lanes.crawl.remedy === 'declaration' && outsideRequests === 0,
+    'cmdRun: refused redirects reach lane aggregation without contacting the other origin');
+} finally {
+  originServer.closeAllConnections(); originServer.close();
+  outsideServer.closeAllConnections(); outsideServer.close();
+}
+
 // A failed collection after the initial health probe must dominate a passing visual lane.
 const collectionRoot = mkdtempSync(join(tmpdir(), 'sg-collect-error-'));
 mkdirSync(join(collectionRoot, 'visual-tests', 'pages'), { recursive: true });

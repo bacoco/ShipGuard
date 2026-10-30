@@ -451,12 +451,28 @@ export function isFollowablePage(url) {
   return last !== '' && !last.includes('.');
 }
 
-async function checkUrl(url, budgetSignal) {
+// Inspect each Location before sending another request. Keep one signal for
+// the whole chain, and retain fetch's twenty-hop bound for same-origin loops.
+async function fetchInOrigin(url, origin, options, blockedRedirects) {
+  let current = new URL(url);
+  for (let redirects = 0; ; redirects++) {
+    if (current.origin !== origin) { blockedRedirects.add(url); return null; }
+    const response = await fetch(current.href, { ...options, redirect: 'manual' });
+    const location = response.headers.get('location');
+    if (![301, 302, 303, 307, 308].includes(response.status) || location === null) return response;
+    await response.body?.cancel();
+    current = new URL(location, current);
+    if (current.origin !== origin) { blockedRedirects.add(url); return null; }
+    if (redirects >= 20) throw new TypeError('fetch failed: redirect count exceeded');
+  }
+}
+
+async function checkUrl(url, budgetSignal, origin, blockedRedirects) {
   try {
     const signal = () => AbortSignal.any([budgetSignal, AbortSignal.timeout(5000)]);
-    let r = await fetch(url, { method: 'HEAD', signal: signal() });
-    if (r.status === 405 || r.status === 501) r = await fetch(url, { method: 'GET', signal: signal() });
-    return r.status;
+    let r = await fetchInOrigin(url, origin, { method: 'HEAD', signal: signal() }, blockedRedirects);
+    if (r && (r.status === 405 || r.status === 501)) r = await fetchInOrigin(url, origin, { method: 'GET', signal: signal() }, blockedRedirects);
+    return r ? r.status : undefined;
   } catch { return budgetSignal.aborted ? undefined : 0; }
 }
 
@@ -487,6 +503,8 @@ export async function crawl(baseUrl, opts = {}) {
   let resourceBudgetLeft = resourceBudgetMs;
   let uncheckedResources = 0;
   const start = new URL(baseUrl).href;
+  const origin = new URL(start).origin;
+  const blockedRedirects = new Set();
   const queue = [start];
   const visitedPages = new Set();
   const checkedAssets = new Map(); // url -> status
@@ -499,7 +517,7 @@ export async function crawl(baseUrl, opts = {}) {
     if (visitedPages.has(pageUrl)) continue;
     visitedPages.add(pageUrl);
     let res;
-    try { res = await fetch(pageUrl, { signal: AbortSignal.timeout(8000) }); }
+    try { res = await fetchInOrigin(pageUrl, origin, { signal: AbortSignal.timeout(8000) }, blockedRedirects); }
     catch {
       if (first) return { pages: 0, assets_checked: 0, broken: [], infra_error: `base_url unreachable: ${pageUrl}` };
       // Same rule the asset loop below already applies: a URL that cannot be
@@ -510,6 +528,7 @@ export async function crawl(baseUrl, opts = {}) {
       continue;
     }
     first = false;
+    if (!res) { unreachable++; continue; }
     if (!res.ok) {
       unreachable++;
       // The link check may already have reported this exact HTTP failure with
@@ -523,7 +542,7 @@ export async function crawl(baseUrl, opts = {}) {
     if (!type.includes('html')) continue;
     const html = await res.text();
     const assets = extractAssets(html, res.url || pageUrl);
-    const pending = [...new Set(assets.map((a) => a.url))].filter((url) => !checkedAssets.has(url));
+    const pending = [...new Set(assets.map((a) => a.url))].filter((url) => !checkedAssets.has(url) && !blockedRedirects.has(url));
     if (pending.length && resourceBudgetLeft > 0) {
       const started = performance.now();
       const budget = new AbortController();
@@ -532,7 +551,7 @@ export async function crawl(baseUrl, opts = {}) {
       const worker = async () => {
         while (next < pending.length && !budget.signal.aborted) {
           const url = pending[next++];
-          const status = await checkUrl(url, budget.signal);
+          const status = await checkUrl(url, budget.signal, origin, blockedRedirects);
           // Budget cancellation is missing evidence, never an HTTP failure.
           if (status !== undefined) checkedAssets.set(url, status);
         }
@@ -556,7 +575,7 @@ export async function crawl(baseUrl, opts = {}) {
         }
       }
     }
-    uncheckedResources = pending.filter((url) => !checkedAssets.has(url)).length;
+    uncheckedResources = pending.filter((url) => !checkedAssets.has(url) && !blockedRedirects.has(url)).length;
     if (uncheckedResources) break;
   }
   // Reason-carrying and present ONLY when there is a gap — the same asymmetry
@@ -567,6 +586,10 @@ export async function crawl(baseUrl, opts = {}) {
   const out = { pages, assets_checked: checkedAssets.size, broken };
   if (uncheckedResources) out.truncated = { reason: `resource budget ${resourceBudgetMs} ms exhausted: ${uncheckedResources} known resource(s) unchecked, ${queuedUnvisited} known page URL(s) unvisited (plus whatever they link to) — coverage is partial; raise crawl.resource_budget_ms in _config.yaml`, resource_budget_ms: resourceBudgetMs, resources_unchecked: uncheckedResources, queued_unvisited: queuedUnvisited };
   else if (queuedUnvisited) out.truncated = { reason: `page cap ${maxPages} reached: crawled ${pages} page(s), at least ${queuedUnvisited} known URL(s) left unvisited (plus whatever they link to) — coverage is partial`, max_pages: maxPages, queued_unvisited: queuedUnvisited };
+  if (blockedRedirects.size) {
+    const reason = `${blockedRedirects.size} URL(s) redirected outside the selected origin and were not followed — coverage is partial`;
+    out.truncated = { ...out.truncated, reason: out.truncated ? `${out.truncated.reason}; ${reason}` : reason, redirects_blocked: blockedRedirects.size };
+  }
   return out;
 }
 

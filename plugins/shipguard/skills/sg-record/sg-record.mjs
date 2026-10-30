@@ -6,8 +6,8 @@
  *        node visual-tests/sg-record.mjs --check
  * Flags accept both `--flag value` and `--flag=value` forms.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, openSync, fstatSync, ftruncateSync, closeSync, constants } from 'fs';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { actionsToYaml, uploadDataKey } from './lib/actions-to-yaml.mjs';
 import * as readline from 'readline';
@@ -373,11 +373,11 @@ async function main() {
 
   // Launch browser
   browser = await chromium.launch({ headless: false });
+  let authStateExportFailed = false;
 
   try {
     const contextOptions = {
       viewport: { width: 1440, height: 900 },
-      ignoreHTTPSErrors: true,
       bypassCSP: true,
     };
     if (storageArg && existsSync(storageArg)) {
@@ -572,10 +572,40 @@ async function main() {
     if (saveStorageArg) {
       try {
         const state = await context.storageState();
-        writeFileSync(saveStorageArg, JSON.stringify(state, null, 2));
+        const data = JSON.stringify(state, null, 2);
+        if (process.platform === 'win32') {
+          // Node's POSIX mode and owner fields do not validate Windows ACLs.
+          // Preserve the existing Windows export path until it can be tested there.
+          writeFileSync(saveStorageArg, data);
+          console.error('  Warning: Windows auth state export preserves existing permissions; ACLs are not verified.');
+        } else {
+          if (typeof constants.O_NOFOLLOW !== 'number') {
+            throw new Error('Safe auth state export is unavailable on this platform');
+          }
+          // Do not truncate until the opened entry itself has been checked.
+          // NOFOLLOW rejects symlinks; NONBLOCK keeps a FIFO from hanging here.
+          const fd = openSync(saveStorageArg,
+            constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+          try {
+            const entry = fstatSync(fd);
+            if (!entry.isFile() || entry.nlink !== 1 || entry.uid !== process.getuid()) {
+              throw new Error('Auth state destination must be a singly linked regular file owned by the current user');
+            }
+            if ((entry.mode & 0o077) !== 0) {
+              const quotedPath = `'${resolve(saveStorageArg).replaceAll("'", "'\\''")}'`;
+              throw new Error(`Auth state destination is too permissive; run: chmod 600 ${quotedPath}`);
+            }
+            ftruncateSync(fd, 0);
+            writeFileSync(fd, data);
+          } finally {
+            closeSync(fd);
+          }
+        }
         console.log(`  Auth state saved to ${saveStorageArg}`);
       } catch (e) {
         console.error('  Warning: could not save auth state:', e.message);
+        authStateExportFailed = true;
+        process.exitCode = 1;
       }
     }
   } finally {
@@ -591,7 +621,7 @@ async function main() {
   // No steps recorded?
   if (allSteps.length === 0) {
     console.log('\n  No steps recorded. Exiting.');
-    process.exit(0);
+    process.exit(authStateExportFailed ? 1 : 0);
   }
 
   // Ask for name if not provided (TTY guaranteed by the early check)

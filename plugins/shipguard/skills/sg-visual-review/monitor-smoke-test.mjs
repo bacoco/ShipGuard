@@ -76,7 +76,8 @@ function formatFailure(error, root, port, log) {
   ].filter(Boolean).join('\n');
 }
 
-function request(port, method, path, body = null) {
+async function request(port, method, path, body = null) {
+  const token = method === 'POST' ? (await request(port, 'GET', '/api/session')).json.token : null;
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = httpRequest({
@@ -87,6 +88,7 @@ function request(port, method, path, body = null) {
       headers: payload ? {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
+        'X-ShipGuard-Session': token,
       } : undefined,
     }, res => {
       let text = '';

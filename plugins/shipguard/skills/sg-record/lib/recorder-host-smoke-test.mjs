@@ -2,8 +2,8 @@
 // Exercise the real recorder main/bridge lifecycle with an isolated Playwright
 // boundary. Browser capture itself is covered by recorder-audit-browser-smoke-test.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, readdirSync, chmodSync, lstatSync, statSync, symlinkSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,13 @@ let current='http://local/start';const frame={url:()=>current};
 page.mainFrame=()=>frame;page.url=()=>current;page.isClosed=()=>false;
 page.evaluate=async(fn,state)=>{states.push(state)};
 page.addScriptTag=async()=>{
+ if(process.env.SG_TEST_UNDO_ALL_STEPS==='1'){
+  if(stage===0){stage=1;setTimeout(()=>{
+   bridge(JSON.stringify({type:'undo'}));
+   bridge(JSON.stringify({type:'stop',steps:[]}));
+  },20)}
+  return;
+ }
  if(stage===0){stage=1;setTimeout(()=>{
  bridge(JSON.stringify({type:'step',step:{type:'click',text:'Alpha'}}));
  bridge(JSON.stringify({type:'pause'}));current='http://local/paused';page.emit('framenavigated',frame);page.emit('domcontentloaded');page.emit('load');
@@ -45,8 +52,8 @@ page.goto=async()=>{page.emit('framenavigated',frame);page.emit('load');
 context.exposeBinding=async()=>{};context.addInitScript=async()=>{};
 context.exposeFunction=async(name,fn)=>{bridge=fn};context.newPage=async()=>page;
 context.newCDPSession=async target=>{if(target.isClosed?.())throw new Error('popup closed');return {send:async()=>{if(process.env.SG_TEST_NAVIGATION_FAILURE==='1'&&current.endsWith('/manual'))throw new Error('fixture CDP failure');const paths=['/start','/paused','/manual','/one','/two'];return {currentIndex:paths.indexOf(new URL(current).pathname),entries:paths.map((path,id)=>({id,url:'http://local'+path,transitionType:['/one','/two'].includes(path)?'link':'typed'}))}},detach:async()=>{}}};
-context.storageState=async()=>({cookies:[],origins:[]});
-export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async()=>context,close:async()=>{}}}};
+context.storageState=async()=>JSON.parse(process.env.SG_TEST_AUTH_STATE||'{"cookies":[],"origins":[]}');
+export const chromium={launch:async()=>{console.log('FIXTURE_BROWSER_LAUNCHED');return {newContext:async options=>{writeFileSync(new URL('./context-options.json',import.meta.url),JSON.stringify(options));return context},close:async()=>{}}}};
 `);
 let failures=0;function check(id,fn){try{fn();console.log('PASS '+id)}catch(e){failures++;console.error('FAIL '+id+': '+e.message)}}
 execFileSync(process.execPath,[join(root,'sg-record.mjs'),'http://local/start','--name=host'],{cwd:root,timeout:10000,stdio:'pipe'});
@@ -71,5 +78,133 @@ check('CE-01 CDP failure saves captured steps and auth, with a failing exit stat
  const saved=readFileSync(join(root,'manifests/recorded-cdp-failure.yaml'),'utf8');
  assert.ok(saved.includes('action: open'));assert.ok(saved.includes('Alpha'));
  assert.deepEqual(JSON.parse(readFileSync(authPath,'utf8')),{cookies:[],origins:[]});
+});
+// All targets use the real CLI and a fake Playwright boundary: no DNS, TLS
+// connection, credentials, or browser trust settings are involved.
+for(const [label,target,storage] of [
+ ['remote','https://recorder.example.invalid/start',null],
+ ['remote-storage','https://recorder.example.invalid/start',authPath],
+ ['localhost','https://localhost/start',null],
+ ['loopback','https://127.0.0.1/start',null],
+]){
+ execFileSync(process.execPath,[join(root,'sg-record.mjs'),target,'--name='+label,...(storage?['--storage='+storage]:[])],{cwd:root,timeout:10000,stdio:'pipe'});
+ const options=JSON.parse(readFileSync(join(root,'node_modules/playwright/context-options.json'),'utf8'));
+ check('TLS verification is enabled for '+label,()=>assert.equal(options.ignoreHTTPSErrors??false,false));
+ check('existing context options are preserved for '+label,()=>{
+  assert.deepEqual(options.viewport,{width:1440,height:900});assert.equal(options.bypassCSP,true);
+  assert.equal(options.storageState,storage??undefined);
+ });
+}
+const exportedState = {
+ cookies: [{ name: 'fixture', value: 'example', domain: 'local', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Lax' }],
+ origins: [{ origin: 'http://local', localStorage: [{ name: 'fixture', value: 'example' }] }],
+};
+function exportStorage(path, mask = 0o022, expectedStatus = 0, recorder = 'sg-record.mjs') {
+ const run = spawnSync(process.execPath, ['--input-type=module', '-e',
+  'process.umask(Number(process.argv[1])); process.argv.splice(1, 1); await import(process.argv[1]);',
+  String(mask), join(root, recorder), 'http://local/start', '--name=storage-export', '--save-storage='+path],
+  { cwd: root, env: { ...process.env, SG_TEST_AUTH_STATE: JSON.stringify(exportedState) }, timeout: 10000, killSignal: 'SIGKILL', encoding: 'utf8' });
+ assert.ifError(run.error);
+ assert.equal(run.status, expectedStatus, run.stderr);
+ assert.ok(readFileSync(join(root, 'manifests/recorded-storage-export.yaml'), 'utf8').includes('Alpha'));
+ return run.stdout + run.stderr;
+}
+function exportEmptyStorage(path, expectedStatus) {
+ const run = spawnSync(process.execPath,
+  [join(root, 'sg-record.mjs'), 'http://local/start', '--name=empty-storage-export', '--save-storage='+path],
+  { cwd: root, env: { ...process.env, SG_TEST_AUTH_STATE: JSON.stringify(exportedState), SG_TEST_UNDO_ALL_STEPS: '1' }, timeout: 10000, killSignal: 'SIGKILL', encoding: 'utf8' });
+ assert.ifError(run.error);
+ assert.equal(run.status, expectedStatus, run.stdout + run.stderr);
+ assert.match(run.stdout, /undo \(0 steps remaining\)/);
+ assert.match(run.stdout, /No steps recorded\. Exiting\./);
+ assert.ok(!existsSync(join(root, 'manifests/recorded-empty-storage-export.yaml')));
+ return run.stdout + run.stderr;
+}
+check('failed storage export remains nonzero after all steps are undone', () => {
+ const path = join(root, 'auth-empty-unsafe.json');
+ writeFileSync(path, 'unchanged'); chmodSync(path, 0o644);
+ const output = exportEmptyStorage(path, 1);
+ assert.match(output, /Warning: could not save auth state:/);
+ assert.match(output, /run: chmod 600 '/);
+ assert.equal(readFileSync(path, 'utf8'), 'unchanged');
+ assert.equal(statSync(path).mode & 0o777, 0o644);
+});
+check('successful storage export still exits zero after all steps are undone', () => {
+ const path = join(root, 'auth-empty-private.json');
+ writeFileSync(path, 'old state'); chmodSync(path, 0o600);
+ const output = exportEmptyStorage(path, 0);
+ assert.match(output, /Auth state saved to/);
+ assert.ok(!output.includes('could not save auth state'));
+ assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+ assert.equal(statSync(path).mode & 0o777, 0o600);
+});
+for (const mask of [0o000, 0o022, 0o027, 0o077]) {
+ check('storage export creates a private file under umask '+mask.toString(8), () => {
+  const path = join(root, 'auth-umask-'+mask.toString(8)+'.json');
+  assert.match(exportStorage(path, mask), /Auth state saved to/);
+  assert.equal(statSync(path).mode & 0o777, 0o600);
+  assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+ });
+}
+check('storage export overwrites an existing private file at the same location', () => {
+ const path = join(root, 'auth-private.json');
+ writeFileSync(path, 'old state that is longer than the replacement'.repeat(30)); chmodSync(path, 0o600);
+ const before = statSync(path);
+ assert.match(exportStorage(path), /Auth state saved to/);
+ assert.equal(statSync(path).ino, before.ino);
+ assert.equal(statSync(path).mode & 0o777, 0o600);
+ assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+});
+for (const mode of [0o644, 0o620]) {
+ check('storage export refuses a pre-existing file with mode '+mode.toString(8), () => {
+  const path = join(root, 'auth-unsafe-'+mode.toString(8)+'.json');
+  writeFileSync(path, 'unchanged'); chmodSync(path, mode);
+  const output = exportStorage(path, 0o022, 1);
+  assert.match(output, /Warning: could not save auth state:/);
+  assert.match(output, /run: chmod 600 '/);
+  assert.equal(readFileSync(path, 'utf8'), 'unchanged');
+  assert.equal(statSync(path).mode & 0o777, mode);
+ });
+}
+check('storage export refuses a symlink without changing its target', () => {
+ const target = join(root, 'auth-symlink-target.json'), path = join(root, 'auth-symlink.json');
+ writeFileSync(target, 'unchanged'); chmodSync(target, 0o600); symlinkSync(target, path);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
+ assert.ok(lstatSync(path).isSymbolicLink());
+ assert.equal(readFileSync(target, 'utf8'), 'unchanged');
+});
+check('storage export refuses a dangling symlink without creating its target', () => {
+ const target = join(root, 'auth-missing-target.json'), path = join(root, 'auth-dangling.json');
+ symlinkSync(target, path);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
+ assert.ok(lstatSync(path).isSymbolicLink()); assert.ok(!existsSync(target));
+});
+check('storage export refuses a hard link without changing either entry', () => {
+ const target = join(root, 'auth-hardlink-target.json'), path = join(root, 'auth-hardlink.json');
+ writeFileSync(target, 'unchanged'); chmodSync(target, 0o600); linkSync(target, path);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
+ assert.equal(readFileSync(target, 'utf8'), 'unchanged'); assert.equal(readFileSync(path, 'utf8'), 'unchanged');
+ assert.equal(statSync(target).nlink, 2);
+});
+check('storage export refuses a directory', () => {
+ const path = join(root, 'auth-directory'); mkdirSync(path);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
+ assert.deepEqual(readdirSync(path), []);
+});
+check('storage export refuses a FIFO without blocking', () => {
+ const path = join(root, 'auth-fifo'); execFileSync('mkfifo', [path]);
+ assert.match(exportStorage(path, 0o022, 1), /Warning: could not save auth state:/);
+ assert.ok(lstatSync(path).isFIFO());
+});
+check('Windows branch simulation preserves the existing export path with a clear ACL warning', () => {
+ const source = readFileSync(join(root, 'sg-record.mjs'), 'utf8');
+ assert.equal(source.split("process.platform === 'win32'").length, 2);
+ writeFileSync(join(root, 'sg-record-win.mjs'), source.replace("process.platform === 'win32'", 'true'));
+ const path = join(root, 'auth-win-simulated.json');
+ writeFileSync(path, 'old state'); chmodSync(path, 0o644);
+ const output = exportStorage(path, 0o022, 0, 'sg-record-win.mjs');
+ assert.match(output, /ACLs are not verified/);
+ assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+ assert.equal(statSync(path).mode & 0o777, 0o644);
 });
 console.log('Fixture: '+root);process.exitCode=failures?1:0;

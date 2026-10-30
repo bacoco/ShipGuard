@@ -8,10 +8,10 @@
  * dashboard data surface.
  */
 
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { dirname, isAbsolute, join, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import { runInNewContext } from 'vm';
@@ -27,10 +27,12 @@ function parseArgs() {
     keepTmp: false,
     debug: false,
     pidOnly: false,
+    ipv6Only: false,
   };
   for (const arg of process.argv.slice(2)) {
     if (arg === '--keep-tmp') options.keepTmp = true;
     else if (arg === '--pid-only') options.pidOnly = true;
+    else if (arg === '--ipv6-only') options.ipv6Only = true;
     else if (arg === '--debug') options.debug = true;
     else if (arg.startsWith('--port=')) options.port = parseInt(arg.split('=')[1], 10);
     else throw new Error(`Unknown argument: ${arg}`);
@@ -85,28 +87,76 @@ function formatFailure(error, root, port, log) {
   ].filter(Boolean).join('\n');
 }
 
-function request(port, method, path, body = null) {
+async function request(port, method, path, body = null, headers = {}, withSession = true, host = '127.0.0.1') {
+  const token = method === 'POST' && withSession ? JSON.parse((await request(port, 'GET', '/api/session', null, {}, true, host)).body).token : null;
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = httpRequest({
-      host: '127.0.0.1',
+      host,
       port,
       path,
       method,
-      headers: payload ? {
+      headers: { ...(payload ? {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
-      } : undefined,
+      } : {}), ...(token ? { 'X-ShipGuard-Session': token } : {}), ...headers },
     }, res => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', chunk => { text += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: text }));
+      res.on('end', () => resolve({ status: res.statusCode, body: text, headers: res.headers }));
     });
     req.on('error', reject);
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+async function checkRequestBoundary(port, root) {
+  const local = `http://127.0.0.1:${port}`;
+  const foreign = `http://untrusted.invalid:${port}`;
+  const persistedPaths = ['fix-manifest.json', 'audit-monitor.json'].map(name => join(root, '_results', name));
+  const persistedBefore = persistedPaths.map(path => existsSync(path) ? readFileSync(path, 'utf8') : null);
+  for (const path of ['/health', '/review.html', '/api/session', '/api/monitor/status']) {
+    for (const headers of [
+      { Host: `untrusted.invalid:${port}` },
+      { Host: `untrusted.invalid:${port}`, Origin: foreign },
+      { Origin: foreign }, { Origin: 'null' }, { Origin: '' },
+      { Origin: `${local}/` }, { Origin: `http://localhost:${port + 1}` },
+    ]) {
+      const res = await request(port, 'GET', path, null, headers);
+      assert(res.status === 403 && !res.headers['access-control-allow-origin'], `untrusted GET accepted: ${path}`);
+    }
+  }
+  const session = await request(port, 'GET', '/api/session');
+  const token = JSON.parse(session.body).token;
+  assert(/^[a-f0-9]{64}$/.test(token) && session.headers['cache-control'] === 'no-store', 'session proof missing or cacheable');
+  assert(!(await request(port, 'GET', '/review.html')).body.includes(token), 'session proof persisted in HTML');
+  for (const Origin of [local, `http://localhost:${port}`]) {
+    const res = await request(port, 'GET', '/api/session', null, { Origin });
+    assert(res.status === 200 && JSON.parse(res.body).token === token, 'trusted local origin lost its session');
+    const preflight = await request(port, 'OPTIONS', '/save-manifest', null, { Origin,
+      'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'X-ShipGuard-Session' });
+    assert(preflight.status === 204 && preflight.headers['access-control-allow-headers'].includes('X-ShipGuard-Session'), 'local preflight failed');
+  }
+  assert((await request(port, 'OPTIONS', '/save-manifest', null, { Origin: foreign })).status === 403, 'foreign preflight accepted');
+  for (const path of ['/save-manifest', '/api/monitor/audit-start', '/api/monitor/agent-update', '/api/monitor/audit-complete']) {
+    for (const headers of [
+      {}, { Origin: local }, { Origin: 'null', 'X-ShipGuard-Session': token },
+      { 'X-ShipGuard-Session': 'wrong-session' },
+      { Origin: foreign, 'X-ShipGuard-Session': token },
+      { Host: `untrusted.invalid:${port}`, Origin: foreign, 'X-ShipGuard-Session': token },
+      { Host: `untrusted.invalid:${port}`, 'X-ShipGuard-Session': token },
+    ]) {
+      assert((await request(port, 'POST', path, { action: 'validate-and-fix', tests: [] }, headers, false)).status === 403,
+        `write accepted without a trusted origin and session: ${path}`);
+    }
+  }
+  assert(persistedPaths.every((path, i) => (existsSync(path) ? readFileSync(path, 'utf8') : null) === persistedBefore[i]),
+    'rejected writes changed persisted state');
+  assert(JSON.parse((await request(port, 'GET', '/api/monitor/status')).body).status === 'idle', 'rejected writes changed monitor memory');
+  console.log('Request boundary passed: trusted hosts/origins, preflights, session proof, rejected writes leave state unchanged.');
+  return token;
 }
 
 async function waitForServer(port) {
@@ -121,6 +171,168 @@ async function waitForServer(port) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('review server did not become ready');
+}
+
+async function checkStaticConfinement(port, root) {
+  // Every target, including those outside _results, is harmless temporary data.
+  const results = join(root, '_results');
+  const fixtures = join(results, 'static-fixtures');
+  const outside = join(root, '_results-neighbor');
+  mkdirSync(join(fixtures, 'nested'), { recursive: true });
+  mkdirSync(outside);
+  const regular = join(fixtures, 'nested', 'ordinary file.json');
+  const regularBody = '{"fixture":"ordinary file"}\n';
+  const outsideFile = join(outside, 'outside.txt');
+  const outsideBody = 'harmless outside fixture\n';
+  writeFileSync(regular, regularBody);
+  writeFileSync(outsideFile, outsideBody);
+  symlinkSync(outsideFile, join(fixtures, 'outside-file'));
+  symlinkSync(outside, join(fixtures, 'outside-dir'), 'dir');
+  symlinkSync(regular, join(fixtures, 'inside-file'));
+  symlinkSync(join(fixtures, 'nested'), join(fixtures, 'inside-dir'), 'dir');
+  symlinkSync(join(outside, 'missing.txt'), join(fixtures, 'dangling'));
+  symlinkSync(join(fixtures, 'outside-file'), join(fixtures, 'chain'));
+
+  for (const path of ['outside-file', 'outside-dir/outside.txt', 'inside-file',
+    'inside-dir/ordinary%20file.json', 'dangling', 'chain', '%6futside-file']) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await request(port, method, `/static-fixtures/${path}`);
+      assert(response.status === 403, `${method} symlink ${path} was not rejected (${response.status})`);
+      assert(!response.body.includes(outsideBody), 'temporary outside content was served');
+    }
+  }
+  const response = await request(port, 'GET', '/static-fixtures/nested/ordinary%20file.json?cache=1');
+  assert(response.status === 200 && response.body === regularBody, 'ordinary nested file changed');
+  assert(response.headers['content-type'] === 'application/json', 'ordinary file MIME type changed');
+  assert(response.headers['cache-control'] === 'no-cache, no-store, must-revalidate', 'cache policy changed');
+  const head = await request(port, 'HEAD', '/static-fixtures/nested/ordinary%20file.json');
+  assert(head.status === 200 && head.body === '', 'ordinary file HEAD changed');
+  assert((await request(port, 'GET', '/static-fixtures/nested')).status === 403, 'directory was served');
+  assert((await request(port, 'GET', '/static-fixtures/missing')).status === 404, 'missing-file status changed');
+  assert((await request(port, 'GET', '/health')).status === 200, 'rejected paths stopped the server');
+  assert(readFileSync(regular, 'utf8') === regularBody && readFileSync(outsideFile, 'utf8') === outsideBody,
+    'static requests modified temporary files');
+  console.log('Static confinement passed: symlinks refused; regular files, HEAD, MIME and cache policy preserved.');
+}
+
+function checkStaticOpenRaces() {
+  const source = readFileSync(SOURCE_BUILD, 'utf8');
+  const start = source.indexOf('  function openServedFile(');
+  const end = source.indexOf('  // ── Origin policy', start);
+  assert(start >= 0 && end > start, 'static opener boundaries missing');
+  for (const phase of ['realpath', 'open-file', 'open-directory']) {
+    const root = mkdtempSync(join(tmpdir(), 'shipguard-review-open-'));
+    const results = join(root, '_results');
+    const outside = join(root, '_results-neighbor');
+    const descriptors = new Set();
+    try {
+      mkdirSync(join(results, 'nested'), { recursive: true });
+      mkdirSync(outside);
+      writeFileSync(join(results, 'nested', 'file.txt'), 'ordinary temporary fixture');
+      writeFileSync(join(outside, 'file.txt'), 'outside temporary fixture');
+      const filePath = join(results, 'nested', 'file.txt');
+      const swap = () => {
+        if (phase === 'open-file') {
+          rmSync(filePath);
+          symlinkSync(join(outside, 'file.txt'), filePath);
+        } else {
+          renameSync(join(results, 'nested'), join(results, 'original'));
+          symlinkSync(outside, join(results, 'nested'), 'dir');
+        }
+      };
+      const context = {
+        RESULTS_ROOT: results, RESULTS_REAL_ROOT: realpathSync(results), filePath,
+        join, relative, isAbsolute, sep, lstatSync, fstatSync, constants,
+        realpathSync(path) {
+          if (phase === 'realpath') swap();
+          return realpathSync(path);
+        },
+        openSync(path, flags) {
+          if (phase !== 'realpath') swap();
+          if (constants.O_NOFOLLOW) assert(flags & constants.O_NOFOLLOW, 'no-follow flag missing');
+          const fd = openSync(path, flags);
+          descriptors.add(fd);
+          return fd;
+        },
+        closeSync(fd) { closeSync(fd); descriptors.delete(fd); },
+      };
+      const result = runInNewContext(source.slice(start, end) + '\nopenServedFile(filePath);', context);
+      assert(result.status === 403 && result.fd === undefined, `${phase} replacement was not refused`);
+      assert(descriptors.size === 0, `${phase} replacement leaked a descriptor`);
+    } finally {
+      for (const fd of descriptors) closeSync(fd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+  console.log('Static open races passed: realpath escape, final-link swap and directory swap refused without reading data.');
+}
+
+async function checkScopedIpv6Authorities() {
+  const root = createFixture();
+  const preload = join(root, 'scoped-ipv6.cjs');
+  // Inject the scoped local socket address without depending on a link-local
+  // interface being available on the machine running this integration test.
+  writeFileSync(preload, `
+const http = require('node:http');
+const createServer = http.createServer;
+http.createServer = function (handler) {
+  return createServer((req, res) => {
+    if (req.headers.host.includes('%') || req.headers['x-smoke-scoped-ipv6'] === '1') {
+      Object.defineProperty(req.socket, 'localAddress', {
+        value: 'fe80::1%en0', configurable: true,
+      });
+    }
+    return handler(req, res);
+  });
+};
+require('node:module').syncBuiltinESMExports();
+`, 'utf8');
+  for (const host of ['::', '0.0.0.0']) {
+    let server;
+    let log;
+    let port;
+    try {
+      server = spawn(process.execPath, ['--require', preload, 'build-review.mjs', '--serve', '--port=0', `--host=${host}`],
+        { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+      log = createProcessLog(server);
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && !port && server.exitCode === null) {
+        port = Number(log.tail().match(/Server: http:\/\/.*:(\d+) \(PID/)?.[1]);
+        if (!port) await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      assert(port, `--host=${host}: server did not start`);
+      await waitForServer(port);
+      if (host === '::') {
+        const ipv6Origin = `http://[::1]:${port}`;
+        assert((await request(port, 'GET', '/health', null, { Origin: ipv6Origin }, true, '::1')).status === 200,
+          'normal IPv6 loopback rejected');
+        for (const headers of [
+          { Host: `[fe80::1%en0]:${port}` },
+          { Host: `[fe80::1%25en0]:${port}` },
+          { Origin: ipv6Origin, 'X-Smoke-Scoped-IPv6': '1' },
+        ]) {
+          const rejected = await request(port, 'GET', '/health', null, { ...headers, Connection: 'close' }, true, '::1');
+          assert(rejected.status === 403 && !rejected.headers['access-control-allow-origin'], 'scoped IPv6 authority was not refused cleanly');
+          assert(server.exitCode === null && (await request(port, 'GET', '/health', null, {}, true, '::1')).status === 200,
+            'server did not survive scoped IPv6 authority');
+        }
+      }
+      assert((await request(port, 'GET', '/health')).status === 200, `--host=${host}: normal loopback changed`);
+      assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] },
+        { Origin: `http://localhost:${port}` })).status === 200, `--host=${host}: legitimate POST changed`);
+      assert((await request(port, 'GET', '/health', null, { Host: `untrusted.invalid:${port}` })).status === 403,
+        `--host=${host}: foreign authority accepted`);
+    } catch (error) {
+      throw new Error(formatFailure(error, root, port, log));
+    } finally {
+      if (server && server.exitCode === null) {
+        const stopped = new Promise(resolve => server.once('exit', resolve));
+        server.kill('SIGTERM');
+        await stopped;
+      }
+    }
+  }
+  console.log(`IPv6 authority regressions passed: scoped address injection returns 403, server survives, loopback/wildcard/POST unchanged. Fixture: ${root}`);
 }
 
 function createFixture() {
@@ -274,6 +486,59 @@ function createFixture() {
     changes: [{ id: 'home', title: 'Home page', summary: 'Smoke evidence.', impact: 'No user impact.' }],
   });
   return root;
+}
+
+function checkEvidenceLinks() {
+  const root = mkdtempSync(join(tmpdir(), 'shipguard-review-links-'));
+  try {
+    copyFileSync(SOURCE_BUILD, join(root, 'build-review.mjs'));
+    copyFileSync(SOURCE_TEMPLATE, join(root, '_review-template.html'));
+    writeFileSync(join(root, '_config.yaml'), 'base_url: http://localhost:8001\n');
+    mkdirSync(join(root, '_results/change-reports/demo'), { recursive: true });
+    const reportPath = join(root, '_results/change-reports/demo/report.json');
+    const outputPath = join(root, '_results/persona-reports/demo/client.html');
+    const safe = [
+      '../../review.html', './screenshots/before.png', 'evidence.txt', '/evidence',
+      '#home', '?view=evidence', String.raw`\evidence`,
+      'https://example.invalid/evidence?a=1&b=2', 'http://example.invalid/evidence',
+      'HTTPS://example.invalid/evidence', ' https://example.invalid/evidence ',
+      'mailto:review@example.invalid', './file:name.txt',
+      'java%73cript:void(0)', 'javascript&#58;void(0)',
+    ].map((href, i) => ({ label: `Safe <${i}>`, href }));
+    const unsafe = [
+      '//example.invalid/evidence', String.raw`\\example.invalid\evidence`,
+      '\u0000 //example.invalid/evidence', ' ' + String.raw`\\example.invalid\evidence`,
+      '/\t/example.invalid/evidence', '\\\r\n\\example.invalid\\evidence',
+      String.raw`/\example.invalid/evidence`, String.raw`\/example.invalid/evidence`,
+      'javascript:void(0)', 'JaVaScRiPt:void(0)', '  javascript:void(0)',
+      '\u0000javascript:void(0)', 'java\tscript:void(0)',
+      'java\nscript:void(0)', 'java\rscript:void(0)',
+      'data:text/html,harmless', 'DATA:text/plain,harmless',
+      'vbscript:Empty', 'blob:https://example.invalid/id', 'file:///evidence',
+      'custom:evidence', 'https://[', '', ' \t\r\n', 42, {}, [], null,
+    ].map(href => ({ label: 'Unsupported evidence', href }));
+    const report = { id: 'demo', title: 'Evidence <review>', generated_at: '2026-10-29T00:00:00Z',
+      audiences: ['client'], changes: [{ id: 'home', title: 'Home', impact: 'Unchanged content' }] };
+    const build = links => {
+      writeJson(reportPath, { ...report, links });
+      const source = readFileSync(reportPath, 'utf8');
+      const result = spawnSync(process.execPath, ['build-review.mjs'], { cwd: root, encoding: 'utf8' });
+      assert(result.status === 0, `evidence links build failed: ${result.stderr}`);
+      assert(readFileSync(reportPath, 'utf8') === source, 'evidence link validation changed the source report');
+      return readFileSync(outputPath, 'utf8');
+    };
+    const emptyHtml = build([]);
+    const safeHtml = build(safe);
+    const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const anchors = safe.map(({ label, href }) => `<a class="button" href="${escape(href)}">${escape(label)}</a>`).join('');
+    assert(safeHtml.includes(anchors), 'ordinary evidence hrefs, labels, order or escaping changed');
+    assert(safeHtml.replace(anchors, '') === emptyHtml, 'content outside evidence links changed');
+    assert(build([...safe, ...unsafe, null, {}]) === safeHtml,
+      'unsupported evidence destinations were rendered or changed surrounding content');
+    console.log(`Evidence links passed: ${safe.length} ordinary destinations preserved; ${unsafe.length} unsafe/malformed destinations omitted; surrounding HTML and source unchanged.`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 // #144: exercise YAML through the real generator and its embedded dashboard data.
@@ -928,14 +1193,17 @@ async function checkCrawlHistory() {
 
 async function main() {
   const options = parseArgs();
+  if (options.ipv6Only) return checkScopedIpv6Authorities();
   await checkPidRegressions();
   if (options.pidOnly) return;
+  await checkScopedIpv6Authorities();
   let root = null;
   let port = null;
   let server = null;
   let log = null;
   let passed = false;
   try {
+    checkEvidenceLinks();
     checkYamlRegressions();
     checkManifestDiscovery();
     checkLastRunBanner();
@@ -1309,11 +1577,27 @@ async function main() {
     assert((await request(port, 'GET', '/visual-results.json')).status === 200, 'visual-results.json was not served');
     assert((await request(port, 'GET', '/persona-reports/demo/index.html')).status === 200, 'persona report was not served');
 
+    const oldToken = await checkRequestBoundary(port, root);
     const save = await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] });
     assert(save.status === 200, 'POST /save-manifest failed');
     assert(existsSync(join(root, '_results', 'fix-manifest.json')), 'fix-manifest.json was not written');
 
     assert((await request(port, 'GET', '/..%2Fsecret.txt')).status === 403, 'encoded path traversal was not rejected');
+    const stopped = new Promise(resolve => server.once('exit', resolve));
+    server.kill('SIGTERM');
+    await stopped;
+    server = spawn(process.execPath, ['build-review.mjs', '--serve', `--port=${port}`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    log = createProcessLog(server);
+    await waitForServer(port);
+    assert(JSON.parse((await request(port, 'GET', '/api/session')).body).token !== oldToken, 'session proof survived restart');
+    const manifestBefore = readFileSync(join(root, '_results', 'fix-manifest.json'), 'utf8');
+    assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [{ test: 'stale-session' }] },
+      { 'X-ShipGuard-Session': oldToken }, false)).status === 403, 'previous session proof accepted');
+    assert(readFileSync(join(root, '_results', 'fix-manifest.json'), 'utf8') === manifestBefore, 'stale session changed manifest');
+    assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] },
+      { Origin: `http://localhost:${port}` })).status === 200, 'fresh trusted session cannot write');
+    await checkStaticConfinement(port, root);
+    checkStaticOpenRaces();
     passed = true;
     console.log('review smoke test passed');
     if (options.debug) console.error(log.tail());
