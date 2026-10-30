@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.18.2 — 2026-10-30
+
+Changes since [2.18.1](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.1),
+covering `v2.18.1..7c10d22e7c5bf4c9c12246ef3870105eabfcb229`.
+
+### Changes
+
+- Reject unparseable review authorities without crashing (`ecab3b6`)
+- Preserve failed auth export status when no steps remain (`4559648`)
+- Assert Windows export keeps existing permissions (`2099291`)
+- Preserve Windows auth export and fail unsafe POSIX files (`72ee1a9`)
+- fix: secure recorder state export (`448699b`)
+- docs: clarify HTTPS and loopback endpoint examples (`4e80b15`)
+- fix: constrain optional controller transport (`f8a1409`)
+- Constrain crawl redirects to the selected origin (`c43cc91`)
+- fix(review): reject scheme-relative evidence hosts (`d38eecc`)
+- fix(review): validate evidence link destinations (`de31bc6`)
+- fix: confine review static reads to the physical results root (`267abaf`)
+- Require trusted request origins and review session proof (`3d3190c`)
+- fix(record): restore default TLS verification (`bbfe6a8`)
+- fix(cli): bound PNG screenshot decompression (#195) (`859a289`)
+- Limit historical crawl labels to older retained evidence (Refs #190) (`8a80a43`)
+- fix(review): keep keyboard focus inside screenshot viewer (`f1019ee`)
+- Fix review banner counts after manifest removal (Refs #189) (`787eab3`)
+- Mark retained crawl findings as historical (Refs #190) (`7ec4c03`)
+- fix(cli): accept structurally valid JPEG screenshots (#195) (`6011497`)
+- fix(review): make visual and recorded controls keyboard accessible (`32e4696`)
+- Bound cumulative crawler resource checks (Refs #197) (`76026b7`)
+- fix(cli): reject invalid PNG screenshot evidence (#195) (`1b764f6`)
+- fix(review): discover yml and root-level manifests (`d5af1d9`)
+- fix(tests): include recorder converter tests in smoke suite (`c4605b2`)
+- fix(cli): decode recorder YAML escapes (#193) (`4ba5f9b`)
+- fix(review): retain observed stale findings and classify errors (`7692347`)
+- fix(cli): propagate review server startup failure (`2e48181`)
+- fix(record): preserve recorded upload selector (#192) (`4a49b1c`)
+
 ## 2.18.1 — 2026-10-26
 
 Changes since [2.18.0](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.0),
