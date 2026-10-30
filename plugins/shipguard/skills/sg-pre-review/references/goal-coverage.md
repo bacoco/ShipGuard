@@ -60,6 +60,8 @@ node plugins/shipguard/skills/sg-pre-review/run-pre-review.mjs \
   --model configured-model
 ```
 
+HTTPS requis à distance ; HTTP permis uniquement sur boucle locale validée ; redirections refusées.
+
 The existing runner posts to `/v1/chat/completions` on the explicit endpoint origin. This mode does
 not add authentication, endpoint discovery or a provider fallback. The full selected request,
 goal, skill guidance and bounded repository readings reach that endpoint. Choose appropriate

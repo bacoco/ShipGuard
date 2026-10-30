@@ -73,6 +73,9 @@ its conditions. A schema describes shape; it does not establish current runtime 
 When the user explicitly requests a local-model endpoint, use the read-only
 [local runner](run-pre-review.mjs) with `--root`, `--request` (the original request file),
 `--endpoint` and `--model`, plus `--goal FILE` only for a supplied numbered goal. It guides search and checks quoted source lines mechanically.
+
+HTTPS requis à distance ; HTTP permis uniquement sur boucle locale validée ; redirections refusées.
+
 An optional `--trace` must name a new file explicitly requested for evidence. Do not invoke
 another model implicitly or select a provider. The runner returns JSON on stdout, not a dashboard
 result; render it using the report contract. Exit 3 means partial. Exit 0 means review delivery,
