@@ -1799,7 +1799,12 @@ if (process.argv.includes('--serve')) {
     }));
   }
   function originAllowed(req) {
-    const authorities = trustedAuthorities(req);
+    let authorities;
+    try {
+      authorities = trustedAuthorities(req);
+    } catch {
+      return false; // Unparseable authorities (including scoped IPv6) fail closed.
+    }
     if (!authorities.has(req.headers.host)) return false;
     const origin = req.headers.origin;
     if (origin === undefined) return true; // local navigations and native clients

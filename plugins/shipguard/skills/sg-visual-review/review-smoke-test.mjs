@@ -27,10 +27,12 @@ function parseArgs() {
     keepTmp: false,
     debug: false,
     pidOnly: false,
+    ipv6Only: false,
   };
   for (const arg of process.argv.slice(2)) {
     if (arg === '--keep-tmp') options.keepTmp = true;
     else if (arg === '--pid-only') options.pidOnly = true;
+    else if (arg === '--ipv6-only') options.ipv6Only = true;
     else if (arg === '--debug') options.debug = true;
     else if (arg.startsWith('--port=')) options.port = parseInt(arg.split('=')[1], 10);
     else throw new Error(`Unknown argument: ${arg}`);
@@ -85,12 +87,12 @@ function formatFailure(error, root, port, log) {
   ].filter(Boolean).join('\n');
 }
 
-async function request(port, method, path, body = null, headers = {}, withSession = true) {
-  const token = method === 'POST' && withSession ? JSON.parse((await request(port, 'GET', '/api/session')).body).token : null;
+async function request(port, method, path, body = null, headers = {}, withSession = true, host = '127.0.0.1') {
+  const token = method === 'POST' && withSession ? JSON.parse((await request(port, 'GET', '/api/session', null, {}, true, host)).body).token : null;
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = httpRequest({
-      host: '127.0.0.1',
+      host,
       port,
       path,
       method,
@@ -263,6 +265,74 @@ function checkStaticOpenRaces() {
     }
   }
   console.log('Static open races passed: realpath escape, final-link swap and directory swap refused without reading data.');
+}
+
+async function checkScopedIpv6Authorities() {
+  const root = createFixture();
+  const preload = join(root, 'scoped-ipv6.cjs');
+  // Inject the scoped local socket address without depending on a link-local
+  // interface being available on the machine running this integration test.
+  writeFileSync(preload, `
+const http = require('node:http');
+const createServer = http.createServer;
+http.createServer = function (handler) {
+  return createServer((req, res) => {
+    if (req.headers.host.includes('%') || req.headers['x-smoke-scoped-ipv6'] === '1') {
+      Object.defineProperty(req.socket, 'localAddress', {
+        value: 'fe80::1%en0', configurable: true,
+      });
+    }
+    return handler(req, res);
+  });
+};
+require('node:module').syncBuiltinESMExports();
+`, 'utf8');
+  for (const host of ['::', '0.0.0.0']) {
+    let server;
+    let log;
+    let port;
+    try {
+      server = spawn(process.execPath, ['--require', preload, 'build-review.mjs', '--serve', '--port=0', `--host=${host}`],
+        { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+      log = createProcessLog(server);
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && !port && server.exitCode === null) {
+        port = Number(log.tail().match(/Server: http:\/\/.*:(\d+) \(PID/)?.[1]);
+        if (!port) await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      assert(port, `--host=${host}: server did not start`);
+      await waitForServer(port);
+      if (host === '::') {
+        const ipv6Origin = `http://[::1]:${port}`;
+        assert((await request(port, 'GET', '/health', null, { Origin: ipv6Origin }, true, '::1')).status === 200,
+          'normal IPv6 loopback rejected');
+        for (const headers of [
+          { Host: `[fe80::1%en0]:${port}` },
+          { Host: `[fe80::1%25en0]:${port}` },
+          { Origin: ipv6Origin, 'X-Smoke-Scoped-IPv6': '1' },
+        ]) {
+          const rejected = await request(port, 'GET', '/health', null, { ...headers, Connection: 'close' }, true, '::1');
+          assert(rejected.status === 403 && !rejected.headers['access-control-allow-origin'], 'scoped IPv6 authority was not refused cleanly');
+          assert(server.exitCode === null && (await request(port, 'GET', '/health', null, {}, true, '::1')).status === 200,
+            'server did not survive scoped IPv6 authority');
+        }
+      }
+      assert((await request(port, 'GET', '/health')).status === 200, `--host=${host}: normal loopback changed`);
+      assert((await request(port, 'POST', '/save-manifest', { action: 'validate-and-fix', tests: [] },
+        { Origin: `http://localhost:${port}` })).status === 200, `--host=${host}: legitimate POST changed`);
+      assert((await request(port, 'GET', '/health', null, { Host: `untrusted.invalid:${port}` })).status === 403,
+        `--host=${host}: foreign authority accepted`);
+    } catch (error) {
+      throw new Error(formatFailure(error, root, port, log));
+    } finally {
+      if (server && server.exitCode === null) {
+        const stopped = new Promise(resolve => server.once('exit', resolve));
+        server.kill('SIGTERM');
+        await stopped;
+      }
+    }
+  }
+  console.log(`IPv6 authority regressions passed: scoped address injection returns 403, server survives, loopback/wildcard/POST unchanged. Fixture: ${root}`);
 }
 
 function createFixture() {
@@ -1123,8 +1193,10 @@ async function checkCrawlHistory() {
 
 async function main() {
   const options = parseArgs();
+  if (options.ipv6Only) return checkScopedIpv6Authorities();
   await checkPidRegressions();
   if (options.pidOnly) return;
+  await checkScopedIpv6Authorities();
   let root = null;
   let port = null;
   let server = null;
