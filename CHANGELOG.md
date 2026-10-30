@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.18.3 — 2026-10-30
+
+Changes since [2.18.2](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.2),
+covering `v2.18.2..74e7b239474210583d841666cbc068485c3c7380`.
+
+### Changes
+
+- docs(sg-pre-review): state endpoint transport policy (`acc69ad`)
+- fix(sg-pre-review): restrict endpoint transport and refuse redirects (`1311b33`)
+
+Validation : validé macOS/Linux ; Windows simulé, non validé sur machine réelle.
+
 ## 2.18.2 — 2026-10-30
 
 Changes since [2.18.1](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.1),
