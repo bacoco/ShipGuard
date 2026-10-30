@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { isIP } from 'node:net';
 import { guardGoalDecision, GOAL_PROTOCOL } from './goal-coverage.mjs';
 import { loadGoalInputs, inputChanges } from './goal-input.mjs';
 import { sourceLines } from './source-lines.mjs';
@@ -23,6 +24,10 @@ const need = goalInputs ? goalInputs.request.text : readFileSync(args.get('reque
 if (!need) throw new Error('Empty request');
 const endpoint = new URL(args.get('endpoint'));
 if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) throw new Error('Use an HTTP endpoint without embedded credentials');
+// Check the parsed hostname, never a prefix of the supplied URL or hostname.
+const loopback = endpoint.hostname === 'localhost' || endpoint.hostname === '[::1]' ||
+  (isIP(endpoint.hostname) === 4 && endpoint.hostname.startsWith('127.'));
+if (endpoint.protocol === 'http:' && !loopback) throw new Error('Use HTTPS for remote endpoints; HTTP is allowed only on loopback');
 const here = dirname(fileURLToPath(import.meta.url));
 const precedence = readFileSync(resolve(here, '../sg-logic-audit/references/obligations-and-checks.md'), 'utf8').split('## Source precedence')[1].split('## Universal properties')[0];
 const context = readFileSync(resolve(here, 'SKILL.md'), 'utf8') + '\n' + readFileSync(resolve(here, 'references/report.md'), 'utf8') + '\nSource precedence\n' + precedence;
@@ -39,7 +44,7 @@ for (let turn = 0; turn < 12; turn++) {
   const changed = goalInputs ? inputChanges(goalInputs) : [];
   if (changed.length) { resultOrigin = 'runtime-status'; result = { decision: 'undetermined', comparison: changed.join(', '), evidence: [] }; break; }
   const body = { model: args.get('model'), messages, temperature: 0.2, seed: 101, max_tokens: goalInputs ? 1800 + goalInputs.criteria.length * 400 : 1800, cache_prompt: false, response_format: { type: 'json_object' } };
-  const res = await fetch(new URL('/v1/chat/completions', endpoint), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(180000) });
+  const res = await fetch(new URL('/v1/chat/completions', endpoint), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(180000) });
   if (!res.ok) throw new Error(`Model request failed: HTTP ${res.status}`);
   const response = await res.json();
   trace.push({ request: structuredClone(body), response });
