@@ -23,6 +23,13 @@ let current='http://local/start';const frame={url:()=>current};
 page.mainFrame=()=>frame;page.url=()=>current;page.isClosed=()=>false;
 page.evaluate=async(fn,state)=>{states.push(state)};
 page.addScriptTag=async()=>{
+ if(process.env.SG_TEST_UNDO_ALL_STEPS==='1'){
+  if(stage===0){stage=1;setTimeout(()=>{
+   bridge(JSON.stringify({type:'undo'}));
+   bridge(JSON.stringify({type:'stop',steps:[]}));
+  },20)}
+  return;
+ }
  if(stage===0){stage=1;setTimeout(()=>{
  bridge(JSON.stringify({type:'step',step:{type:'click',text:'Alpha'}}));
  bridge(JSON.stringify({type:'pause'}));current='http://local/paused';page.emit('framenavigated',frame);page.emit('domcontentloaded');page.emit('load');
@@ -102,6 +109,35 @@ function exportStorage(path, mask = 0o022, expectedStatus = 0, recorder = 'sg-re
  assert.ok(readFileSync(join(root, 'manifests/recorded-storage-export.yaml'), 'utf8').includes('Alpha'));
  return run.stdout + run.stderr;
 }
+function exportEmptyStorage(path, expectedStatus) {
+ const run = spawnSync(process.execPath,
+  [join(root, 'sg-record.mjs'), 'http://local/start', '--name=empty-storage-export', '--save-storage='+path],
+  { cwd: root, env: { ...process.env, SG_TEST_AUTH_STATE: JSON.stringify(exportedState), SG_TEST_UNDO_ALL_STEPS: '1' }, timeout: 10000, killSignal: 'SIGKILL', encoding: 'utf8' });
+ assert.ifError(run.error);
+ assert.equal(run.status, expectedStatus, run.stdout + run.stderr);
+ assert.match(run.stdout, /undo \(0 steps remaining\)/);
+ assert.match(run.stdout, /No steps recorded\. Exiting\./);
+ assert.ok(!existsSync(join(root, 'manifests/recorded-empty-storage-export.yaml')));
+ return run.stdout + run.stderr;
+}
+check('failed storage export remains nonzero after all steps are undone', () => {
+ const path = join(root, 'auth-empty-unsafe.json');
+ writeFileSync(path, 'unchanged'); chmodSync(path, 0o644);
+ const output = exportEmptyStorage(path, 1);
+ assert.match(output, /Warning: could not save auth state:/);
+ assert.match(output, /run: chmod 600 '/);
+ assert.equal(readFileSync(path, 'utf8'), 'unchanged');
+ assert.equal(statSync(path).mode & 0o777, 0o644);
+});
+check('successful storage export still exits zero after all steps are undone', () => {
+ const path = join(root, 'auth-empty-private.json');
+ writeFileSync(path, 'old state'); chmodSync(path, 0o600);
+ const output = exportEmptyStorage(path, 0);
+ assert.match(output, /Auth state saved to/);
+ assert.ok(!output.includes('could not save auth state'));
+ assert.equal(readFileSync(path, 'utf8'), JSON.stringify(exportedState, null, 2));
+ assert.equal(statSync(path).mode & 0o777, 0o600);
+});
 for (const mask of [0o000, 0o022, 0o027, 0o077]) {
  check('storage export creates a private file under umask '+mask.toString(8), () => {
   const path = join(root, 'auth-umask-'+mask.toString(8)+'.json');

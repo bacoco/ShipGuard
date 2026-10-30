@@ -373,6 +373,7 @@ async function main() {
 
   // Launch browser
   browser = await chromium.launch({ headless: false });
+  let authStateExportFailed = false;
 
   try {
     const contextOptions = {
@@ -603,6 +604,7 @@ async function main() {
         console.log(`  Auth state saved to ${saveStorageArg}`);
       } catch (e) {
         console.error('  Warning: could not save auth state:', e.message);
+        authStateExportFailed = true;
         process.exitCode = 1;
       }
     }
@@ -619,7 +621,7 @@ async function main() {
   // No steps recorded?
   if (allSteps.length === 0) {
     console.log('\n  No steps recorded. Exiting.');
-    process.exit(0);
+    process.exit(authStateExportFailed ? 1 : 0);
   }
 
   // Ask for name if not provided (TTY guaranteed by the early check)
