@@ -92,6 +92,20 @@ Tagging and release creation are manual publication steps; `prepare-release.mjs`
 them, installs a plugin, or deploys anything. Build `RELEASE_NOTES.md` from the reviewed changelog
 entry before running the final command.
 
+## Plugin installation and updates
+
+Incident of 5 November 2026 at 14:17: installing ShipGuard 2.18.3 removed the 2.18.0
+Codex cache while sessions still used it, causing repeated `Hook failed` errors.
+For a Codex or Claude plugin update, use a coordinated window:
+
+1. List live sessions using the affected plugin cache with `herdr pane list`.
+2. Bring those sessions to rest and stop them temporarily, preserving their conversations.
+3. Install the plugin through the host's native installer.
+4. Resume every affected session.
+5. In a resumed session, verify that a plugin hook actually executes.
+
+Never link or copy files into the plugin cache. Do not purge plugin caches globally.
+
 To return an installed host to the previous version, clone the previous tag reported by the script
 into a persistent local directory, then replace the existing `shipguard` marketplace source with
 that checkout. For example, after adapting the tag, path, and existing install scope:
