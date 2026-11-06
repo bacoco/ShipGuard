@@ -224,6 +224,8 @@ assert.match(skillText, /set-strict-mode\.mjs/);
 // Rules that neutralized a user's yes (LaFamille #423, ShipGuard #215/#217) must not return.
 assert.doesNotMatch(skillText, /Keep The User's Delta Closed|closed set of authorized changes|non-transitive|Interpret Continuations Conservatively|read-only recovery|Never infer a\s+relaxed mode|cannot cancel or widen|still-active user-authored constraint/s);
 assert.doesNotMatch(skillText, /smallest action|next smallest step/);
+assert.match(skillText, /Correction:\*\* apply it to the current work, revise what depended on it, and continue/);
+assert.doesNotMatch(skillText, /read-only recovery|wait for explicit user\s+confirmation/s);
 
 // Grill Goal remains a standalone instruction file; these are static contract checks,
 // not evidence that an AI conducted the interview or achieved a future goal.

@@ -55,11 +55,11 @@ The expected entry is `shipguard@shipguard` at the current plugin version.
 
 Codex requires explicit trust for plugin hooks. Open the Hooks settings, review the ShipGuard hook,
 trust its current definition, and start a new thread. The hook is read-only and injects mission
-guidance on every configured lifecycle event, independently of model and reasoning effort. Strict
-scope protection is enabled by default and can be changed by speaking normally in the chat: keep it
-protected, relax it for the current task, or relax it persistently across future sessions until it
-is re-enabled. Persistent preference is stored in `~/.shipguard/mission-lock.json`; the hook reads
-that file but never writes it.
+guidance on every configured lifecycle event, independently of model and reasoning effort. The hook
+is on by default and can be turned off persistently, then back on, by speaking normally in the chat;
+that preference is stored in `~/.shipguard/mission-lock.json`, which the hook reads but never writes.
+Strict Delta is separate: off by default, it applies only to the current task when the user
+explicitly asks for it.
 
 This activation supplies proportional guidance, not a mandatory full checkpoint. Simple questions
 get direct answers; work requests start with a short visible restatement; a user's yes covers every
