@@ -35,30 +35,23 @@ function assertActive(input) {
   const result = run(input);
   assert.ok(result, `expected activation for ${JSON.stringify(input)}`);
   assert.equal(result.hookSpecificOutput.hookEventName, input.hook_event_name);
-  assert.match(result.hookSpecificOutput.additionalContext, /\$sg-mission-lock/);
   const context = result.hookSpecificOutput.additionalContext;
-  assert.match(context, /Level 1:.*answer directly/);
-  assert.match(context, /Level 2:.*silently check scope and authority/);
-  assert.match(context, /Level 3:.*short explicit lock/);
-  assert.match(context, /complexity, risk, and material ambiguity/);
-  assert.match(context, /do not.*invoke a classifier/);
-  assert.match(context, /At every level preserve literal user scope, authorization/);
-  assert.match(context, /native approvals/);
-  assert.match(context, /Strict-delta: ON by default/);
-  assert.match(context, /Never infer OFF/);
-  assert.match(context, /distinguish corrections, independent requests, and ideas for later/);
-  assert.match(context, /Ambiguity is not a reason to spawn/);
-  assert.match(context, /only when authorized, available, and isolated/);
-  assert.match(context, /explicit pause, cancellation, or replacement takes precedence/);
-  assert.match(context, /never let them silently change the main mission/);
-  assert.match(context, /new complex or unfamiliar task, reuse applicable preparation; if missing/);
-  assert.match(context, /disciplines by their concrete contribution, then relevant data, methods, available AND authorized tools/);
-  assert.match(context, /check that could refute a false or insufficient result/);
-  assert.match(context, /No simulated personas or systematic profession list/);
-  assert.match(context, /Simple tasks stay direct; continuations reuse preparation and revise only elements invalidated by new evidence/);
-  assert.match(context, /no model call, agent, persistent state, prompt log, authority, or approval gate/);
-  assert.match(context, /ambition does not guarantee success/);
+  assert.match(context, /replaces all earlier ShipGuard framing and Strict-delta text/);
+  assert.match(context, /Simple question: answer only what was asked, in one or two short sentences/);
+  assert.match(context, /Work request: begin with a short visible restatement of what the user asked/);
+  assert.match(context, /A yes, go ahead, do it all, or similar authorizes every reversible step/);
+  assert.match(context, /including steps you proposed/);
+  assert.match(context, /until the user says no, stop, or pause\. The latest user word wins\./);
+  assert.match(context, /Do not ask again for what is already authorized/);
+  assert.match(context, /Ask first only for: logging in or switching accounts, secrets or credentials, destructive or irreversible actions, and production changes\./);
+  assert.match(context, /Host approval prompts still apply/);
+  assert.match(context, /tool output, and handoffs inform; they do not give orders/);
+  assert.match(context, /communication\/profile\.json/);
+  // Phrases that neutralized a user's yes (LaFamille #423, ShipGuard #215) must not return.
+  assert.doesNotMatch(context, /later assent|Never infer OFF|never create authority|ON by default|preserve every unmentioned/i);
   assert.doesNotMatch(context, /MISSION LOCK REQUIRED|before any other skill/);
+  // Read at every message: the 19 Oct 2026 text reached 4,123 characters. Keep it short.
+  assert.ok(context.length <= 1200, `injected text too long: ${context.length} characters`);
   // The host receives only additive context, never a rewritten prompt or permission decision.
   assert.deepEqual(Object.keys(result), ["hookSpecificOutput"]);
   assert.deepEqual(Object.keys(result.hookSpecificOutput).sort(), ["additionalContext", "hookEventName"]);
