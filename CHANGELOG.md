@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.18.4 — 2026-11-06
+
+Changes since [2.18.3](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.3),
+covering `v2.18.3..61f4ecbcd2f31d70f2910ce1f8e04608a879c716`.
+
+### Changes
+
+- fix(mission-lock): visible restatement for bounded actions, no freeze after corrections (`9f86ebd`)
+- fix(mission-lock): align SKILL.md with the new framing text (`52b7955`)
+- fix(mission-lock): cover account rights and make Strict Delta opt-in (`3423a64`)
+- fix(mission-lock): let a user's yes keep its value in the injected text (`9d1500d`)
+- docs: coordinate plugin updates around live sessions (`89cee8c`)
+
 ## 2.18.3 — 2026-10-30
 
 Changes since [2.18.2](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.2),
