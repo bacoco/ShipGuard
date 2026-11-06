@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Mission Lock"
   short_description: "Proportional scope protection: direct, silent, or explicit"
-  default_prompt: "Use $sg-mission-lock proportionately: answer simple questions directly and briefly, silently check bounded actions, and explicitly lock only complex, sensitive, or materially ambiguous work. A user's yes covers every reversible step until their next no; ask first only for accounts and their rights, secrets, destructive actions, and production; keep native approvals. Separate corrections, independent requests, and pending ideas; clarify material ambiguity before delegating and keep side-task results separate from the main mission."
+  default_prompt: "Use $sg-mission-lock proportionately: answer simple questions directly and briefly, restate work requests in one visible sentence, and explicitly lock only complex, sensitive, or materially ambiguous work. A user's yes covers every reversible step until their next no; ask first only for accounts and their rights, secrets, destructive actions, and production; keep native approvals. Separate corrections, independent requests, and pending ideas; clarify material ambiguity before delegating and keep side-task results separate from the main mission."
 
 policy:
   allow_implicit_invocation: true

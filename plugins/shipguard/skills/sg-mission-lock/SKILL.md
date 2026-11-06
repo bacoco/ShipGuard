@@ -28,8 +28,8 @@ choose a level. This assessment is not a new plan or deliverable.
    user asks or an essential condition is needed for correctness. Never truncate requested
    summaries, translations, or essential conditions to meet a sentence or word target.
 2. **Bounded action.** A clear, limited, reversible action, such as an inventory, status check, or
-   small change: check scope and authority silently, then act. At most one useful framing sentence;
-   no checkpoint headings, eleven-field form, or extra approval for already authorized work.
+   small change: begin with one brief visible restatement of what the user asked, then act. No
+   checkpoint headings, eleven-field form, or extra approval for already authorized work.
 3. **Explicit lock.** Complex work across components, sensitive changes, or ambiguity that can
    materially change the outcome: read this skill and give a short explicit lock before acting.
    Include only the objective, authorized changes, consequential constraints, verification, or
@@ -299,17 +299,11 @@ If transcript and handoff disagree, the transcript wins.
 
 ## Handle Corrections
 
-On the first correction, stop the derived branch, update the lock internally (expose consequential changes only), preserve useful work,
-and continue only inside the corrected authority. Do not delete or rewrite recovery work by default.
-
-Count a material correction when the user explicitly says the current Objective, Mode, Scope,
-Authority, or chosen branch was wrong. Ordinary implementation feedback, bug reports, preferences,
-or acceptance-criteria refinements do not count. The count lasts until Done or a new mission.
-
-On a second correction in the same mission, enter read-only recovery: inspect the conversation or
-goal, inventory mutations and ownership, emit a candidate lock, and wait for explicit user
-confirmation before further mutation. If that correction itself supplies a complete unambiguous
-lock and explicitly directs continuation without raising authority, re-emit it and proceed.
+On each correction, stop the derived branch, apply the correction, revise what depended on it,
+preserve useful work, and continue with the authority already given. A correction is not a reason
+to freeze the work or to ask permission for following reversible steps; ask one short question only
+when the corrected request stays materially ambiguous. Do not delete or rewrite recovery work by
+default.
 
 Treat “I do not care about X” as removing X from current priority, not banning X project-wide.
 Backup, migration, deployment, parallelism, mocks, or synthetic tests may appear when explicitly
