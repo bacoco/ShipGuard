@@ -62,10 +62,10 @@ is re-enabled. Persistent preference is stored in `~/.shipguard/mission-lock.jso
 that file but never writes it.
 
 This activation supplies proportional guidance, not a mandatory full checkpoint. Simple questions
-get direct answers; clear bounded actions use a silent scope check; complex, sensitive, or materially
-ambiguous tasks use a short explicit lock. The current agent makes this decision without another
-model or keyword gate. All levels keep user constraints and native permissions, and none changes
-Strict Delta settings. Previously loaded skill text may remain in an existing conversation;
+get direct answers; work requests start with a short visible restatement; a user's yes covers every
+reversible step until their next no, and only accounts and their rights, secrets, destructive
+actions, and production need a fresh yes. The current agent makes this decision without another model or keyword gate.
+Native permissions still apply. Previously loaded skill text may remain in an existing conversation;
 installation and hook trust alone do not prove the behavior of every already-running session.
 
 If the hook is not trusted, the mission guard remains available when explicitly requested in chat,

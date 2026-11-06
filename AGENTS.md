@@ -27,7 +27,7 @@ Before creating a branch, run `git fetch origin` and base the new branch on `ori
 - Keep the `visual-tests/_results/` output contract stable (`audit-results.json`, `logic-results.json`, `process-results.json`, TOON format): skills consume each other's files.
 - Version lives in `plugins/shipguard/.claude-plugin/plugin.json`; mirror metadata changes in `.codex-plugin/plugin.json` and both marketplace manifests (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`).
 - Keep `sg-mission-lock`, its host hook, and its smoke test aligned. The hook must remain read-only,
-  stateless, and non-blocking. While Strict Delta is protected, every configured host lifecycle
-  event activates regardless of model or effort; persistent relaxation is the explicit opt-out.
+  stateless, and non-blocking. While it is on, every configured host lifecycle event activates
+  regardless of model or effort; the durable off setting is the explicit opt-out.
 - Skills are report-only by default; `--fix` is always opt-in. Do not change that default.
 - `--model=haiku` is refused for audits by design — do not relax.
