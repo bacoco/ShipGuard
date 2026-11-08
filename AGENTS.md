@@ -1,6 +1,12 @@
 # AGENTS.md
 
-This file provides guidance to Codex and other coding agents working in this repository.
+This file provides guidance to Claude Code, Codex and other coding agents working in this repository. It is the single instruction file of the repository.
+
+## What this is
+
+ShipGuard is a Claude Code and Codex plugin providing `sg-*` skills for mission control and diff-scoped verification: code audit, contract/invariant logic audit, process simulation, visual E2E testing, macro recording, review dashboards, and self-improvement. GitHub: `bacoco/ShipGuard`. License MIT. Main branch: `main`.
+
+Pipeline: static **find** (`sg-code-audit`) → applicable semantic **check** (`sg-logic-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `sg-ship` detects semantic candidates during one conversational scope decision and orchestrates the applicable lanes. Report-only by default; mutation requires an explicit natural-language request.
 
 ## Golden Rule
 
@@ -10,24 +16,154 @@ Take the most direct, safe, verifiable path:
 - Use the project's existing harness: the smoke-test `.mjs` scripts next to each skill are the verification mechanism. Run them with `node scripts/run-smoke-suite.mjs` after any change to skill scripts or templates.
 - Do not invent new frameworks, test runners, or build steps; this repo is deliberately dependency-free (no package.json).
 
-## Repository Guidance
-
-`CLAUDE.md` at the repo root is the detailed authority on structure, skill file format, test commands, and constraints. Read it first.
-
 ## Branch Rule
 
 The main branch is `main`. Create feature branches for changes; do not commit directly to `main` unless explicitly asked.
 
 Before creating a branch, run `git fetch origin` and base the new branch on `origin/main`. Never base it on a stale local `main`.
 
-## Critical Constraints
+## Critical constraints (also in "Conventions and constraints" below)
 
 - This is a Claude Code plugin: each skill lives in `plugins/shipguard/skills/<name>/` with a `SKILL.md` (YAML frontmatter + prompt) and an `agents/openai.yaml` Codex adapter — keep both in sync when changing a skill's interface.
-- Explicit exception: `grill-goal` must contain only its self-contained `SKILL.md`. Do not add an adapter, scripts, or supporting files; its behavior must not depend on external agent instructions or development reports.
-- Keep the `visual-tests/_results/` output contract stable (`audit-results.json`, `logic-results.json`, `process-results.json`, TOON format): skills consume each other's files.
-- Version lives in `plugins/shipguard/.claude-plugin/plugin.json`; mirror metadata changes in `.codex-plugin/plugin.json` and both marketplace manifests (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`).
 - Keep `sg-mission-lock`, its host hook, and its smoke test aligned. The hook must remain read-only,
   stateless, and non-blocking. While it is on, every configured host lifecycle event activates
   regardless of model or effort; the durable off setting is the explicit opt-out.
 - Skills are report-only by default; `--fix` is always opt-in. Do not change that default.
-- `--model=haiku` is refused for audits by design — do not relax.
+
+## Structure
+
+```
+.claude-plugin/marketplace.json      # Claude Code marketplace manifest
+.agents/plugins/marketplace.json     # Codex marketplace manifest
+plugins/shipguard/                   # The plugin itself
+├── .claude-plugin/plugin.json       # Plugin manifest (name and release version)
+├── .codex-plugin/plugin.json        # Codex plugin manifest
+├── hooks/hooks.json                 # Mission-lock + opt-in dialogue checks
+├── docs/                            # sandbox.md, codex-migration.md
+├── examples/                        # e.g. client-validation-report.html
+└── skills/                          # 19 canonical skills + 1 deprecated alias
+    ├── grill-goal/                  # Human interview → confirmed synthesis → standalone Markdown goal
+    ├── sg-pre-review/               # Explicit interfaces-first review before coding
+    ├── sg-communication-memory/      # Private contextual jargon and on-demand dialogue study
+    ├── sg-mission-lock/             # Mission/authority guard + hook smoke test
+    ├── sg-model-scope-test/         # Read-only model/effort scope probes + scorer
+    ├── sg-beat-reference/           # Paste-ready compare/improve loop against a named reference
+    ├── sg-gauntlet/                 # Deprecated alias for sg-beat-reference
+    ├── sg-ship/                     # Orchestrator: full pipeline on a diff
+    ├── sg-code-audit/               # Parallel audit agents + verification
+    ├── sg-logic-audit/              # Contracts, invariants, paths, counterexamples
+    ├── sg-process-check/            # Before/after behavior simulation (reason/hybrid/execute)
+    ├── sg-visual-discover/          # Generate YAML test manifests from routes
+    ├── sg-visual-run/               # Execute manifests via agent-browser
+    ├── sg-visual-review/            # HTML dashboard (build-review.mjs, _review-template.html)
+    ├── sg-visual-review-stop/       # Stop the review server
+    ├── sg-visual-fix/               # Fix bugs annotated on screenshots
+    ├── sg-change-report/            # Durable before/after client reports
+    ├── sg-record/                   # Macro recorder (sg-record.mjs + lib/)
+    ├── sg-improve/                  # Session learnings → .shipguard/ + GitHub issues
+    └── sg-scout/                    # GitHub technique scouting
+docs/                                # architecture.md, product-roadmap.md, specs/, scout-reports/, screenshots/
+├── proposals/                       # Design proposals
+└── superpowers/                     # Implementation plans
+    └── plans/
+examples/                            # Canonical manifests: _config.yaml, _regressions.yaml, _shared/login.yaml, auth/, chat/, documents/
+visual-tests/                        # This repo's own _config.yaml (dogfooding)
+scripts/build-demo-gif.py            # README demo GIF builder
+```
+
+## Skill format
+
+Each skill directory contains:
+- `SKILL.md` — YAML frontmatter (at minimum `name` and `description`; older Claude-focused skills may also use `context` and `argument-hint`) followed by the prompt/instructions. This is the source of truth for behavior.
+- `agents/openai.yaml` — Codex CLI adapter for that skill.
+- Optional `references/`, `fixtures/`, `examples/`, and Node scripts.
+
+Exception: `grill-goal` contains only `SKILL.md`, with all behavioral instructions embedded. It must remain usable without an adapter, scripts, supporting files, global `CLAUDE.md`/`AGENTS.md`, or development reports. It writes a goal after human confirmation and does not execute that goal.
+
+## Tests
+
+Smoke tests are standalone Node scripts (no test framework, no package.json):
+
+```bash
+node scripts/run-smoke-suite.mjs
+```
+
+The launcher discovers every `*-smoke-test*.mjs` file dynamically, runs them serially, and reports each status and duration plus a final summary. Run the full suite after touching a skill's scripts or templates.
+
+Before every merge, the single project verification command `node scripts/run-smoke-suite.mjs` must have passed for the code being merged, and all code must have received a review from the other family (Claude reviews Codex code; Codex reviews Claude code). Reuse a successful suite result when the code is unchanged; documentation-only changes require a structural diff check, not another suite run. Do not merge while either requirement is unmet.
+
+## Release preparation
+
+Prepare a stable release in the current major series without changing files first:
+
+```bash
+node scripts/prepare-release.mjs 2.18.1 --dry-run
+```
+
+Review the displayed diff, then apply that exact five-file preparation explicitly with `--apply`.
+Run `node scripts/check-consistency.mjs`, commit the preparation, and merge it through the normal
+review flow. Only after that merge, create and push the matching tag and create the GitHub release:
+
+```bash
+git tag -a v2.18.1 -m "ShipGuard 2.18.1"
+git push origin v2.18.1
+gh release create v2.18.1 --title "ShipGuard 2.18.1" --notes-file RELEASE_NOTES.md
+```
+
+Tagging and release creation are manual publication steps; `prepare-release.mjs` never performs
+them, installs a plugin, or deploys anything. Build `RELEASE_NOTES.md` from the reviewed changelog
+entry before running the final command.
+
+## Plugin installation and updates
+
+Incident of 5 November 2026 at 14:17: installing ShipGuard 2.18.3 removed the 2.18.0
+Codex cache while sessions still used it, causing repeated `Hook failed` errors.
+For a Codex or Claude plugin update, use a coordinated window:
+
+1. List live sessions using the affected plugin cache with `herdr pane list`.
+2. Bring those sessions to rest and stop them temporarily, preserving their conversations.
+3. Install the plugin through the host's native installer.
+4. Resume every affected session.
+5. In a resumed session, verify that a plugin hook actually executes.
+
+Never link or copy files into the plugin cache. Do not purge plugin caches globally.
+
+To return an installed host to the previous version, clone the previous tag reported by the script
+into a persistent local directory, then replace the existing `shipguard` marketplace source with
+that checkout. For example, after adapting the tag, path, and existing install scope:
+
+```bash
+git clone --branch v2.18.0 --single-branch https://github.com/bacoco/ShipGuard.git /persistent/path/ShipGuard-v2.18.0
+
+claude plugin marketplace remove shipguard
+claude plugin marketplace add /persistent/path/ShipGuard-v2.18.0
+claude plugin install shipguard@shipguard
+claude plugin list
+
+codex plugin marketplace remove shipguard
+codex plugin marketplace add /persistent/path/ShipGuard-v2.18.0
+codex plugin add shipguard@shipguard
+codex plugin list
+```
+
+Run only the block for each host that is actually installed. Keep the tagged checkout while it is
+the registered source. Preserve the existing install scope and enabled state, review hooks again,
+and restart affected sessions; do not edit plugin cache files directly. Claude and Codex have
+separate marketplaces and caches.
+
+## Conventions and constraints
+
+- Results contract: skills read/write `visual-tests/_results/` (`audit-results.json` canonical, `audit-results.toon` compact, `logic-results.json`, `process-results.json`, change reports under `change-reports/`). Legacy `.code-audit-results/` is read as a fallback. Keep these paths and JSON shapes stable — skills consume each other's outputs (`--from-audit`, `--from-logic`, `--from-process`).
+- Version bumps go in `plugins/shipguard/.claude-plugin/plugin.json` (keep `.codex-plugin/plugin.json` and marketplace manifests consistent).
+- Visual flows require `agent-browser` (npm, global). Always close browsers after use.
+- Code-audit dispatch is host-specific: Claude Code uses Agent worktree isolation; Codex report-only uses native delegation and assigned linked worktrees only when the skill's host preflight confirms the required capabilities and authorization.
+- `--model=haiku` is deliberately refused for audits — do not relax this.
+- Per-project learned state lives in the target project's `.shipguard/` directory, not in this repo.
+- Keep the two marketplace manifests (`.claude-plugin/` and `.agents/plugins/`) in sync when plugin metadata changes.
+- `sg-mission-lock` is cross-skill governance. Its hook injects context for every configured host
+  lifecycle event while protection is on, independently of model or effort; it must not mutate or
+  block prompts. The hook may read the explicit persistent preference at
+  `~/.shipguard/mission-lock.json`; only the conversational skill's settings script writes it.
+  Task-only state stays in the active conversation.
+
+- Optional dialogue hooks are documented in `plugins/shipguard/docs/dialogue-hooks.md`. They are no-ops by default; keep them distinct from mission-lock. Unknown/unavailable never means verified; no tool arguments or raw results are rewritten.

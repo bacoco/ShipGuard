@@ -129,7 +129,7 @@ try {
     }
   }
   for (const event of ['UserPromptSubmit','PreToolUse','PostToolUse','Stop']) assert.ok(manifest.hooks[event].some(g => g.hooks.some(h => h.command.includes('/hooks/dialogue-check.mjs'))));
-  const repoGuidance = readFileSync(join(root, '../../..', 'CLAUDE.md'), 'utf8');
+  const repoGuidance = readFileSync(join(root, '../../..', 'AGENTS.md'), 'utf8');
   assert.match(repoGuidance, /Exception: `grill-goal` contains only `SKILL\.md`/);
   assert.match(repoGuidance, /It must remain usable without an adapter/);
   assert.deepEqual(readdirSync(join(root, '../skills/grill-goal')), ['SKILL.md']);

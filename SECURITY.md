@@ -30,7 +30,7 @@ learnings. Visual workflows also inspect browser pages and capture screenshots.
   before committing or sharing them. Browser tooling can also write runtime
   files outside the workspace.
 
-Sources: [project conventions](CLAUDE.md),
+Sources: [project conventions](AGENTS.md),
 [recorder](plugins/shipguard/skills/sg-record/SKILL.md),
 [mission preference helper](plugins/shipguard/skills/sg-mission-lock/scripts/strict-mode.mjs),
 [mission hook](plugins/shipguard/skills/sg-mission-lock/scripts/inject-mission-lock.mjs),
