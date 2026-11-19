@@ -8,7 +8,7 @@ const PRIVATE_NAMES = new Set([
   'kubeconfig', 'keychain', 'keyring', 'keystores', 'secrets', 'credentials',
 ]);
 const PRIVATE_SUFFIX = /\.(?:pem|pub|key|p8|p12|pfx|jks|jwk|jwks|keystore|kdbx|ppk|der|crt|keytab|tfstate)(?:[.~]|$)/i;
-const PRIVATE_NAME = /(?:^|[._-])(?:secrets?|credentials?|passwd|passwords?|private[-_]?key|api[-_]?key|access[-_]?token|refresh[-_]?token|service[-_]?account[-_]?key)(?=[._-]|$)/i;
+const PRIVATE_NAME = /(?:^|[._-])(?:secrets?|credentials?|passwd|passwords?|private[-_]?key|api[-_]?key|(?:access|auth|refresh|github)[-_]?tokens?|service[-_]?account(?:[-_]?key)?)(?=[._-]|$)/i;
 const TOKEN_DATA = /^(?:.*[._-])?tokens?(?:\.(?:json|ya?ml|toml|txt|ini|csv)|$)/i;
 const GENERATED = new Set([
   'node_modules', 'bower_components', 'vendor', '.venv', 'venv', 'dist', 'build', 'target',

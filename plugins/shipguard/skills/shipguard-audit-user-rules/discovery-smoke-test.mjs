@@ -12,6 +12,7 @@ const dir = mkdtempSync(join(tmpdir(), 'sg-rules-scan-'));
 const root = join(dir, 'project');
 const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 const cli = (...args) => JSON.parse(execFileSync(process.execPath, [scan, ...args], { encoding: 'utf8' }));
+const privatePaths = ['ui/service-account-prod.json', 'ui/github-token-backup.json'];
 const app = `export function showButton(context) {
   if (context.archived) return null;
   return { disabled: context.pending };
@@ -37,6 +38,7 @@ try {
   writeFileSync(join(root, 'image.js'), Buffer.from([0xff, 0, 0x20]));
   writeFileSync(join(root, 'latin.js'), Buffer.from([0xff, 0x20]));
   writeFileSync(join(root, '.env.test'), 'harmless fixture marker');
+  for (const path of privatePaths) writeFileSync(join(root, path), '{"waiting":true}');
   symlinkSync(join(root, '.env.test'), join(root, 'link.js'));
   mkdirSync(join(root, 'inner'));
   execFileSync('git', ['-C', join(root, 'inner'), 'init', '-q']);
@@ -47,7 +49,7 @@ try {
   assert.equal(files.scope.type, 'all');
   assert.deepEqual(files.coverage.scanned, ['ui/main.js', 'ui/other.js']);
   assert.deepEqual(files.coverage.nested_projects, ['inner']);
-  assert.equal(files.coverage.excluded.possibly_sensitive, 1);
+  assert.equal(files.coverage.excluded.possibly_sensitive, 1 + privatePaths.length);
   assert.equal(files.coverage.excluded.symlink, 1);
   assert(files.coverage.unexamined.some(e => e.path === 'image.js' && e.reason === 'binary'));
   assert(files.coverage.unexamined.some(e => e.path === 'latin.js' && e.reason === 'unsupported_encoding'));
@@ -89,11 +91,12 @@ try {
   assert.deepEqual(inventory.candidates, []);
   assert(inventory.inventory.includes('ui/new.ts'));
   assert(!inventory.inventory.includes('link.js'));
+  assert(privatePaths.every(path => !inventory.inventory.includes(path)));
   const limited = JSON.parse(execFileSync(process.execPath, [scan, root, '--diff=HEAD', '--paths-stdin'], {
-    input: JSON.stringify(['ui/new.ts', '../elsewhere.js', '.env.test']), encoding: 'utf8',
+    input: JSON.stringify(['ui/new.ts', '../elsewhere.js', '.env.test', ...privatePaths]), encoding: 'utf8',
   }));
   assert.deepEqual(limited.coverage.scanned, ['ui/new.ts']);
-  assert.equal(limited.coverage.unmatched_reviewed_paths, 2);
+  assert.equal(limited.coverage.unmatched_reviewed_paths, 2 + privatePaths.length);
   assert(limited.coverage.unexamined.some(p => p.path === 'ui/main.js' && p.reason === 'not_selected'));
   assert(limited.candidates.every(p => p.path === 'ui/new.ts'));
   assert.deepEqual((await scanProject(root, { paths: [] })).coverage.scanned, []);
@@ -124,6 +127,7 @@ try {
   assert.equal(JSON.parse(historyCli('ui/*', 'return confirm(').stdout).status, 'not_tracked_at_revision');
   assert.match(historyCli('ui/main.js', ' ').stderr, /non-empty/);
   assert.notEqual(historyCli('private/id_rsa', 'phrase').status, 0);
+  for (const path of privatePaths) assert.match(historyCli(path, 'waiting').stderr, /excludes private files/);
   assert.notEqual(historyCli('link.js', 'phrase').status, 0);
   assert.notEqual(historyCli('../ui/main.js', 'phrase').status, 0);
   assert.notEqual(historyCli('.', 'phrase').status, 0);

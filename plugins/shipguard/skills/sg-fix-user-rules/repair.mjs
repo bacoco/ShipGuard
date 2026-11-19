@@ -122,16 +122,7 @@ function snapshotEdit(text, edit) {
     nearRight: [nearRight.length, digest(nearRight), uniqueContext(text, nearRight)] } };
 }
 
-function applyAnchored(text, edit, anchor) {
-  const hash = digest(text);
-  if (hash === anchor.done) return text;
-  if (hash === anchor.prior) {
-    return text.slice(0, anchor.start) + edit.after + text.slice(anchor.start + edit.before.length);
-  }
-
-  // An edit elsewhere may shift our location. Anchor it to the unchanged prefix
-  // or suffix and check BOTH immediate boundaries. Never search for an isolated
-  // old/new string in a new owner or treat a missing deletion as a success.
+function candidateLocations(text, edit, anchor) {
   const matches = [];
   for (const [kind, needle] of [['before', edit.before], ['after', edit.after]]) {
     const positions = new Set([anchor.start, text.length - anchor.tail - needle.length]);
@@ -152,16 +143,65 @@ function applyAnchored(text, edit, anchor) {
       }
     }
   }
+  return matches;
+}
+
+function matchesReviewedSource(text, pos, edit, anchor) {
+  const length = anchor.start + edit.before.length + anchor.tail;
+  // Keep trailing additions on separate lines outside the complete reviewed source.
+  return pos === anchor.start && text.length >= length
+    && (text.length === length || text[length - 1] === '\n' || /^\r?\n/.test(text.slice(length)))
+    && digest(text.slice(0, length)) === anchor.prior;
+}
+
+function provesLocation(text, edit, anchor, { kind, pos }, siblings) {
+  const targetLength = kind === 'after' ? edit.after.length : edit.before.length;
+  const restored = kind === 'after' ? text.slice(0, pos) + edit.before + text.slice(pos + targetLength) : text;
+  if (matchesReviewedSource(restored, pos, edit, anchor)) return true;
+
+  // Nearby lines locate candidates only. Prove the original placement by
+  // undoing other exact edits from this same preview in memory before hashing.
+  const replacements = [];
+  if (kind === 'after') replacements.push({ pos, length: targetLength, before: edit.before });
+  const end = pos + targetLength;
+  let originalPos = pos;
+  for (const { edit: sibling, anchor: siblingAnchor } of siblings) {
+    const locations = candidateLocations(text, sibling, siblingAnchor);
+    if (locations.length !== 1 || locations[0].kind !== 'after') continue;
+    const start = locations[0].pos;
+    const length = sibling.after.length;
+    if (start === pos || (start < end && start + length > pos)) return false;
+    if (start < pos) originalPos += sibling.before.length - length;
+    replacements.push({ pos: start, length, before: sibling.before });
+  }
+  let source = text;
+  let next = text.length + 1;
+  for (const change of replacements.sort((a, b) => b.pos - a.pos)) {
+    if (change.pos + change.length > next || change.pos === next) return false;
+    source = source.slice(0, change.pos) + change.before + source.slice(change.pos + change.length);
+    next = change.pos;
+  }
+  return matchesReviewedSource(source, originalPos, edit, anchor);
+}
+
+function applyAnchored(text, edit, anchor, siblings) {
+  const hash = digest(text);
+  if (hash === anchor.done) return text;
+  if (hash === anchor.prior) {
+    return text.slice(0, anchor.start) + edit.after + text.slice(anchor.start + edit.before.length);
+  }
+  const matches = candidateLocations(text, edit, anchor)
+    .filter(match => provesLocation(text, edit, anchor, match, siblings));
   if (matches.length !== 1) throw new Error('Reviewed location changed or is ambiguous: ' + edit.path);
   const [{ kind, pos }] = matches;
   return kind === 'after' ? text : text.slice(0, pos) + edit.after + text.slice(pos + edit.before.length);
 }
 
-function prepareRule(root, edits, reviewed) {
+function prepareRule(root, rule, reviewed, reviewedByPath) {
   if (reviewed?.error) throw new Error(reviewed.error);
   const files = new Map();
   const anchors = [];
-  for (const [i, edit] of edits.entries()) {
+  for (const [i, edit] of rule.edits.entries()) {
     const path = safeRelative(root, edit.path);
     if (!files.has(path)) {
       const { text, mode } = regularFile(root, path);
@@ -173,11 +213,26 @@ function prepareRule(root, edits, reviewed) {
       anchors.push(result.anchor);
       file.updated = result.updated;
     } else if (digest(file.original) !== reviewed.final[path]) {
-      file.updated = applyAnchored(file.updated, edit, reviewed.anchors[i]);
+      const siblings = reviewedByPath.get(path).filter(entry => entry.rule !== rule || entry.index > i);
+      file.updated = applyAnchored(file.updated, edit, reviewed.anchors[i], siblings);
     }
   }
   const final = Object.fromEntries([...files].map(([key, file]) => [key, digest(file.updated)]));
   return { snapshot: { anchors, final }, changes: [...files.values()].filter(file => file.original !== file.updated) };
+}
+
+function indexReviewedEdits(root, rules, evidence) {
+  const byPath = new Map();
+  for (const rule of rules) {
+    const anchors = evidence[rule.id]?.anchors;
+    if (!anchors) continue;
+    for (const [index, edit] of rule.edits.entries()) {
+      const path = relative(root, resolve(root, edit.path));
+      if (!byPath.has(path)) byPath.set(path, []);
+      byPath.get(path).push({ rule, index, edit, anchor: anchors[index] });
+    }
+  }
+  return byPath;
 }
 
 function receiptPath(filename, review) {
@@ -235,11 +290,11 @@ function writeVersion(identity, file, expected, replacement) {
   }
 }
 
-function applyRule(identity, rule, reviewed) {
+function applyRule(identity, rule, reviewed, reviewedByPath) {
   const [root] = identity;
   const written = [];
   try {
-    const { changes } = prepareRule(root, rule.edits, reviewed);
+    const { changes } = prepareRule(root, rule, reviewed, reviewedByPath);
     for (const file of changes) {
       writeVersion(identity, file, file.original, file.updated);
       written.push(file);
@@ -325,7 +380,7 @@ export function repair(args) {
     const evidence = Object.create(null);
     const proposals = rules.map(rule => {
       try {
-        evidence[rule.id] = prepareRule(root, rule.edits).snapshot;
+        evidence[rule.id] = prepareRule(root, rule).snapshot;
         return { ...rule, applicability: 'ready' };
       } catch (error) {
         evidence[rule.id] = { error: error.message };
@@ -341,9 +396,10 @@ export function repair(args) {
   const selected = options.apply === 'all' ? rules.map(rule => rule.id) : [...new Set(options.apply.split(',').map(id => id.trim()))];
   const byId = new Map(rules.map(rule => [rule.id, rule]));
   for (const id of selected) if (!byId.has(id)) throw new Error('Unknown rule ID: ' + id);
+  const reviewedByPath = indexReviewedEdits(root, rules, snapshot.evidence);
   return withProjectLock(identity, () => ({
     mode: 'apply', project: root, review,
-    results: selected.map(id => applyRule(identity, byId.get(id), snapshot.evidence[id])),
+    results: selected.map(id => applyRule(identity, byId.get(id), snapshot.evidence[id], reviewedByPath)),
   }));
 }
 

@@ -169,6 +169,33 @@ try {
     assert.equal(JSON.parse(apply('R02', owned.review).stdout).results[0].status, 'unapplied');
     assert.equal(readFileSync(target, 'utf8'), changed);
   }
+
+  // Matching lines inside a multiline function do not establish its owner.
+  const multilineOwner = [
+    'function alice() {',
+    '  if (isReady()) {',
+    '    return noteLimit();',
+    '  }',
+    '  return fallback();',
+    '}',
+    '',
+  ].join('\n');
+  writeFileSync(target, multilineOwner);
+  replace('return noteLimit();', 'return allNotes();');
+  const multilineReview = success(repair());
+  const differentOwner = multilineOwner.replace('function alice()', 'function bob()');
+  writeFileSync(target, differentOwner);
+  const moved = apply('R02', multilineReview.review);
+  assert.equal(moved.status, 1);
+  assert.equal(JSON.parse(moved.stdout).results[0].status, 'unapplied');
+  assert.equal(readFileSync(target, 'utf8'), differentOwner);
+
+  // Restoring the approved owner lets the same decision proceed.
+  writeFileSync(target, multilineOwner + '// Later unrelated comment.\n');
+  assert.equal(success(apply('R02', multilineReview.review)).results[0].status, 'applied');
+  assert.equal(readFileSync(target, 'utf8'), multilineOwner.replace('return noteLimit();', 'return allNotes();')
+    + '// Later unrelated comment.\n');
+
   // The old excerpt occurs inside the desired text. A replay must not insert twice.
   writeFileSync(target, owners);
   replace('return noteLimit();', 'audit(); return noteLimit();');
