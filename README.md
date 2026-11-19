@@ -86,7 +86,7 @@ Each path reports the evidence it obtained and what remains unverified. You can 
 
 ### Reviewing the choices a program makes
 
-Run a full review when adopting ShipGuard and repeat it at the project’s existing review interval. Between full reviews, `sg-ship` examines changes that affect what a person can do or see. In a project using ShipGuard, include the priority above in the project’s README and agent guidance when setting up or updating that guidance.
+Run a full review when adopting ShipGuard and repeat it at the project’s existing review interval. Compare the reports to show which rules were added, removed or corrected. Between full reviews, `sg-ship` examines changes that affect what a person can do or see. In a project using ShipGuard, include the priority above in the project’s README and agent guidance when setting up or updating that guidance.
 
 The read-only audit delivers `rapport-regles.md` in a new temporary directory outside the project. Each finding identifies the action, its destination, the source line, the rule’s origin when traceable, the concrete risk and a proposed alternative. For example, unchecking a test can inadvertently erase its notes. A proposed correction would keep the notes when the person unchecks and rechecks the test. Select the proposed corrections you want. The repair skill exercises both the reported case and the ordinary case and tells you what it observed.
 

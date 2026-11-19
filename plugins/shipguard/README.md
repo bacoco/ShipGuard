@@ -27,7 +27,7 @@ tier-gated safe fixes in Claude Code; Codex `--fix` is not supported.
 
 Ask **“Quelles règles empêchent une personne autorisée de terminer son action ?”** to run the [read-only audit](skills/shipguard-audit-user-rules/SKILL.md). It writes `rapport-regles.md` outside the project. A finding can record, for example, that unchecking a test discards a note the person had entered. Ask **“Corrige R01 et R04”** to [apply those proposals and check the outcome](skills/sg-fix-user-rules/SKILL.md). The same selection works from an existing review when the identified proposals are clear.
 
-Include the priority above in the project’s README and agent instructions when adopting it. Repeat the full inventory at the project’s existing review interval. Routine change reviews cover the affected actions.
+Include the priority above in the project’s README and agent instructions when adopting it. Repeat the full inventory at the project’s existing review interval and tell the decision-maker which rules were added, removed or corrected. Routine change reviews cover the affected actions.
 
 ## Plugin package references
 
