@@ -606,6 +606,13 @@ Inspired by [eval-robuste](https://github.com/Alexmacapple/alex-claude-skill/tre
 
 ---
 
+## Engineering studies
+
+- [Accidental complexity and repeated reviews](docs/specs/2026-11-19-review-effort-220.md) records what the current controls establish and where historical evidence is missing.
+- [UI quality checks](https://github.com/bacoco/ShipGuard/issues/221#issuecomment-7022406305) reports what the existing browser recipes detected across ten local variants.
+- [Code discoverability](https://github.com/bacoco/ShipGuard/issues/222#issuecomment-7022373434) traces a real search from a ticket to the contract, consumer and test.
+- [Deferred proposals](https://github.com/bacoco/ShipGuard/issues/150) are collected for possible review in 2027.
+
 ## Compatibility
 
 Built for **Claude Code**. Partial support for other AI CLIs:
