@@ -5,6 +5,8 @@ description: "Use when a user asks in ordinary language whether a change is read
 
 # sg-ship — Conversational ShipGuard orchestration
 
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Pass them on when another agent reviews a correction in the target project.
+
 `sg-ship` is the orchestrator. The user speaks normally; never require them to know a slash command,
 skill name, flag, lane, or result filename. Infer the request, propose one concrete scope and lane plan,
 ask one combined question only when needed, then open a single review for the user to decide.
@@ -19,6 +21,8 @@ analysis logic**. Each lane governs its own behavior; `sg-ship` resolves the sco
 through every lane so they all inspect the same change, and consolidates the result. Logic Audit is
 an integral lane: always perform bounded candidate detection and run the semantic trace when a
 workflow, state machine, retry, transaction, authorization path, or non-trivial algorithm is in scope.
+For changes affecting what a person can do, supply the same scope to the read-only
+[user-rule audit](../shipguard-audit-user-rules/SKILL.md). Check the authorized action at its actual destination.
 
 > **Model guidance:** a fast, capable general-purpose model is enough to drive the orchestration; each sub-skill picks its own model (e.g. `sg-process-check` leans on the strongest available reasoning model for `reason` mode).
 
@@ -58,6 +62,10 @@ ordinary-language authorization into the internal audit fix control.
    entry points, and algorithms with conservation, boundary, termination, or complexity properties.
    Always do this bounded detection; the user does not opt into it.
 
+   Follow the diff through its callers to identify affected user actions, including commands,
+   retries and background work whose result is visible to a person. Include their user-rule review
+   in the same plan regardless of whether there is a screen or a Logic Audit candidate.
+
    Classify Logic Audit before asking about scope:
 
    - **applicable**: name the candidate in the proposed plan and include the lane;
@@ -92,6 +100,10 @@ declared result exists and can be read. A lane that fails becomes `error`; never
 run with `pending` or `running`. Write each transition atomically so an interruption cannot turn
 planned work into a false execution receipt. The dashboard renders every state as a lane chip and
 shows the declared reason in place of generic empty states.
+For a change affecting user actions, add `user_rules` as `pending` with reason
+`awaiting Phase 1 user-rule review`. Record any explicit user exclusion as `skipped` with the
+reason. Changes unrelated to user actions require no additional lane.
+
 3. **Freshness check (audit reuse).** The audit is the most expensive lane. If `visual-tests/_results/audit-results.json` already exists and is **newer than the last commit touching the scoped files**, offer to reuse it instead of re-running Phase 1. Never reuse silently — say what is being reused and why it is still fresh.
 4. **Ask at most one scope question.** Present the concrete scope and planned checks in plain
    language, including any Logic Audit candidate or reason it does not apply. Example:
@@ -140,6 +152,27 @@ offered in Phase 0 remains a separate, announced choice.
 If the audit finds nothing impacted, note it and still run the diff-scoped process-check (a clean audit doesn't mean the behavior didn't change).
 
 ---
+
+### Review the affected user actions
+
+When the scoped change affects an action through a screen, CLI, API or background job, invoke
+[`shipguard-audit-user-rules`](../shipguard-audit-user-rules/SKILL.md) on the affected journeys
+and their tests. Pass the scope and revision agreed in Phase 0, including any selected local
+changes. If the committed revision alone is in scope and local files differ, inspect the
+committed sources for those paths. Reuse evidence from the static audit and the subsequent
+logic, process or visual checks for the same action and target.
+
+For each restriction, identify the damage it prevents and how the authorized person completes
+the action. Compare the reported and ordinary cases. State what was observed and which case
+still needs verification. A green test, a hidden button or an early return cannot establish
+delivery of the intended result. Signal a proposed new block and its effect for the requester
+to decide. A recommendation from a reviewer or simulated persona stays a proposal.
+
+Set `user_rules` to `running` before the review. Record `ran` only once the scoped
+`rapport-regles.md` can be read in the temporary review directory. If the review fails,
+record `error` and its reason and continue with the other applicable work. Link the
+external report in the final response. Keep per-case gaps visible there even when the
+review ran successfully.
 
 ## Phase 1.5 — Logic audit (semantic contract check)
 
@@ -226,6 +259,7 @@ its results to `visual-tests/_results/`, so the review works without a browser r
 Print one summary across all applicable lanes:
 - **Static:** bugs by severity (from `visual-tests/_results/audit-results.json`)
 - **Logic:** confirmed violations / risks / contract conflicts / uncovered, `not applicable — reason`, or `skipped — user exclusion` (from `logic-results.json`)
+- **User actions** (when applicable): list the proposal IDs, intended targets, observed outcomes for the reported and ordinary cases, and remaining verification. Link the temporary user-rule report in the summary.
 - **Behavior:** units changed / new errors / surprises, reasoned-vs-measured mix (from `visual-tests/_results/process-results.json`)
 - **Visual:** pass/fail on impacted routes (or "skipped — reason")
 - **Findings:** total from `visual-tests/_results/findings.json` with the evidence mix (measured/reasoned/manual) — the dashboard's Findings tab is the entry point
@@ -236,6 +270,11 @@ Print one summary across all applicable lanes:
 `sg-ship` itself **never fixes and never decides** — it sequences the find/check/simulate/confirm lanes and hands the human one place to judge. (Under `--fix`, the fixes are the audit lane's, applied under that lane's own rules; `sg-ship` still only sequences.)
 
 ---
+
+When the user selects user-rule proposals from this summary, hand the existing report, the
+identified proposals and their accepted selection to [`sg-fix-user-rules`](../sg-fix-user-rules/SKILL.md).
+Use the same selection if the person has already accepted it. This follow-up has its own
+implementation and verification steps.
 
 ## Graceful degradation (stay lean)
 

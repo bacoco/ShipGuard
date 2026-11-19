@@ -5,6 +5,8 @@ description: "Audit a workflow, state machine, retry policy, transaction, or non
 
 # /sg-logic-audit — Check logic against its obligations
 
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Apply them when tracing a correction through its normal entry point.
+
 Audit whether a procedure or algorithm satisfies what it must guarantee. Follow the whole property
 across files and services, search for counterexamples, and separate measured facts from reasoned
 claims. Report only; never edit source.
@@ -187,6 +189,11 @@ schema in `references/output-schema.md`. Include:
 Print the highest-severity confirmed violation first, followed by contract conflicts and uncovered
 critical paths. A clean result means only that the checked obligations had no counterexample in the
 bounded analysis; it is not a proof of correctness.
+
+When a finding prevents a person from completing an authorized action, keep its identifier and
+describe the effect of a proposed correction. If the user accepts a proposal, pass the relevant
+`logic-results.json` entries and their selection to [`sg-fix-user-rules`](../sg-fix-user-rules/SKILL.md).
+Reuse an unambiguous acceptance. Logic Audit itself stays read-only.
 
 ## Safety and closure
 

@@ -5,6 +5,8 @@ description: "Review a proposed change before coding: find reusable interfaces, 
 
 # /sg-pre-review — Evidence before a development decision
 
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Apply them to the proposed verification for each correction.
+
 Analyze the concrete request in the user message, not this skill description. Determine whether
 the current path meets that request and identify the smallest justified change. Invoke explicitly. Accept the request or confirmed goal, repository and optional
 `--focus=<path>` within that repository and an explicitly supplied `--goal=<file>`. Preserve scope, exclusions and explicit decisions;
@@ -33,6 +35,11 @@ conversationally; do not convert or overwrite one silently to make the runner ac
 
 1. **Need.** Copy the concrete outcome from the user message and its exact destination/client.
    Keep this unchanged; do not substitute the general purpose of this skill.
+   For a correction, establish the authorized action, target, reported case, ordinary case and expected
+   result before proposing code or a test. If a restriction is proposed, name the damage it would prevent,
+   its concrete effect on an authorized person, and the request or permission that covers it. Trace how
+   both valid cases reach the intended result. A proposed new block requires the requester’s agreement
+   after its effect is explained. Report an inferred need or a simulated persona’s opinion as a hypothesis.
 2. **Find.** Keep two search lists: interfaces/contracts/exports/configuration, and
    usages/callers/tests/examples/decisions. Use native search and read contracts as text. Start from the destination
    named in the request and find the function that produces it. Read its body, not only its name.
@@ -87,6 +94,8 @@ Use [references/report.md](references/report.md). For each request, provide the 
 comparison and decision, not instructions to perform them later. Then summarize the smallest next
 action and coverage limits. Compare a plan and its tasks only if a named plan was supplied.
 Stop at the recommendation; do not implement it or add automatic controls.
+Once the requester selects specific rule corrections, hand the identified outcomes and evidence to
+[`sg-fix-user-rules`](../sg-fix-user-rules/SKILL.md) with that selection.
 
 ## Optional dashboard delivery
 

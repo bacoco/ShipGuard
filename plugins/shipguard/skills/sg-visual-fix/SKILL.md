@@ -7,6 +7,8 @@ argument-hint: "[path to fix manifest JSON, or 'latest' for visual-tests/_result
 
 # /sg-visual-fix — Fix Annotated Screenshots
 
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Use the person’s request to identify the authorized action and target. A generated `improve_ui` flag from a bare selection supplies no approval for a new restriction.
+
 Take human-annotated screenshots from `/sg-visual-review`, analyze the marked problems, fix the code, and produce before/after evidence.
 
 > **Recommended model: Sonnet 4.6 for minor fixes (CSS tweaks, copy changes, small layout nits).** Switch to Opus 4.7 if the annotations point to a full component redesign or cross-file logic change. Use `/model sonnet` or `/model opus` accordingly.
