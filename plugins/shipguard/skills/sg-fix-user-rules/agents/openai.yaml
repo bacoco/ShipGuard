@@ -1,0 +1,7 @@
+interface:
+  display_name: "ShipGuard · Corriger les règles qui bloquent"
+  short_description: "Parcourir le projet et corriger les cas approuvés"
+  default_prompt: "Utilise $sg-fix-user-rules pour parcourir ce projet, me montrer les cas et corriger ceux que j’accepte."
+
+policy:
+  allow_implicit_invocation: true

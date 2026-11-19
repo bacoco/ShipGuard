@@ -71,7 +71,7 @@ for (const skillDirectory of skillDirectories) {
 }
 
 const canonicalSkillCount = skillDirectories.length - deprecatedAliasCount;
-for (const relativePath of ['CLAUDE.md', 'docs/architecture.md']) {
+for (const relativePath of ['AGENTS.md', 'docs/architecture.md']) {
   const contents = read(relativePath);
   const match = contents.match(
     /(\d+) canonical skills? (?:\+ (\d+)|plus (one|\d+)) deprecated alias(?:es)?/,

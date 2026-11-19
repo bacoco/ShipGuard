@@ -6,7 +6,7 @@ Code audit narrows the field. Logic Audit checks declared contracts and invarian
 
 ## Skills Overview
 
-ShipGuard is composed of 19 canonical skills plus one deprecated alias: a cross-skill mission guard, independent verification lanes, self-improvement, macro recording, durable change reports, and a bounded reference-comparison prompt. `sg-ship` orchestrates the applicable verification lanes end to end.
+ShipGuard is composed of 21 canonical skills plus one deprecated alias: a cross-skill mission guard, independent verification lanes, self-improvement, macro recording, durable change reports, and a bounded reference-comparison prompt. `sg-ship` orchestrates the applicable verification lanes end to end.
 
 | Skill | Purpose | Input | Output |
 |-------|---------|-------|--------|
@@ -30,6 +30,8 @@ ShipGuard is composed of 19 canonical skills plus one deprecated alias: a cross-
 | `sg-record` | Record browser interactions as replayable YAML test manifests | User browser session | `visual-tests/manifests/recorded-*.yaml` |
 | `sg-improve` | Analyze audit false positives/negatives, refine checklists and prompts | `audit-results.json` + user feedback | Updated `learnings.yaml` + checklist patches |
 | `sg-scout` | Research emerging bug patterns and techniques from external sources | Research query | `techniques-library.md` updates |
+| `shipguard-audit-user-rules` | Trace decisions that constrain a person, then report their origin and observable consequences | Project, or the actions affected by a change | Temporary `rapport-regles.md` outside the audited project |
+| `sg-fix-user-rules` | Present actionable proposals and implement the selection the user accepts | Project, existing audit or explicit selection | Selected corrections and observed outcomes for the reported and ordinary cases |
 
 ### Mission-lock boundary
 
@@ -110,9 +112,10 @@ The orchestrator. It runs ShipGuard's applicable verification lanes in order and
 - **Resolves scope once, conversationally.** It inspects the diff, proposes the scope and applicable checks in plain language, and folds any ambiguity about a procedure or contract into that single question.
 - **Detects semantic work automatically.** Bounded candidate discovery runs without user flags; applicable procedures/algorithms are traced, while an empty candidate set is recorded as `not-applicable`.
 - **Sequences via existing internal bridges.** `sg-code-audit` → `sg-logic-audit` when applicable → `sg-process-check` → `sg-visual-run` → `sg-visual-review`. The handoff is the result files each lane already writes; `sg-ship` adds no schema or analysis.
+- **Reviews user-facing decisions.** For every change that affects an authorized action, invoke the user-rule audit on the affected journeys. Record its status in `run.json` and present its external report with the other results. An explicit selection of fixes is handed to `sg-fix-user-rules`.
 - **Order matters.** Audit runs first because it produces `impacted_backend[]` / `impacted_ui_routes[]`, which the process and visual lanes consume.
 - **Degrades gracefully.** Lanes with nothing to do are skipped and logged (no backend → process-check reasons on functions only; no UI / no agent-browser / `--no-visual` → visual skipped). A failing lane doesn't abort the others.
-- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; fixing stays with `sg-visual-fix` / `sg-code-audit`. Natural-language exclusions are respected and recorded. Internal flags and bridges remain implementation details for compatibility and automation.
+- **Decides nothing.** It consolidates a cross-lane summary and hands the human the dashboard; accepted fixes go to `sg-fix-user-rules`, `sg-visual-fix` or `sg-code-audit` as applicable. Natural-language exclusions are respected and recorded. Internal flags and bridges remain implementation details for compatibility and automation.
 
 ---
 

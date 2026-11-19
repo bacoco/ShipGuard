@@ -35,7 +35,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, appendFileSync, copyFileSync, realpathSync, lstatSync, mkdtempSync, renameSync, rmSync, chmodSync } from 'fs';
 import { join, dirname, relative, sep, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { spawn, execFileSync } from 'child_process';
+import { spawn, spawnSync, execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { inflateSync } from 'zlib';
 import net from 'net';
@@ -932,6 +932,7 @@ Subcommands:
                              (mechanical steps), checks, artifacts, dashboard
   review  [--serve] [--port=N]  Build (and optionally serve) the review dashboard
   status                     Show app/review server state
+  rules scan|history|report|preview|apply  Review user-facing decisions and apply accepted changes (rules --help)
 
 exit codes — each one is an instruction, not a severity:
   0  clean            nothing to look at: every declared lane ran and found nothing
@@ -948,7 +949,62 @@ exit codes — each one is an instruction, not a severity:
   precedence when several apply: 2 > 3 > 1 > 0. Incomplete is never clean.
 `;
 
+const RULES_HELP = `Usage: shipguard.mjs rules <command> [arguments]
+  scan [PROJECT] [--diff=BASE]           List source leads and coverage; the reviewer determines their meaning
+         --inventory                    List names only, without reading their contents
+         --paths-stdin                  Inspect only approved paths supplied as a JSON array on stdin
+  history PROJECT FILE [--revision=REV]  Find the oldest Git match for the reviewed excerpt supplied on stdin
+  report REVIEW.json                    Write rapport-regles.md in a temporary directory outside the project
+  preview PLAN.json [--project=DIR]     Show proposed effects and save a private review record beside the external plan
+  apply PLAN.json --apply=ID[,ID...] --review=DIGEST [--project=DIR]
+                                        Apply the accepted IDs (or --apply=all for the reviewed list)
+  --plugin-root=PATH                    Installed plugin folder, when using a standalone copy of this CLI
+A zero exit status means the requested rules operation completed. After applying edits, check the actual user journey.`;
+
+function cmdRules(argv) {
+  if (!argv.length || argv.includes('--help')) {
+    console.log(RULES_HELP);
+    return EXIT.CLEAN;
+  }
+  const rootOption = argv.find(value => value.startsWith('--plugin-root='));
+  if (argv.includes('--plugin-root') || rootOption === '--plugin-root=') {
+    console.error('rules: --plugin-root needs a directory');
+    return EXIT.CONFIG;
+  }
+  const [command, ...args] = argv.filter(value => value !== rootOption);
+  const helpers = new Map([
+    ['scan', 'shipguard-audit-user-rules/scan.mjs'],
+    ['history', 'shipguard-audit-user-rules/history.mjs'],
+    ['report', 'shipguard-audit-user-rules/report.mjs'],
+    ['preview', 'sg-fix-user-rules/repair.mjs'],
+    ['apply', 'sg-fix-user-rules/repair.mjs'],
+  ]);
+  if (!helpers.has(command)) {
+    console.error(RULES_HELP);
+    return EXIT.CONFIG;
+  }
+  const selection = args.some(value => value.startsWith('--apply='));
+  if ((command === 'preview' && selection) || (command === 'apply' && !selection)) {
+    console.error('rules: use preview for reading, or apply with --apply=ID,... and the review digest');
+    return EXIT.CONFIG;
+  }
+  const installed = rootOption ? rootOption.slice('--plugin-root='.length) : process.env.SHIPGUARD_PLUGIN_ROOT;
+  const root = installed ? resolve(installed) : resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const script = join(root, 'skills', helpers.get(command));
+  if (!existsSync(script)) {
+    console.error('rules: helper unavailable; pass --plugin-root=PATH pointing to the installed ShipGuard plugin');
+    return EXIT.INFRA;
+  }
+  const child = spawnSync(process.execPath, [script, ...args], { stdio: 'inherit' });
+  if (child.error || child.signal) {
+    console.error('rules: ' + (child.error?.message || child.signal));
+    return EXIT.INFRA;
+  }
+  return child.status ?? EXIT.INFRA;
+}
+
 export function main(argv) {
+  if (argv[0] === 'rules') return cmdRules(argv.slice(1));
   const args = parseArgs(argv);
   const cmd = args._[0];
   if (!cmd || args.flags.help || cmd === 'help' || cmd === '--help') {
