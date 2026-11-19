@@ -12,7 +12,11 @@ const dir = mkdtempSync(join(tmpdir(), 'sg-rules-scan-'));
 const root = join(dir, 'project');
 const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 const cli = (...args) => JSON.parse(execFileSync(process.execPath, [scan, ...args], { encoding: 'utf8' }));
-const privatePaths = ['ui/service-account-prod.json', 'ui/github-token-backup.json'];
+const privatePaths = [
+  'ui/service-account-prod.json', 'ui/github-token-backup.json', '.htpasswd', '.pgpass',
+  '.my.cnf', '.dockercfg', '.s3cfg', '.boto', '.terraformrc', 'ui/production.tfvars',
+  'ui/production.auto.tfvars.json',
+];
 const app = `export function showButton(context) {
   if (context.archived) return null;
   return { disabled: context.pending };

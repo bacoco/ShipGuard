@@ -6,8 +6,9 @@ const PRIVATE_NAMES = new Set([
   'wallet.dat', 'keystore.properties', 'vault.yml', 'vault.yaml', 'vault.json', 'auth.json', 'authorized_keys', 'known_hosts',
   'login.yaml', 'login.yml', 'login.json', 'service-account.json', 'service_account.json',
   'kubeconfig', 'keychain', 'keyring', 'keystores', 'secrets', 'credentials',
+  '.htpasswd', '.pgpass', '.my.cnf', '.dockercfg', '.s3cfg', '.boto', '.terraformrc',
 ]);
-const PRIVATE_SUFFIX = /\.(?:pem|pub|key|p8|p12|pfx|jks|jwk|jwks|keystore|kdbx|ppk|der|crt|keytab|tfstate)(?:[.~]|$)/i;
+const PRIVATE_SUFFIX = /\.(?:pem|pub|key|p8|p12|pfx|jks|jwk|jwks|keystore|kdbx|ppk|der|crt|keytab|tfstate|tfvars)(?:[.~]|$)/i;
 const PRIVATE_NAME = /(?:^|[._-])(?:secrets?|credentials?|passwd|passwords?|private[-_]?key|api[-_]?key|(?:access|auth|refresh|github)[-_]?tokens?|service[-_]?account(?:[-_]?key)?)(?=[._-]|$)/i;
 const TOKEN_DATA = /^(?:.*[._-])?tokens?(?:\.(?:json|ya?ml|toml|txt|ini|csv)|$)/i;
 const GENERATED = new Set([
