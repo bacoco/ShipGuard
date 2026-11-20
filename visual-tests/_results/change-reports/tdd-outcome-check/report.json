@@ -1,0 +1,40 @@
+{
+  "id": "tdd-outcome-check",
+  "title": "Allow TDD with the before-push behavior check",
+  "summary": "Define the intended result and constraints before writing code or the first test. TDD is allowed. Before pushing, verify the actual outcome and that a skipped action would fail the test.",
+  "route": "Packaged hook in an external project and README.md",
+  "status": "ready-for-review",
+  "audiences": [
+    "engineering"
+  ],
+  "changes": [
+    {
+      "id": "tdd-policy",
+      "title": "Allow TDD and retain review of observable results",
+      "problem": "The packaged instruction banned TDD and required implementing before adding tests.",
+      "decision": "Allow TDD after defining the intended result and applicable constraints from the user request. Keep the before-push audit for any coding method.",
+      "impact": "The same external project receives the new coding instruction alongside the existing before-push and screenshot requirements. The README describes the same policy.",
+      "files": [
+        "AGENTS.md",
+        "README.md",
+        "plugins/shipguard/README.md",
+        "plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "plugins/shipguard/hooks/issue-evidence.mjs",
+        "plugins/shipguard/skills/sg-test-audit/SKILL.md"
+      ],
+      "tests": [
+        "The updated hook smoke test passes at 61608d8e8d4b850fa43014dcf02cb48394b856c4 and rejects the hook at b85ff0ad8b7fbb5f5b0ed29fffd1e20052484b06.",
+        "Both hook outputs retain the before-push check, all three sources of rules, and the screenshot instructions.",
+        "node scripts/run-smoke-suite.mjs — 43 passed, 0 failed at 61608d8e8d4b850fa43014dcf02cb48394b856c4. Claude approved the same diff with no material findings."
+      ],
+      "before": {
+        "src": "screenshots/before.png",
+        "caption": "Before at b85ff0ad8b7fbb5f5b0ed29fffd1e20052484b06, captured 2026-11-20T07:07:51+00:00. Actual UserPromptSubmit output in the same empty project fixture and the matching README paragraph, shown at 1440 × 1140 in agent-browser 0.39.1."
+      },
+      "after": {
+        "src": "screenshots/after.png",
+        "caption": "After at 61608d8e8d4b850fa43014dcf02cb48394b856c4, captured 2026-11-20T07:07:51+00:00. Actual UserPromptSubmit output in the same empty project fixture and the matching README paragraph, shown at 1440 × 1140 in agent-browser 0.39.1."
+      }
+    }
+  ]
+}
