@@ -1,0 +1,41 @@
+{
+  "id": "audit-origins",
+  "title": "Coding order and scope of the before-push audit",
+  "summary": "ShipGuard directs agents to implement the intended behavior before adding tests and to audit rules regardless of who first raised the problem.",
+  "route": "Packaged UserPromptSubmit hook in an external project",
+  "status": "ready-for-review",
+  "audiences": [
+    "engineering"
+  ],
+  "changes": [
+    {
+      "id": "coding-and-audit-instructions",
+      "title": "Verify the actual result and trace the source of rules",
+      "problem": "The hook mentioned an independent AI only and gave no instruction on test-driven coding.",
+      "decision": "Implement the requested behavior before adding regression tests. Before pushing, inspect rules prompted by the user, another AI, or the coding agent itself, including rules added without a new test.",
+      "impact": "The same project fixture receives the existing screenshot and before-push instructions plus the coding order and the broader audit scope.",
+      "files": [
+        "AGENTS.md",
+        "README.md",
+        "plugins/shipguard/README.md",
+        "plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "plugins/shipguard/hooks/issue-evidence.mjs",
+        "plugins/shipguard/skills/sg-test-audit/SKILL.md",
+        "plugins/shipguard/skills/sg-test-audit/agents/openai.yaml"
+      ],
+      "tests": [
+        "Updated hook smoke test passes at c4ede73d276e416a47c44fe7acf3afcfaecd138b and rejects baseline a2071130d308056eadad10c12ce37aac6c044d70.",
+        "Both revisions ran the packaged hook in the same empty project fixture. The captured results include the original screenshot instruction and the actual before-push context.",
+        "node scripts/run-smoke-suite.mjs — 43 passed, 0 failed at c4ede73d276e416a47c44fe7acf3afcfaecd138b. Claude approved the same diff with no material findings."
+      ],
+      "before": {
+        "src": "screenshots/before.png",
+        "caption": "Before at a2071130d308056eadad10c12ce37aac6c044d70, captured 2026-11-20T07:02:41+00:00. Actual UserPromptSubmit script output in the same empty project fixture, formatted at 1440 × 960 with agent-browser 0.39.1."
+      },
+      "after": {
+        "src": "screenshots/after.png",
+        "caption": "After at c4ede73d276e416a47c44fe7acf3afcfaecd138b, captured 2026-11-20T07:02:41+00:00. Actual UserPromptSubmit script output in the same empty project fixture, formatted at 1440 × 960 with agent-browser 0.39.1."
+      }
+    }
+  ]
+}
