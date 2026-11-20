@@ -17,9 +17,11 @@ try {
   writeFileSync(config, '{"defaultMode":"off"}');
   for (const event of new Set([...events, ...Object.keys(manifest.hooks)])) {
     const groups = manifest.hooks[event] ?? [];
-    const entries = groups.flatMap(group => group.hooks).filter(hook => hook.command === command);
-    assert.equal(entries.length, events.includes(event) ? 1 : 0, event);
-    if (!entries.length) continue;
+    const matchingGroups = groups.filter(group => group.hooks.some(hook => hook.command === command));
+    assert.equal(matchingGroups.length, events.includes(event) ? 1 : 0, event);
+    if (!matchingGroups.length) continue;
+    assert.equal(matchingGroups[0].hooks.length, 1, event);
+    assert.equal(matchingGroups[0].matcher, groups[0].matcher, event);
     const result = spawnSync(process.execPath, [hookPath], {
       cwd: project,
       input: JSON.stringify({ hook_event_name: event, cwd: project }),
