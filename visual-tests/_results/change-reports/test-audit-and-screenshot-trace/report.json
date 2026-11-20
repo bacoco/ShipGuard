@@ -2,7 +2,7 @@
   "id": "test-audit-and-screenshot-trace",
   "title": "Test audit and screenshot evidence",
   "summary": "Before-and-after evidence for the requested audit name and README correction, and the rule requiring screenshot evidence and traceability.",
-  "route": "README.md and GitHub Markdown templates",
+  "route": "README.md, GitHub templates and external project SessionStart",
   "status": "ready-for-review",
   "audiences": [
     "engineering"
@@ -34,15 +34,15 @@
       ],
       "tests": [
         "git show <revision>:README.md for both revisions",
-        "node scripts/run-smoke-suite.mjs — 42/42, see smoke-summary.json in this report"
+        "node scripts/run-smoke-suite.mjs"
       ],
       "before": {
         "src": "screenshots/audit-readme-before.png",
-        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:17:47+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:32:17+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       },
       "after": {
         "src": "screenshots/audit-readme-after.png",
-        "caption": "After at 90f99bdc2e21412e418674d7916e6eabe1fb0cc9, observed 2026-11-20T06:17:48+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "After at ebab287994b6e1828526da869ad46a634928f074, observed 2026-11-20T06:32:22+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       }
     },
     {
@@ -66,16 +66,43 @@
       ],
       "tests": [
         "git show <revision>:<template> for both revisions",
-        "node scripts/run-smoke-suite.mjs — 42/42, see smoke-summary.json in this report"
+        "node scripts/run-smoke-suite.mjs"
       ],
       "before": {
         "src": "screenshots/issue-pr-templates-before.png",
-        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:17:48+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:32:23+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       },
       "after": {
         "src": "screenshots/issue-pr-templates-after.png",
-        "caption": "After at 90f99bdc2e21412e418674d7916e6eabe1fb0cc9, observed 2026-11-20T06:17:49+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "After at ebab287994b6e1828526da869ad46a634928f074, observed 2026-11-20T06:32:23+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       }
+    },
+    {
+      "id": "installed-hook",
+      "title": "Deliver the rule to projects that install ShipGuard",
+      "problem": "The packaged SessionStart hook did not emit an issue evidence instruction in an external project.",
+      "decision": "Emit the issue evidence instruction from a separate lifecycle hook. Propose the same rule in the project agent instructions.",
+      "impact": "The external fixture receives the rule with Mission Lock off. The instruction directs agents to record the baseline and then the result on the same issue.",
+      "files": [
+        "plugins/shipguard/hooks/hooks.json",
+        "plugins/shipguard/hooks/issue-evidence.mjs",
+        "plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "plugins/shipguard/skills/sg-improve/SKILL.md"
+      ],
+      "tests": [
+        "Run the SessionStart commands selected from hooks.json at both revisions in an empty external project fixture.",
+        "node plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "node scripts/run-smoke-suite.mjs"
+      ],
+      "before": {
+        "src": "screenshots/installed-hook-before.png",
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:32:24+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      },
+      "after": {
+        "src": "screenshots/installed-hook-after.png",
+        "caption": "After at ebab287994b6e1828526da869ad46a634928f074, observed 2026-11-20T06:32:25+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      },
+      "risk": "The fixture exercises the packaged hook commands. Native host delivery requires enabled and trusted plugin hooks."
     }
   ]
 }
