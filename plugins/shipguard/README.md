@@ -25,6 +25,8 @@ tier-gated safe fixes in Claude Code; Codex `--fix` is not supported.
 
 ## Audit tests that hide broken actions
 
+An independent AI can try edge cases and report findings to the coding AI, which may respond by adding tests or software rules. Before a push, ShipGuard asks the coding agent to check new or changed tests and rules introduced in response to review feedback. Verify that the intended action still completes in the reported and ordinary valid cases, and that skipping the action would fail the test.
+
 AI coding assistants sometimes add contradictory or unsuitable product rules to make tests pass. A test can report success after the code skips a valid action, blocks it, or returns early. Ask **“Find tests that pass when the actual action is skipped”** to run the [read-only audit](skills/sg-test-audit/SKILL.md). It traces the test and the rule, checks the outcome through the normal workflow, and writes `rapport-regles.md` outside the project. Ask **“Fix R01 and R04”** to [apply those proposals and check the outcome](skills/sg-fix-user-rules/SKILL.md).
 
 Include the priority above in the project’s README and agent instructions when adopting it. Repeat the full inventory at the project’s existing review interval and tell the decision-maker which rules were added, removed or corrected. Routine change reviews cover the affected actions. Ask what harm each refusal prevents and how an authorized person can still complete the action.

@@ -101,9 +101,9 @@ declared result exists and can be read. A lane that fails becomes `error`; never
 run with `pending` or `running`. Write each transition atomically so an interruption cannot turn
 planned work into a false execution receipt. The dashboard renders every state as a lane chip and
 shows the declared reason in place of generic empty states.
-For a change affecting user actions, add `user_rules` as `pending` with reason
-`awaiting Phase 1 user-rule review`. Record any explicit user exclusion as `skipped` with the
-reason. Changes unrelated to user actions require no additional lane.
+For a change affecting user actions or adding or changing tests of those actions, add
+`user_rules` as `pending` with reason `awaiting Phase 1 user-rule review`. Record any explicit
+user exclusion as `skipped` with the reason.
 
 3. **Freshness check (audit reuse).** The audit is the most expensive lane. If `visual-tests/_results/audit-results.json` already exists and is **newer than the last commit touching the scoped files**, offer to reuse it instead of re-running Phase 1. Never reuse silently — say what is being reused and why it is still fresh.
 4. **Ask at most one scope question.** Present the concrete scope and planned checks in plain
@@ -156,7 +156,8 @@ If the audit finds nothing impacted, note it and still run the diff-scoped proce
 
 ### Review the affected user actions
 
-When the scoped change affects an action through a screen, CLI, API or background job, invoke
+When the scoped change affects an action through a screen, CLI, API or background job,
+or adds or changes tests of it, invoke
 [`sg-test-audit`](../sg-test-audit/SKILL.md) on the affected journeys
 and their tests. Pass the scope and revision agreed in Phase 0, including any selected local
 changes. If the committed revision alone is in scope and local files differ, inspect the
@@ -300,6 +301,7 @@ implementation and verification steps.
 - [ ] `/sg-visual-run --from-audit [--from-logic] --from-process` run (union of selected route lists, dedupe by route, highest severity wins), or skipped **with a stated reason**
 - [ ] `/sg-visual-review` built — one dashboard with Visual Tests, Code Audit, Logic, Process, and Recorded tabs
 - [ ] Issue or PR work has matching before and after screenshots and a trace to the request, revisions, and observed result. Missing evidence is explicitly marked incomplete.
+- [ ] Before an authorized push, apply the [test audit](../sg-test-audit/SKILL.md#review-new-tests-before-pushing) to the exact outgoing diff. Reuse matching Phase 1 evidence and report gaps before pushing.
 - [ ] `visual-tests/_results/run.json` written and updated after each phase — every skipped/not-applicable lane declared with a reason
 - [ ] No final lane remains `pending` or `running`; `ran` names only a readable result produced or explicitly reused by this run
 - [ ] Consolidated cross-lane summary printed (audit-fix delta labeled separately under `--fix`); no fixes/decisions made by sg-ship itself
