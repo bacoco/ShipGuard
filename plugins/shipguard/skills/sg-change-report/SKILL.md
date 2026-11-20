@@ -12,7 +12,7 @@ Create the durable before/after artifact that travels with a change.
 ## Capture and trace the evidence
 
 - For every issue, attach a screenshot of the observed problem or current behavior with the baseline revision, reproduction steps and expected result. For an investigation or proposal, show the observation that motivates it.
-- For each behavior corrected in a pull request, show the same scenario before and after through its normal entry point. Capture the baseline before editing or reproduce it in an isolated checkout at the exact revision. Use the same inputs and comparable conditions for the corrected revision.
+- For each corrected behavior, show the same scenario before and after through its normal entry point. Capture the baseline before editing or reproduce it in an isolated checkout at the exact revision. Use the same inputs and comparable conditions for the corrected revision. Attach the after screenshot to the issue even when it is resolved without a pull request. Add both screenshots to any related pull request.
 - For a change without a UI, capture the actual command and its output or the actual document at both revisions. Link the underlying test output or artifact. For each change, record the issue or request, affected files, revisions, route or command, fixture, environment, capture time, and expected and observed outcomes. Account for unexpected differences.
 - If a capture is unavailable, record the reason and exact reproduction steps, and keep the evidence incomplete. Use real observations and keep credentials and private data out of anything shared.
 

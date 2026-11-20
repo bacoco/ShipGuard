@@ -10,7 +10,7 @@ labels: enhancement
 
 ## Screenshot evidence
 
-<!-- Attach a screenshot of the current behavior or observation motivating the request. For a non-UI issue, show the actual command or document and link the underlying evidence. Note the revision, fixture, environment and capture time. If the capture is missing, record why and how to obtain it. -->
+<!-- Attach a screenshot of the current behavior or observation motivating the request. After completion, add a screenshot of the same scenario and its outcome to this issue. For a non-UI issue, show the actual command or document and link the underlying evidence. Note the revision, fixture, environment and capture time. If a capture is missing, record why and how to obtain it. -->
 
 ## Proposed solution
 

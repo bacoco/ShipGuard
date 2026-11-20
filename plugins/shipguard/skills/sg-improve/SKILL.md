@@ -289,13 +289,21 @@ Only **real bugs found in THIS project** — not generic best practices. Each en
 
 Update rules: read the existing file first — don't overwrite. For each `critical`/`high` audit bug: if a similar pattern exists, update instance count and context; otherwise add an entry under the language section. No `low` severity entries. One screen of code max per entry. Refresh the "last updated" date.
 
-### CLAUDE.md wiring
+### Project instruction files
 
 The skill **suggests** the reference line below for the project's `CLAUDE.md` and **never edits CLAUDE.md itself** — show it to the user and let them add it, so every session (not just audits) benefits:
 
 ```markdown
 ## Recurring Mistakes
 **Full mistakes journal: `.shipguard/mistakes.md`** — READ this file at the start of every session.
+```
+
+When reviewing or setting up a project's agent instructions, also propose this block for its applicable `AGENTS.md` or `CLAUDE.md`. If one file already points to the other, put the block in the file they share.
+
+```markdown
+## Issue screenshot evidence
+
+Open every issue with a screenshot of the observed problem or current behavior and its reproduction steps. After the change, attach a screenshot of the same scenario and its observed result to the issue. Add both screenshots to any related pull request. For a non-UI change, capture the actual command and output or document at both revisions. Record both revisions, the reproduction conditions and the observed results. Mark any missing capture as incomplete.
 ```
 
 ---

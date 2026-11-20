@@ -20,7 +20,7 @@ labels: bug
 
 ## Screenshot evidence
 
-<!-- Attach a screenshot of the reproduced problem at the baseline revision. For a non-UI issue, show the actual command and result. Link the underlying evidence and note the revision, fixture, environment and capture time. If the capture is missing, record why and how to obtain it. -->
+<!-- Attach a screenshot of the reproduced problem at the baseline revision. After the fix, add a screenshot of the same scenario and its outcome to this issue. For a non-UI issue, show the actual command and result. Link the underlying evidence and note the revision, fixture, environment and capture time. If a capture is missing, record why and how to obtain it. -->
 
 ## Environment
 

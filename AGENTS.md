@@ -23,7 +23,7 @@ Pipeline: static **find** (`sg-code-audit`) → applicable semantic **check** (`
 ## Screenshot evidence and traceability
 
 - Attach a screenshot of the observed problem or current behavior to every issue. Include the expected result, reproduction steps and baseline revision. For proposals and investigations, show the observation that motivates the work.
-- Capture before editing and repeat the same scenario after the change. Every pull request links its issues and shows both screenshots for each corrected behavior. Use the normal entry point. For command-line, documentation or other non-UI changes, capture the actual command and its result, or the actual document, before and after. Link the underlying test output or artifact.
+- Capture before editing and repeat the same scenario after the change. Attach the after screenshot to the issue even for fixes delivered without a pull request. Add both screenshots to any related pull request. Use the normal entry point. For command-line, documentation or other non-UI changes, capture the actual command and its result, or the actual document, before and after. Link the underlying test output or artifact.
 - Make every change traceable to its request, affected files, before and after revisions, route or command, fixture and environment, capture time, expected and observed outcomes, and verification. Account for any difference outside the intended scenario. If a capture is unavailable, record the reason and exact steps needed to obtain it, and mark the evidence incomplete.
 - Reuse `sg-change-report` for durable change evidence. Keep sensitive data out of captures and share the evidence within the authorized scope.
 

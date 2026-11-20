@@ -117,7 +117,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 
 ### Screenshot evidence for issues and pull requests
 
-Attach a screenshot of the observed problem or current behavior to every issue. A pull request links the issue and shows the same scenario on the baseline and the corrected revision. For changes without a UI, capture the actual command and its result or the actual document, and link the underlying evidence.
+ShipGuard gives agents this rule in every project where its plugin hooks are enabled. Attach a screenshot of the observed problem or current behavior when opening an issue. After the change, add a screenshot of the same scenario and its result to the issue. Include both screenshots in any related pull request. For changes without a UI, capture the actual command and its result or the actual document, and link the underlying evidence.
 
 Record the affected files, revisions, route or command, fixture, environment, capture time, and expected and observed results. If a capture is unavailable, say why and give the steps to obtain it. Use [`sg-change-report`](plugins/shipguard/skills/sg-change-report/SKILL.md) to keep the evidence with the change.
 

@@ -31,7 +31,7 @@ Include the priority above in the project’s README and agent instructions when
 
 ## Screenshot evidence for issues and pull requests
 
-Attach a screenshot of the observed problem to each issue. Every pull request shows the same scenario before and after the change. For a non-UI change, capture the actual command and result or the actual document, then link the underlying evidence. [`sg-change-report`](skills/sg-change-report/SKILL.md) records the revisions, reproduction conditions and observed outcomes with the captures.
+The installed plugin's hooks provide this rule in every project where they are enabled. Attach a screenshot of the observed problem when opening an issue. After the change, add a screenshot of the same scenario and its result to the issue. Include both screenshots in any related pull request. For a non-UI change, capture the actual command and result or the actual document, then link the underlying evidence. [`sg-change-report`](skills/sg-change-report/SKILL.md) records the revisions, reproduction conditions and observed outcomes with the captures.
 
 ## Plugin package references
 
