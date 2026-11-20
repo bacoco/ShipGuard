@@ -112,6 +112,8 @@ node scripts/run-smoke-suite.mjs
 
 The launcher discovers every `*-smoke-test*.mjs` file dynamically, runs them serially, and reports each status and duration plus a final summary. Run the full suite after touching a skill's scripts or templates.
 
+Before pushing, review the outgoing diff for added or changed tests and the rules they exercise. Trace executable rules introduced in response to independent review findings, even when the reviewer only reported a problem. Verify that the intended action still completes in the reported and ordinary valid cases and that the test would fail if the action were skipped. Report gaps before pushing.
+
 Before every merge, the single project verification command `node scripts/run-smoke-suite.mjs` must have passed for the code being merged, and all code must have received a review from the other family (Claude reviews Codex code; Codex reviews Claude code). Reuse a successful suite result when the code is unchanged; documentation-only changes require a structural diff check, not another suite run. Do not merge while either requirement is unmet.
 
 ## Release preparation

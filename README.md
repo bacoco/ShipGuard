@@ -90,6 +90,8 @@ AI coding assistants sometimes add a product rule just to make a failing test pa
 
 `sg-test-audit` starts by asking whether a rule was added to make a test pass. It follows the test and the rules the software actually enforces to check whether the intended action ran and produced the expected result. It traces when the test and the rule were added and records who requested or introduced the rule when there is evidence. The read-only audit writes `rapport-regles.md` outside the project. After you select a correction, the repair skill verifies the result in both the reported and ordinary cases.
 
+An independent AI may try edge cases and report problems to the coding AI. Rules can be added when the coding AI responds to those findings. Before a push, ShipGuard asks the coding agent to review added or changed tests and the rules they exercise, including rules added in response to review feedback without a new test. The check verifies that the intended action still completes in the reported and ordinary valid cases and that the test would fail if it were skipped.
+
 Run a full review when adopting ShipGuard and repeat it at the project’s existing review interval. Compare the reports to show which rules were added, removed or corrected. Between full reviews, `sg-ship` examines changes that affect what a person can do or see. For each refusal, ask what harm it prevents and how an authorized person can still complete the action. Include the priority above when setting up or updating a project’s README and agent guidance.
 
 The standalone CLI supports these steps:

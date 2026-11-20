@@ -1,6 +1,6 @@
 ---
 name: sg-test-audit
-description: Find product rules that AI assistants may have added to make tests pass. Start with the test, then trace the rule the software actually enforces and check the real outcome for an authorized action. Use for whole-project or periodic inventories and for reviewing affected actions in a change. Read-only, with a plain-French report by default.
+description: Find product rules that AI assistants may have added to satisfy review findings or make tests pass. Trace the rule the software actually enforces and check the real outcome for an authorized action. Use for whole-project or periodic inventories and for reviewing affected actions and tests before a push. Read-only, with a plain-French report by default.
 ---
 
 # Audit tests that hide broken actions
@@ -21,9 +21,17 @@ For a read-only audit, apply this priority when evaluating a correction. For bot
 
 ## Start by asking whether the rule was added to make a test pass
 
+An independent AI may try unusual cases and send findings to the coding AI. When responding, the coding AI may add tests, change the software's rules, or do both. Trace the original observation to the coding response. A review finding does not establish who wrote a repository test or justify blocking a valid action.
+
 1. Start with the test and the user outcome it is meant to prove. Locate the rule before and after it was introduced. Compare the same legitimate input and expected outcome across revisions. Check whether the test went green because a guard, shortcut, filter, mock or changed assertion stopped exercising the real action. Check whether the test would fail if the action never happened.
 2. Trace the rules the software actually executes from the normal entry point to the result. Inspect the active branches, validators, defaults, permission checks, hooks, workflows and generated rules alongside the written directives. Record where the rule is activated, what it prevents or changes, and how an authorized person completes the action. Mark any active configuration or runtime path you could not observe as unverified.
 3. Distinguish the rule's observed effect, the test and rule timeline, and evidence that an AI introduced the rule to make the test pass. Include relevant rules with human, shared or unresolved origins. Establish each finding independently in the current target.
+
+## Review new tests before pushing
+
+Review the exact diff intended for the push. Start with added or changed tests, including changes that touch only tests. Inspect the executable rules and directives they exercise. When a rule changes in response to a review finding, follow the affected action even if no repository test was added. Cite the finding, the test and the rule when available. Mark missing links as unknown.
+
+For the reported case and an ordinary valid case, identify the essential authorized action and verify its observable result through the normal entry point. Ask whether the test would fail if the action never happened. Flag tests that pass because the rule skips the action, narrows away valid inputs, or substitutes an easier result. Check that any justified restriction still allows valid cases to complete. Report missing proof and unresolved findings before the push. Reuse evidence for the same diff and cases.
 
 ## Fix the scope and preserve the repository
 
