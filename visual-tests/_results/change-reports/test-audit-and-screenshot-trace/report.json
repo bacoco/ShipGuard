@@ -1,7 +1,7 @@
 {
   "id": "test-audit-and-screenshot-trace",
   "title": "Test audit and screenshot evidence",
-  "summary": "Before-and-after evidence for the requested audit name and README correction, and the rule requiring screenshot evidence and traceability.",
+  "summary": "Before-and-after evidence for the requested audit name and README correction, and the rule requiring screenshot evidence and traceability. The runtime and script verification passed 43/43 at ebab287. The later README and audit instruction edits were checked structurally.",
   "route": "README.md, GitHub templates and external project SessionStart",
   "status": "ready-for-review",
   "audiences": [
@@ -12,7 +12,7 @@
       "id": "audit-readme",
       "title": "Name and document the test audit",
       "problem": "The audit name was long and described the rules as if they came from users. The README mixed French and English.",
-      "decision": "Use sg-test-audit and explain how AI-generated shortcuts can hide broken actions behind passing tests. Use English in both READMEs.",
+      "decision": "Use sg-test-audit and lead with whether an AI assistant added a rule to make a test pass. Trace the rules enforced by software and their real outcomes. Use English in both READMEs.",
       "impact": "The change view shows the English heading, new skill name and explanation at the tested revision.",
       "files": [
         "README.md",
@@ -34,15 +34,15 @@
       ],
       "tests": [
         "git show <revision>:README.md for both revisions",
-        "node scripts/run-smoke-suite.mjs"
+        "node scripts/run-smoke-suite.mjs — 43/43 on reviewed runtime ebab287, see smoke-summary.json"
       ],
       "before": {
         "src": "screenshots/audit-readme-before.png",
-        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:32:17+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:43:53+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       },
       "after": {
         "src": "screenshots/audit-readme-after.png",
-        "caption": "After at ebab287994b6e1828526da869ad46a634928f074, observed 2026-11-20T06:32:22+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "After at fba927c4b740513516f7316b36a15662eded8aab, observed 2026-11-20T06:43:53+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       }
     },
     {
@@ -66,15 +66,15 @@
       ],
       "tests": [
         "git show <revision>:<template> for both revisions",
-        "node scripts/run-smoke-suite.mjs"
+        "node scripts/run-smoke-suite.mjs — 43/43 on reviewed runtime ebab287, see smoke-summary.json"
       ],
       "before": {
         "src": "screenshots/issue-pr-templates-before.png",
-        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:32:23+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:43:54+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       },
       "after": {
         "src": "screenshots/issue-pr-templates-after.png",
-        "caption": "After at ebab287994b6e1828526da869ad46a634928f074, observed 2026-11-20T06:32:23+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "After at fba927c4b740513516f7316b36a15662eded8aab, observed 2026-11-20T06:43:54+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       }
     },
     {
@@ -92,15 +92,15 @@
       "tests": [
         "Run the SessionStart commands selected from hooks.json at both revisions in an empty external project fixture.",
         "node plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
-        "node scripts/run-smoke-suite.mjs"
+        "node scripts/run-smoke-suite.mjs — 43/43 on reviewed runtime ebab287, see smoke-summary.json"
       ],
       "before": {
         "src": "screenshots/installed-hook-before.png",
-        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:32:24+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:43:54+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       },
       "after": {
         "src": "screenshots/installed-hook-after.png",
-        "caption": "After at ebab287994b6e1828526da869ad46a634928f074, observed 2026-11-20T06:32:25+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+        "caption": "After at fba927c4b740513516f7316b36a15662eded8aab, observed 2026-11-20T06:43:55+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
       },
       "risk": "The fixture exercises the packaged hook commands. Native host delivery requires enabled and trusted plugin hooks."
     }

@@ -1,270 +1,276 @@
 {
   "status": 0,
-  "durationMs": 102195,
+  "durationMs": 285358,
   "counts": {
-    "passed": 42,
+    "passed": 43,
     "failed": 0,
-    "total": 42,
+    "total": 43,
     "skipped": 0
   },
   "consistency": {
     "path": "scripts/check-consistency.mjs",
     "status": 0,
     "exitCode": 0,
-    "durationMs": 46
+    "durationMs": 617
   },
   "tests": [
     {
       "path": "plugins/shipguard/adapters/e2e/adapter-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 207
+      "durationMs": 2748
     },
     {
       "path": "plugins/shipguard/adapters/e2e/outcomes-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 40
+      "durationMs": 738
     },
     {
       "path": "plugins/shipguard/adapters/e2e/runner-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 2953
+      "durationMs": 9121
     },
     {
       "path": "plugins/shipguard/cli/appserver-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 10797
+      "durationMs": 17199
     },
     {
       "path": "plugins/shipguard/cli/cli-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 23844
+      "durationMs": 109875
     },
     {
       "path": "plugins/shipguard/cli/copies-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 918
+      "durationMs": 8150
     },
     {
       "path": "plugins/shipguard/cli/crawl-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 1706
+      "durationMs": 10400
     },
     {
       "path": "plugins/shipguard/cli/review-serve-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 8569
+      "durationMs": 10992
     },
     {
       "path": "plugins/shipguard/cli/rules-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 973
+      "durationMs": 8277
     },
     {
       "path": "plugins/shipguard/hooks/dialogue-check-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 1295
+      "durationMs": 10156
     },
     {
       "path": "plugins/shipguard/hooks/dialogue-review-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 36
+      "durationMs": 213
+    },
+    {
+      "path": "plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+      "status": 0,
+      "exitCode": 0,
+      "durationMs": 1570
     },
     {
       "path": "plugins/shipguard/hooks/model-controller-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 1505
+      "durationMs": 10966
     },
     {
       "path": "plugins/shipguard/skills/sg-code-audit/code-audit-contract-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 907
+      "durationMs": 4959
     },
     {
       "path": "plugins/shipguard/skills/sg-code-audit/verification-result-cli-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 438
+      "durationMs": 2384
     },
     {
       "path": "plugins/shipguard/skills/sg-code-audit/verification-result-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 35
+      "durationMs": 208
     },
     {
       "path": "plugins/shipguard/skills/sg-communication-memory/scripts/communication-memory-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 171
+      "durationMs": 779
     },
     {
       "path": "plugins/shipguard/skills/sg-fix-user-rules/repair-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 2023
+      "durationMs": 7707
     },
     {
       "path": "plugins/shipguard/skills/sg-improve/improve-dry-run-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 35
+      "durationMs": 183
     },
     {
       "path": "plugins/shipguard/skills/sg-improve/improve-rollback-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 42
+      "durationMs": 192
     },
     {
       "path": "plugins/shipguard/skills/sg-improve/prompt-audit-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 135
+      "durationMs": 569
     },
     {
       "path": "plugins/shipguard/skills/sg-mission-lock/scripts/mission-lock-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 2406
+      "durationMs": 8307
     },
     {
       "path": "plugins/shipguard/skills/sg-model-scope-test/scripts/score-probe-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 305
+      "durationMs": 748
     },
     {
       "path": "plugins/shipguard/skills/sg-pre-review/evidence-guard-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 35
+      "durationMs": 83
     },
     {
       "path": "plugins/shipguard/skills/sg-pre-review/goal-coverage-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 53
+      "durationMs": 216
     },
     {
       "path": "plugins/shipguard/skills/sg-pre-review/goal-runner-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 1377
+      "durationMs": 5186
     },
     {
       "path": "plugins/shipguard/skills/sg-pre-review/pre-review-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 35
+      "durationMs": 125
     },
     {
       "path": "plugins/shipguard/skills/sg-pre-review/transport-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 1535
+      "durationMs": 3957
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/actions-to-yaml.test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 49
+      "durationMs": 140
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/integration-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 76
+      "durationMs": 227
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/recorder-audit-browser-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 3021
+      "durationMs": 5091
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/recorder-audit-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 44
+      "durationMs": 81
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/recorder-click-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 6299
+      "durationMs": 9316
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/recorder-host-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 11527
+      "durationMs": 12131
     },
     {
       "path": "plugins/shipguard/skills/sg-record/lib/recorder-navigation-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 11312
+      "durationMs": 13861
     },
     {
       "path": "plugins/shipguard/skills/sg-scout/offline-dry-run-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 37
+      "durationMs": 40
     },
     {
       "path": "plugins/shipguard/skills/sg-ship/run-manifest-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 36
+      "durationMs": 37
     },
     {
       "path": "plugins/shipguard/skills/sg-test-audit/discovery-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 2004
+      "durationMs": 2137
     },
     {
       "path": "plugins/shipguard/skills/sg-visual-fix/visual-fix-dry-run-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 37
+      "durationMs": 38
     },
     {
       "path": "plugins/shipguard/skills/sg-visual-review/monitor-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 192
+      "durationMs": 182
     },
     {
       "path": "plugins/shipguard/skills/sg-visual-review/review-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 3749
+      "durationMs": 3903
     },
     {
       "path": "scripts/prepare-release-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 567
+      "durationMs": 600
     },
     {
       "path": "scripts/run-smoke-suite-smoke-test.mjs",
       "status": 0,
       "exitCode": 0,
-      "durationMs": 820
+      "durationMs": 833
     }
   ]
 }
