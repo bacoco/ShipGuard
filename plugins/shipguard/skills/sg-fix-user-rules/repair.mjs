@@ -7,7 +7,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isSensitivePath } from '../shipguard-audit-user-rules/paths.mjs';
+import { isSensitivePath } from '../sg-test-audit/paths.mjs';
 
 const usage = 'Usage: node repair.mjs PLAN.json [--project=DIR] [--apply=R01,R04|--apply=all --review=DIGEST]';
 const digest = value => createHash('sha256').update(value).digest('hex');

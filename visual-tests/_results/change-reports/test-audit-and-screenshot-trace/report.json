@@ -1,0 +1,108 @@
+{
+  "id": "test-audit-and-screenshot-trace",
+  "title": "Test audit and screenshot evidence",
+  "summary": "Before-and-after evidence for the requested audit name and README correction, and the rule requiring screenshot evidence and traceability. The runtime and script verification passed 43/43 at ebab287. The later README and audit instruction edits were checked structurally.",
+  "route": "README.md, GitHub templates and external project SessionStart",
+  "status": "ready-for-review",
+  "audiences": [
+    "engineering"
+  ],
+  "changes": [
+    {
+      "id": "audit-readme",
+      "title": "Name and document the test audit",
+      "problem": "The audit name was long and described the rules as if they came from users. The README mixed French and English.",
+      "decision": "Use sg-test-audit and lead with whether an AI assistant added a rule to make a test pass. Trace the rules enforced by software and their real outcomes. Use English in both READMEs.",
+      "impact": "The change view shows the English heading, new skill name and explanation at the tested revision.",
+      "files": [
+        "README.md",
+        "plugins/shipguard/README.md",
+        "plugins/shipguard/skills/sg-test-audit/SKILL.md",
+        "plugins/shipguard/skills/sg-test-audit/agents/openai.yaml",
+        "plugins/shipguard/cli/shipguard.mjs",
+        "plugins/shipguard/skills/sg-fix-user-rules/repair.mjs",
+        "plugins/shipguard/skills/sg-fix-user-rules/SKILL.md",
+        "plugins/shipguard/skills/sg-test-audit",
+        "docs/architecture.md",
+        "AGENTS.md",
+        "plugins/shipguard/skills/sg-ship/SKILL.md",
+        "plugins/shipguard/skills/sg-code-audit/SKILL.md",
+        "plugins/shipguard/skills/sg-code-audit/references/agent-prompt.md",
+        "plugins/shipguard/skills/sg-logic-audit/SKILL.md",
+        "plugins/shipguard/skills/sg-pre-review/SKILL.md",
+        "plugins/shipguard/skills/sg-visual-fix/SKILL.md"
+      ],
+      "tests": [
+        "git show <revision>:README.md for both revisions",
+        "node scripts/run-smoke-suite.mjs — 43/43 on reviewed runtime ebab287, see smoke-summary.json"
+      ],
+      "before": {
+        "src": "screenshots/audit-readme-before.png",
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:43:53+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      },
+      "after": {
+        "src": "screenshots/audit-readme-after.png",
+        "caption": "After at fba927c4b740513516f7316b36a15662eded8aab, observed 2026-11-20T06:43:53+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      }
+    },
+    {
+      "id": "issue-pr-templates",
+      "title": "Require screenshot evidence and traceability",
+      "problem": "The bug template asked for screenshots only if applicable. The feature template lacked a screenshot field and the pull request template did not identify a matched before-and-after pair.",
+      "decision": "Ask for observed screenshot evidence in issue templates and paired evidence for the same scenario in pull requests, including non-UI changes.",
+      "impact": "The revised templates visibly request the screenshot, revision, reproduction conditions, observed result and underlying proof.",
+      "files": [
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "AGENTS.md",
+        "plugins/shipguard/skills/sg-change-report/SKILL.md",
+        "plugins/shipguard/skills/sg-ship/SKILL.md",
+        "plugins/shipguard/skills/sg-improve/SKILL.md",
+        "plugins/shipguard/skills/sg-scout/SKILL.md",
+        "README.md",
+        "plugins/shipguard/README.md",
+        "plugins/shipguard/skills/sg-change-report/agents/openai.yaml"
+      ],
+      "tests": [
+        "git show <revision>:<template> for both revisions",
+        "node scripts/run-smoke-suite.mjs — 43/43 on reviewed runtime ebab287, see smoke-summary.json"
+      ],
+      "before": {
+        "src": "screenshots/issue-pr-templates-before.png",
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:43:54+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      },
+      "after": {
+        "src": "screenshots/issue-pr-templates-after.png",
+        "caption": "After at fba927c4b740513516f7316b36a15662eded8aab, observed 2026-11-20T06:43:54+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      }
+    },
+    {
+      "id": "installed-hook",
+      "title": "Deliver the rule to projects that install ShipGuard",
+      "problem": "The packaged SessionStart hook did not emit an issue evidence instruction in an external project.",
+      "decision": "Emit the issue evidence instruction from a separate lifecycle hook. Propose the same rule in the project agent instructions.",
+      "impact": "The external fixture receives the rule with Mission Lock off. The instruction directs agents to record the baseline and then the result on the same issue.",
+      "files": [
+        "plugins/shipguard/hooks/hooks.json",
+        "plugins/shipguard/hooks/issue-evidence.mjs",
+        "plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "plugins/shipguard/skills/sg-improve/SKILL.md"
+      ],
+      "tests": [
+        "Run the SessionStart commands selected from hooks.json at both revisions in an empty external project fixture.",
+        "node plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "node scripts/run-smoke-suite.mjs — 43/43 on reviewed runtime ebab287, see smoke-summary.json"
+      ],
+      "before": {
+        "src": "screenshots/installed-hook-before.png",
+        "caption": "Before at aa6e9160fca7f9b2a144dcb11fc966b4024974e0, observed 2026-11-20T06:43:54+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      },
+      "after": {
+        "src": "screenshots/installed-hook-after.png",
+        "caption": "After at fba927c4b740513516f7316b36a15662eded8aab, observed 2026-11-20T06:43:55+00:00. Git source excerpts shown at 1440 × 1040 in agent-browser 0.39.1 on macOS."
+      },
+      "risk": "The fixture exercises the packaged hook commands. Native host delivery requires enabled and trusted plugin hooks."
+    }
+  ]
+}

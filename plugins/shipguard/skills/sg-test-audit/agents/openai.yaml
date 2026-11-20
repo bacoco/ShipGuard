@@ -1,0 +1,7 @@
+interface:
+  display_name: "Audit Tests That Hide Broken Actions"
+  short_description: "Find passing tests that bypass valid actions"
+  default_prompt: "Use $sg-test-audit to find tests an AI made pass by blocking or skipping a valid action and report what actually happened."
+
+policy:
+  allow_implicit_invocation: true

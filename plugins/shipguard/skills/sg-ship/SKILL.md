@@ -5,7 +5,7 @@ description: "Use when a user asks in ordinary language whether a change is read
 
 # sg-ship — Conversational ShipGuard orchestration
 
-Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Pass them on when another agent reviews a correction in the target project.
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../sg-test-audit/SKILL.md). Pass them on when another agent reviews a correction in the target project.
 
 `sg-ship` is the orchestrator. The user speaks normally; never require them to know a slash command,
 skill name, flag, lane, or result filename. Infer the request, propose one concrete scope and lane plan,
@@ -22,7 +22,7 @@ through every lane so they all inspect the same change, and consolidates the res
 an integral lane: always perform bounded candidate detection and run the semantic trace when a
 workflow, state machine, retry, transaction, authorization path, or non-trivial algorithm is in scope.
 For changes affecting what a person can do, supply the same scope to the read-only
-[user-rule audit](../shipguard-audit-user-rules/SKILL.md). Check the authorized action at its actual destination.
+[test audit](../sg-test-audit/SKILL.md). Check the authorized action at its actual destination.
 
 > **Model guidance:** a fast, capable general-purpose model is enough to drive the orchestration; each sub-skill picks its own model (e.g. `sg-process-check` leans on the strongest available reasoning model for `reason` mode).
 
@@ -56,6 +56,7 @@ ordinary-language authorization into the internal audit fix control.
    - If `git status --porcelain` shows uncommitted or staged work, include that fact in the single
      scope question. Do not create a separate interrogation round.
    - The resolved ref is passed as an explicit `--diff={ref}` to every lane. Passing `--diff` also suppresses each sub-skill's own interactive scope question — the lanes never re-ask.
+   - For issue or pull-request work, identify the reported scenario and capture or locate its baseline screenshot before any fix. If changes already exist, reproduce the baseline at its exact revision in an isolated checkout. Use the [change evidence instructions](../sg-change-report/SKILL.md#capture-and-trace-the-evidence), including terminal or document captures when the change has no UI.
 2. **Detect applicable lanes.** Inspect the changed symbols and their immediate contracts/tests for
    backend code, UI/routes, and semantic candidates. Logic candidate signals include lifecycle/state
    transitions, retries, transactions, ordered effects, workers/callbacks, authorization across
@@ -156,7 +157,7 @@ If the audit finds nothing impacted, note it and still run the diff-scoped proce
 ### Review the affected user actions
 
 When the scoped change affects an action through a screen, CLI, API or background job, invoke
-[`shipguard-audit-user-rules`](../shipguard-audit-user-rules/SKILL.md) on the affected journeys
+[`sg-test-audit`](../sg-test-audit/SKILL.md) on the affected journeys
 and their tests. Pass the scope and revision agreed in Phase 0, including any selected local
 changes. If the committed revision alone is in scope and local files differ, inspect the
 committed sources for those paths. Reuse evidence from the static audit and the subsequent
@@ -262,6 +263,7 @@ Print one summary across all applicable lanes:
 - **User actions** (when applicable): list the proposal IDs, intended targets, observed outcomes for the reported and ordinary cases, and remaining verification. Link the temporary user-rule report in the summary.
 - **Behavior:** units changed / new errors / surprises, reasoned-vs-measured mix (from `visual-tests/_results/process-results.json`)
 - **Visual:** pass/fail on impacted routes (or "skipped — reason")
+- **Issue and PR evidence:** link the issue, the before and after screenshots of the same scenario, and the underlying evidence. Include both revisions, reproduction conditions and observed results. Capture terminal or document evidence for changes without a UI. Mark missing captures incomplete with their reason and reproduction steps.
 - **Findings:** total from `visual-tests/_results/findings.json` with the evidence mix (measured/reasoned/manual) — the dashboard's Findings tab is the entry point
 - **Tokens / cost:** report token volume and cost only when a real usage source supplies each value; identify that source and its coverage. For either missing value, state `not available`; never estimate or infer it from test durations, findings, prompts, or model pricing. Do not store prompts, identities, absolute paths, or private data.
 - **Audit-fix delta** (only under `--fix`): what the audit lane itself changed, labeled separately from the user's own diff
@@ -297,6 +299,7 @@ implementation and verification steps.
 - [ ] `/sg-process-check --from-audit --diff={ref}` run (mode passthrough) → `visual-tests/_results/process-results.json`
 - [ ] `/sg-visual-run --from-audit [--from-logic] --from-process` run (union of selected route lists, dedupe by route, highest severity wins), or skipped **with a stated reason**
 - [ ] `/sg-visual-review` built — one dashboard with Visual Tests, Code Audit, Logic, Process, and Recorded tabs
+- [ ] Issue or PR work has matching before and after screenshots and a trace to the request, revisions, and observed result. Missing evidence is explicitly marked incomplete.
 - [ ] `visual-tests/_results/run.json` written and updated after each phase — every skipped/not-applicable lane declared with a reason
 - [ ] No final lane remains `pending` or `running`; `ran` names only a readable result produced or explicitly reused by this run
 - [ ] Consolidated cross-lane summary printed (audit-fix delta labeled separately under `--fix`); no fixes/decisions made by sg-ship itself

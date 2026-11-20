@@ -7,7 +7,7 @@ argument-hint: "[quick|standard|deep|paranoid] [--focus=path] [--fix|--report-on
 
 # /sg-code-audit — Parallel Codebase Audit
 
-Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). When dispatching a correction or the review of one, include them verbatim at the start of the assigned agent’s instructions.
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../sg-test-audit/SKILL.md). When dispatching a correction or the review of one, include them verbatim at the start of the assigned agent’s instructions.
 
 Dispatch parallel AI agents to audit every file in your repo. Each agent reviews a non-overlapping
 zone and produces structured JSON. Audits are report-only by default; source mutation requires the

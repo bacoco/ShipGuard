@@ -20,6 +20,13 @@ ShipGuard is a Claude Code and Codex plugin providing `sg-*` skills for mission 
 
 Pipeline: static **find** (`sg-code-audit`) → applicable semantic **check** (`sg-logic-audit`) → dynamic **simulate** (`sg-process-check`) → visual **confirm** (`sg-visual-run`) → human **decides** (`sg-visual-review`). `sg-ship` detects semantic candidates during one conversational scope decision and orchestrates the applicable lanes. Report-only by default; mutation requires an explicit natural-language request.
 
+## Screenshot evidence and traceability
+
+- Attach a screenshot of the observed problem or current behavior to every issue. Include the expected result, reproduction steps and baseline revision. For proposals and investigations, show the observation that motivates the work.
+- Capture before editing and repeat the same scenario after the change. Attach the after screenshot to the issue even for fixes delivered without a pull request. Add both screenshots to any related pull request. Use the normal entry point. For command-line, documentation or other non-UI changes, capture the actual command and its result, or the actual document, before and after. Link the underlying test output or artifact.
+- Make every change traceable to its request, affected files, before and after revisions, route or command, fixture and environment, capture time, expected and observed outcomes, and verification. Account for any difference outside the intended scenario. If a capture is unavailable, record the reason and exact steps needed to obtain it, and mark the evidence incomplete.
+- Reuse `sg-change-report` for durable change evidence. Keep sensitive data out of captures and share the evidence within the authorized scope.
+
 ## Golden Rule
 
 Take the most direct, safe, verifiable path:
@@ -65,7 +72,7 @@ plugins/shipguard/                   # The plugin itself
     ├── sg-ship/                     # Orchestrator: full pipeline on a diff
     ├── sg-code-audit/               # Parallel audit agents + verification
     ├── sg-logic-audit/              # Contracts, invariants, paths, counterexamples
-    ├── shipguard-audit-user-rules/  # Read-only inventory of user-facing product decisions
+    ├── sg-test-audit/               # Read-only audit of tests that hide broken actions
     ├── sg-fix-user-rules/           # Discovery, selection, repair and outcome verification
     ├── sg-process-check/            # Before/after behavior simulation (reason/hybrid/execute)
     ├── sg-visual-discover/          # Generate YAML test manifests from routes

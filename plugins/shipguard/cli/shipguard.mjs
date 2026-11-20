@@ -973,9 +973,9 @@ function cmdRules(argv) {
   }
   const [command, ...args] = argv.filter(value => value !== rootOption);
   const helpers = new Map([
-    ['scan', 'shipguard-audit-user-rules/scan.mjs'],
-    ['history', 'shipguard-audit-user-rules/history.mjs'],
-    ['report', 'shipguard-audit-user-rules/report.mjs'],
+    ['scan', 'sg-test-audit/scan.mjs'],
+    ['history', 'sg-test-audit/history.mjs'],
+    ['report', 'sg-test-audit/report.mjs'],
     ['preview', 'sg-fix-user-rules/repair.mjs'],
     ['apply', 'sg-fix-user-rules/repair.mjs'],
   ]);
