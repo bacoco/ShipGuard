@@ -1,0 +1,43 @@
+{
+  "id": "pre-push-test-audit",
+  "title": "Before-push review of tests and rules",
+  "summary": "An independent AI tries edge cases and reports findings. The coding AI may respond with a test or a new rule. The check asks whether the authorized action still completes.",
+  "route": "Packaged UserPromptSubmit hook in an external project",
+  "status": "ready-for-review",
+  "audiences": [
+    "engineering"
+  ],
+  "changes": [
+    {
+      "id": "pre-push-instruction",
+      "title": "Review tests and software rules before pushing",
+      "problem": "The previous hook told the coding agent to capture before-and-after evidence. It had no instruction to examine the outgoing tests and software rules before a push.",
+      "decision": "Check the changes made in response to independent review findings, including rules added without a new test. Verify the actual result for the reported and ordinary valid cases.",
+      "impact": "The same external project receives the existing screenshot instruction and the new before-push check. This hook provides instructions to the coding agent.",
+      "files": [
+        "AGENTS.md",
+        "README.md",
+        "plugins/shipguard/README.md",
+        "plugins/shipguard/hooks/issue-evidence-smoke-test.mjs",
+        "plugins/shipguard/hooks/issue-evidence.mjs",
+        "plugins/shipguard/skills/sg-ship/SKILL.md",
+        "plugins/shipguard/skills/sg-test-audit/SKILL.md",
+        "plugins/shipguard/skills/sg-test-audit/agents/openai.yaml"
+      ],
+      "tests": [
+        "node plugins/shipguard/hooks/issue-evidence-smoke-test.mjs — passes at 99894611d28b15299ce8e5486f3fcbef00b9c47c",
+        "The updated test fails when run against 61d2e29bbd4360ba96ada869389051f7775394e4 because the instruction is absent.",
+        "The before-and-after capture confirms that the original screenshot instructions remain present.",
+        "node scripts/run-smoke-suite.mjs — 43 passed, 0 failed at 99894611d28b15299ce8e5486f3fcbef00b9c47c. Claude approved the same code diff with no material findings."
+      ],
+      "before": {
+        "src": "screenshots/before.png",
+        "caption": "Before at 61d2e29bbd4360ba96ada869389051f7775394e4, captured 2026-11-20T06:53:01+00:00. Actual output of the registered UserPromptSubmit script in the same empty external project fixture, formatted as JSON and displayed at 1440 × 940 with agent-browser 0.39.1."
+      },
+      "after": {
+        "src": "screenshots/after.png",
+        "caption": "After at 99894611d28b15299ce8e5486f3fcbef00b9c47c, captured 2026-11-20T06:53:01+00:00. Actual output of the registered UserPromptSubmit script in the same empty external project fixture, formatted as JSON and displayed at 1440 × 940 with agent-browser 0.39.1."
+      }
+    }
+  ]
+}
