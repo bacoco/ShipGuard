@@ -37,8 +37,9 @@ try {
     assert.match(context, /same scenario and its observed result to the issue\. Add both screenshots/);
     assert.match(context, /command and output or document at both revisions/);
     assert.match(context, /Mark missing captures as incomplete/);
+    assert.match(context, /do not use test-driven development\. Define the intended result and applicable constraints from the user request first\. Implement the intended behavior, then add or update regression tests to verify the actual result/);
     assert.match(context, /Before pushing, review the exact outgoing diff for new or changed tests and the software rules they exercise/);
-    assert.match(context, /an independent AI tries edge cases and reports findings, inspect how the coding AI responded, including rules added without a new test/);
+    assert.match(context, /user feedback, findings from another AI, or problems the coding agent found itself\. Include rules added without a new test/);
     assert.match(context, /observable result in the reported and ordinary valid cases\. Check that the test fails if the action is skipped\. Report findings and missing proof before pushing/);
   }
   assert.deepEqual(readdirSync(project), []);
@@ -50,7 +51,7 @@ try {
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout, '');
   }
-  console.log('The packaged hook supplies screenshot and pre-push test-audit instructions in another project even with Mission Lock off, without writing files.');
+  console.log('The packaged hook supplies screenshot, coding and pre-push test-audit instructions in another project even with Mission Lock off, without writing files.');
 } finally {
   rmSync(fixture, { recursive: true, force: true });
 }
