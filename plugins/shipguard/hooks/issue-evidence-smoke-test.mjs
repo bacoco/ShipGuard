@@ -37,7 +37,9 @@ try {
     assert.match(context, /same scenario and its observed result to the issue\. Add both screenshots/);
     assert.match(context, /command and output or document at both revisions/);
     assert.match(context, /Mark missing captures as incomplete/);
-    assert.match(context, /do not use test-driven development\. Define the intended result and applicable constraints from the user request first\. Implement the intended behavior, then add or update regression tests to verify the actual result/);
+    assert.match(context, /Define the intended result and applicable constraints from the user request before writing code or the first test/);
+    assert.match(context, /Test-driven development is allowed once the intended result and constraints are defined/);
+    assert.doesNotMatch(context, /do not use test-driven development/i);
     assert.match(context, /Before pushing, review the exact outgoing diff for new or changed tests and the software rules they exercise/);
     assert.match(context, /user feedback, findings from another AI, or problems the coding agent found itself\. Include rules added without a new test/);
     assert.match(context, /observable result in the reported and ordinary valid cases\. Check that the test fails if the action is skipped\. Report findings and missing proof before pushing/);

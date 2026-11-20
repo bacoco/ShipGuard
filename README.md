@@ -90,7 +90,7 @@ AI coding assistants sometimes add a product rule just to make a failing test pa
 
 `sg-test-audit` starts by asking whether a rule was added to make a test pass. It follows the test and the rules the software actually enforces to check whether the intended action ran and produced the expected result. It traces when the test and the rule were added and records who requested or introduced the rule when there is evidence. The read-only audit writes `rapport-regles.md` outside the project. After you select a correction, the repair skill verifies the result in both the reported and ordinary cases.
 
-ShipGuard instructs the coding agent to avoid test-driven development. Define the result from the user request, implement the behavior, then add or update regression tests that check what actually happens.
+ShipGuard allows test-driven development (TDD). Define the intended result and applicable constraints from the user request before writing code or the first test. If you use TDD, write tests that verify the observable result.
 
 Before a push, ShipGuard asks the coding agent to review added or changed tests and software rules. A rule may come from user feedback, another AI's findings, or a problem the coding agent found itself. Review the rule even if it has no new test. Check that the intended action completes in the reported and ordinary valid cases and that the test would fail if the action were skipped.
 
