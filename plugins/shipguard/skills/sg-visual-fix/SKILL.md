@@ -7,7 +7,7 @@ argument-hint: "[path to fix manifest JSON, or 'latest' for visual-tests/_result
 
 # /sg-visual-fix — Fix Annotated Screenshots
 
-Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Use the person’s request to identify the authorized action and target. A generated `improve_ui` flag from a bare selection supplies no approval for a new restriction.
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../sg-test-audit/SKILL.md). Use the person’s request to identify the authorized action and target. A generated `improve_ui` flag from a bare selection supplies no approval for a new restriction.
 
 Take human-annotated screenshots from `/sg-visual-review`, analyze the marked problems, fix the code, and produce before/after evidence.
 

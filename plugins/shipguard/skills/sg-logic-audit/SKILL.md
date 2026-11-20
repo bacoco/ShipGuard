@@ -5,7 +5,7 @@ description: "Audit a workflow, state machine, retry policy, transaction, or non
 
 # /sg-logic-audit — Check logic against its obligations
 
-Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Apply them when tracing a correction through its normal entry point.
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../sg-test-audit/SKILL.md). Apply them when tracing a correction through its normal entry point.
 
 Audit whether a procedure or algorithm satisfies what it must guarantee. Follow the whole property
 across files and services, search for counterexamples, and separate measured facts from reasoned

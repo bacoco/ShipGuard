@@ -26,7 +26,7 @@ Referenced from SKILL.md Phase 4 ("Build Prompts + Dispatch Agents"). Load this 
 ## Prompt template
 
 ````
-{For a correction or the review of a correction: insert the verbatim “Priorité n° 1” section from the installed ShipGuard plugin README.md here. Use the packaged resource when the target project has no copy.}
+{For a correction or the review of a correction: insert the verbatim “Priorité n° 1” section from the installed ShipGuard plugin’s skills/sg-test-audit/SKILL.md here. Use the packaged resource when the target project has no copy.}
 
 You are auditing a codebase for bugs. Your primary scope is these paths: {zone.paths joined with " AND "}.
 Do NOT modify files outside your scope. You MAY read files outside your scope to verify cross-module integration (caller/callee contracts, import chains, shared types).

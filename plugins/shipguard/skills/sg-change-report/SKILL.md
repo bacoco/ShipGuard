@@ -1,13 +1,20 @@
 ---
 name: sg-change-report
-description: Use after visual runs, screenshot capture, frontend PRs, or before stakeholder review — creates the durable ShipGuard before/after report for UI-visible changes.
+description: Collect and preserve screenshot evidence for issues and pull requests. Show the actual problem and the corrected outcome under matching conditions, including terminal or document evidence for non-UI changes.
 context: conversation
 argument-hint: "<report-id> [optional: summary or screenshot paths]"
 ---
 
-# /sg-change-report - Durable Visual Change Report
+# /sg-change-report - Before and after evidence
 
-Create the persistent before/after artifact that travels with a UI change. This skill turns visual test evidence into committed PR review material.
+Create the durable before/after artifact that travels with a change.
+
+## Capture and trace the evidence
+
+- For every issue, attach a screenshot of the observed problem or current behavior with the baseline revision, reproduction steps and expected result. For an investigation or proposal, show the observation that motivates it.
+- For each behavior corrected in a pull request, show the same scenario before and after through its normal entry point. Capture the baseline before editing or reproduce it in an isolated checkout at the exact revision. Use the same inputs and comparable conditions for the corrected revision.
+- For a change without a UI, capture the actual command and its output or the actual document at both revisions. Link the underlying test output or artifact. For each change, record the issue or request, affected files, revisions, route or command, fixture, environment, capture time, and expected and observed outcomes. Account for unexpected differences.
+- If a capture is unavailable, record the reason and exact reproduction steps, and keep the evidence incomplete. Use real observations and keep credentials and private data out of anything shared.
 
 ## Arguments
 
@@ -87,14 +94,14 @@ Add `client` and `validation` fields when the report will be sent outside the te
 
 ## Workflow
 
-1. Run or reuse relevant visual evidence from `sg-visual-run`, `sg-visual-review`, or `sg-visual-fix`.
+1. Gather the evidence above. For browser behavior, run or reuse matching evidence from `sg-visual-run`, `sg-visual-review`, or `sg-visual-fix`.
 2. Choose a stable kebab-case `<report-id>` matching the feature, route, or PR scope.
 3. Copy only review-relevant screenshots into `visual-tests/_results/change-reports/<report-id>/screenshots/`. Screenshot paths passed as arguments are copied here and referenced as before/after `src` values in `report.json`.
-4. Write `report.json` with before screenshots when available and after screenshots for the final state. A summary passed as an argument seeds `report.json.summary`.
+4. Write `report.json` with both screenshots and their provenance for each change. Use the captions, affected files and test references to expose the trace in the report. Set the report to `draft` if evidence is incomplete and record how to obtain it. A summary passed as an argument seeds `report.json.summary`.
 5. Bootstrap check: if `visual-tests/build-review.mjs` or `visual-tests/_review-template.html` is missing in the project, copy them from `$SHIPGUARD_PLUGIN_ROOT/skills/sg-visual-review/`.
 6. Run `node visual-tests/build-review.mjs`. Add `--serve --port=<free-port>` only to browse the result; stop the server afterwards with `/sg-visual-review-stop`.
 7. Verify deterministically (no server needed): `visual-tests/_results/persona-reports/<report-id>/index.html` exists and at least one `visual-tests/_results/persona-reports/<report-id>/<audience>.html` exists.
-8. Stage the durable report artifacts with the UI change:
+8. Stage the durable report artifacts with the change:
 
 ```bash
 git add visual-tests/_results/change-reports/<report-id>
@@ -116,7 +123,7 @@ visual-tests/_results/.server.pid
 
 ## PR Text
 
-Every UI PR that captures or reuses screenshots should include:
+Every PR that uses this report links the issue, embeds the before and after screenshots with their observed outcomes, and includes:
 
 ```markdown
 ShipGuard Change Report:
@@ -124,4 +131,4 @@ ShipGuard Change Report:
 - Review: `visual-tests/_results/persona-reports/<report-id>/index.html`
 ```
 
-Mention if no before screenshot was available, and list the main routes/tests covered.
+List the main routes or commands and their tests. Mark any missing capture as incomplete with the exact reproduction steps.

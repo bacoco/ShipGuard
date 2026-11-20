@@ -1,16 +1,16 @@
 # ShipGuard plugin
 
-## Priorité n° 1 — Faire réussir l’action, jamais l’éviter
+## First priority — Make the authorized action succeed
 
-Avant de coder ou d’écrire le test, fixe l’action autorisée, sa cible, le cas à reproduire et le résultat attendu d’après la demande et les contraintes déjà autorisées.
+Before writing code or a test, identify the authorized action, its target, the case to reproduce, and the expected result from the request and existing constraints.
 
-Corrige le défaut en gardant l’action possible. Exécute-la par le parcours normal dans le cas signalé et dans le cas ordinaire. Vérifie qu’elle aboutit dans les deux cas et que le défaut a disparu. Un test qui passe parce qu’un bouton a été caché, un clic refusé, le cas évité ou le résultat attendu changé est invalide.
+Fix the defect while keeping the action available. Use the normal workflow for both the reported case and an ordinary case. Verify that the action succeeds in both cases and that the defect is gone. A passing test is invalid if it hides a button, refuses a click, skips the case, or changes the expected result.
 
-Fais l’action si elle reste possible. Si la situation a changé, explique ce qui a changé et demande une décision si elle est nécessaire. Si l’obstacle est temporaire, conserve la demande et reprends-la sur la cible prévue dès que les conditions autorisées sont réunies.
+Complete the action if it is still possible. If the situation has changed, explain the change and ask for a decision when one is needed. If the obstacle is temporary, retain the request and resume it on the intended target when the authorized conditions are met.
 
-Un refus doit correspondre à une décision du demandeur ou protéger, dans le cas précis, contre une perte de données, une erreur de cible ou un accès non autorisé. Toute nouvelle règle de blocage, visible ou silencieuse, exige l’accord du demandeur. Explique-lui son effet concret avant de l’ajouter.
+A refusal must follow the requester’s decision or protect against a specific risk of data loss, a wrong target, or unauthorized access. Explain the practical effect of any new blocking rule, visible or silent, and obtain the requester’s approval before adding it.
 
-Avant d’annoncer la correction, indique l’action exécutée et le résultat observé. Si le cas n’a pas été reproduit, indique qu’il reste à vérifier.
+Before reporting a fix, state the action performed and the observed result. If the case could not be reproduced, say that it still needs verification.
 
 ![ShipGuard — Agentic AI Audit & Visual Regression](hero.jpg)
 
@@ -23,11 +23,15 @@ configuration, compatibility, and usage.
 Code audits are report-only by default and include Shell support. Explicit `--fix` opts in to
 tier-gated safe fixes in Claude Code; Codex `--fix` is not supported.
 
-## Review and repair user-facing rules
+## Audit tests that hide broken actions
 
-Ask **“Quelles règles empêchent une personne autorisée de terminer son action ?”** to run the [read-only audit](skills/shipguard-audit-user-rules/SKILL.md). It writes `rapport-regles.md` outside the project. A finding can record, for example, that unchecking a test discards a note the person had entered. Ask **“Corrige R01 et R04”** to [apply those proposals and check the outcome](skills/sg-fix-user-rules/SKILL.md). The same selection works from an existing review when the identified proposals are clear.
+AI coding assistants sometimes add contradictory or unsuitable product rules to make tests pass. A test can report success after the code skips a valid action, blocks it, or returns early. Ask **“Find tests that pass when the actual action is skipped”** to run the [read-only audit](skills/sg-test-audit/SKILL.md). It traces the test and the rule, checks the outcome through the normal workflow, and writes `rapport-regles.md` outside the project. Ask **“Fix R01 and R04”** to [apply those proposals and check the outcome](skills/sg-fix-user-rules/SKILL.md).
 
-Include the priority above in the project’s README and agent instructions when adopting it. Repeat the full inventory at the project’s existing review interval and tell the decision-maker which rules were added, removed or corrected. Routine change reviews cover the affected actions.
+Include the priority above in the project’s README and agent instructions when adopting it. Repeat the full inventory at the project’s existing review interval and tell the decision-maker which rules were added, removed or corrected. Routine change reviews cover the affected actions. Ask what harm each refusal prevents and how an authorized person can still complete the action.
+
+## Screenshot evidence for issues and pull requests
+
+Attach a screenshot of the observed problem to each issue. Every pull request shows the same scenario before and after the change. For a non-UI change, capture the actual command and result or the actual document, then link the underlying evidence. [`sg-change-report`](skills/sg-change-report/SKILL.md) records the revisions, reproduction conditions and observed outcomes with the captures.
 
 ## Plugin package references
 

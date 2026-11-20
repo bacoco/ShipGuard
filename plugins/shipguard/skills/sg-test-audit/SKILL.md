@@ -1,9 +1,9 @@
 ---
-name: shipguard-audit-user-rules
-description: Audit, in read-only mode, product decisions embedded in code and the evidence that someone requested them. Use for ShipGuard project reviews, periodic rule inventories, missing controls, unnecessary refusals, repeated confirmations, silent defaults and keyword-triggered actions, including checks of review policies, simulated research and tests. Produce a plain-French report by default.
+name: sg-test-audit
+description: Audit tests that may pass because an AI coding assistant added a product rule that blocks or skips a valid action. Trace the test, the rule and the real outcome to identify contradictions or unsuitable restrictions. Use for whole-project or periodic inventories and for reviewing affected actions in a change. Read-only, with a plain-French report by default.
 ---
 
-# Audit the decisions a program makes for people
+# Audit tests that hide broken actions
 
 ## Priorité n° 1 — Faire réussir l’action, jamais l’éviter
 
@@ -19,7 +19,7 @@ Avant d’annoncer la correction, indique l’action exécutée et le résultat 
 
 For a read-only audit, apply this priority when evaluating a correction. For both the reported case and an ordinary valid case, record the authorized action, target, expected outcome and observed outcome. Use existing evidence or an authorized isolated run. Mark each case that still needs verification. Requester approval concerns the introduction of a new blocking rule; the original authorization still applies to the requested action on its intended target.
 
-Treat the user's examples as search leads. Establish every finding independently in the current target. A result from another project supplies no numbers, authors or conclusions for this one.
+Check whether an AI coding assistant added a rule to make a failing test pass while the intended action stopped working. Follow the evidence of what the test exercised, what the code did, and what result reached the intended target. Treat examples as search leads and include relevant decisions with human, AI, shared or unresolved origins. Establish each finding independently in the current target.
 
 ## Fix the scope and preserve the repository
 
@@ -89,4 +89,4 @@ Recommend the least disruptive behavior that preserves any real protection. Depe
 - Include the instruction findings; the coverage ledger; an inventory with **every rule's** ID, example, file and line, history and co-author, explicit request or the required absence wording, origin and evidence, related tests, protection, verdict and alternative. Cite revision-pinned source locations where possible. Prefer a small index plus readable individual entries when a single table would be too wide.
 - Give totals for distinct rules, rules explicitly requested by the user, each exclusive verdict, and each known AI's evidence-backed authorship. Show unassigned cases and commit-only attribution separately. Explain shared contributions and overlap. Reconcile verdict totals to the inventory size. Partial coverage yields observed counts only. An inaccessible project has unknown counts. Do not turn unknowns into zero.
 - Rank the ten most obstructive rules by concrete impact, recoverability and evidence, or all qualifying rules if fewer. List precise proposed changes to applicable instructions, including wording the maintainer can reuse. Give the user the conclusion and report location.
-- For recurring ShipGuard use, run the full inventory at adoption and again at the project's existing review cadence, with an incremental review of affected user actions between full audits. Compare with the previous full inventory by stable ID. Show the decision-maker which rules were added, removed or corrected, with the observed effect when verified. Mark areas that could not be compared and keep the scope of each pass visible. In ShipGuard's README and the instructions it gives projects, recommend this paired review question: **« Quel dommage ce refus évite-t-il, et comment une personne autorisée termine-t-elle quand même son action ? »** Pair a test of the actual protection with a test of the legitimate action when relevant. Record proposals and their rationale. A finding by itself authorizes no product change, release veto, extra approval step, issue publication or calendar action. Follow the user's explicit request for any separate external action.
+- For recurring ShipGuard use, run the full inventory at adoption and again at the project's existing review cadence, with an incremental review of affected user actions between full audits. Compare with the previous full inventory by stable ID. Show the decision-maker which rules were added, removed or corrected, with the observed effect when verified. Mark areas that could not be compared and keep the scope of each pass visible. In project guidance, recommend asking **« Quel dommage ce refus évite-t-il, et comment une personne autorisée termine-t-elle quand même son action ? »**. Pair a test of the actual protection with a test of the legitimate action when relevant. Record proposals and their rationale. A finding by itself authorizes no product change, release veto, extra approval step, issue publication or calendar action. Follow the user's explicit request for any separate external action.

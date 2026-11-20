@@ -5,7 +5,7 @@ description: "Review a proposed change before coding: find reusable interfaces, 
 
 # /sg-pre-review — Evidence before a development decision
 
-Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../../README.md). Apply them to the proposed verification for each correction.
+Read the five paragraphs under “Priorité n° 1 — Faire réussir l’action, jamais l’éviter” in the [packaged ShipGuard instructions](../sg-test-audit/SKILL.md). Apply them to the proposed verification for each correction.
 
 Analyze the concrete request in the user message, not this skill description. Determine whether
 the current path meets that request and identify the smallest justified change. Invoke explicitly. Accept the request or confirmed goal, repository and optional

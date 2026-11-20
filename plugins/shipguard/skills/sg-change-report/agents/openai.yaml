@@ -1,7 +1,7 @@
 interface:
   display_name: "ShipGuard Change Report"
-  short_description: "Save durable before/after visual change reports."
-  default_prompt: "Create a ShipGuard change report for the current visual results."
+  short_description: "Trace a change with before and after screenshots"
+  default_prompt: "Use $sg-change-report to show the same scenario before and after the change with traceable evidence."
 
 policy:
   allow_implicit_invocation: false

@@ -295,6 +295,8 @@ Write to `docs/scout-reports/{YYYY-MM-DD}-scout.md`:
 
 For each proposal with score ≥ 3.0:
 
+Include a screenshot of the ShipGuard behavior or documented gap that motivates the proposal. Capture the actual command output or source observation for a non-UI proposal. Link the source revision and record conditions and observed results. If evidence is unavailable, mark the capture incomplete and explain how to obtain it. See [change evidence](../sg-change-report/SKILL.md#capture-and-trace-the-evidence).
+
 1. **Deduplicate:** `gh issue list --repo bacoco/ShipGuard --state open --limit 30 --json title,body` — check for keyword overlap
 2. **If match found:** comment on existing issue with the new data point
 3. **If no match:** create new issue:

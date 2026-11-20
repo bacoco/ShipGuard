@@ -1,16 +1,16 @@
 # ShipGuard
 
-## Priorité n° 1 — Faire réussir l’action, jamais l’éviter
+## First priority — Make the authorized action succeed
 
-Avant de coder ou d’écrire le test, fixe l’action autorisée, sa cible, le cas à reproduire et le résultat attendu d’après la demande et les contraintes déjà autorisées.
+Before writing code or a test, identify the authorized action, its target, the case to reproduce, and the expected result from the request and existing constraints.
 
-Corrige le défaut en gardant l’action possible. Exécute-la par le parcours normal dans le cas signalé et dans le cas ordinaire. Vérifie qu’elle aboutit dans les deux cas et que le défaut a disparu. Un test qui passe parce qu’un bouton a été caché, un clic refusé, le cas évité ou le résultat attendu changé est invalide.
+Fix the defect while keeping the action available. Use the normal workflow for both the reported case and an ordinary case. Verify that the action succeeds in both cases and that the defect is gone. A passing test is invalid if it hides a button, refuses a click, skips the case, or changes the expected result.
 
-Fais l’action si elle reste possible. Si la situation a changé, explique ce qui a changé et demande une décision si elle est nécessaire. Si l’obstacle est temporaire, conserve la demande et reprends-la sur la cible prévue dès que les conditions autorisées sont réunies.
+Complete the action if it is still possible. If the situation has changed, explain the change and ask for a decision when one is needed. If the obstacle is temporary, retain the request and resume it on the intended target when the authorized conditions are met.
 
-Un refus doit correspondre à une décision du demandeur ou protéger, dans le cas précis, contre une perte de données, une erreur de cible ou un accès non autorisé. Toute nouvelle règle de blocage, visible ou silencieuse, exige l’accord du demandeur. Explique-lui son effet concret avant de l’ajouter.
+A refusal must follow the requester’s decision or protect against a specific risk of data loss, a wrong target, or unauthorized access. Explain the practical effect of any new blocking rule, visible or silent, and obtain the requester’s approval before adding it.
 
-Avant d’annoncer la correction, indique l’action exécutée et le résultat observé. Si le cas n’a pas été reproduit, indique qu’il reste à vérifier.
+Before reporting a fix, state the action performed and the observed result. If the case could not be reproduced, say that it still needs verification.
 
 ![ShipGuard — Agentic AI Audit & Visual Regression](docs/screenshots/hero-banner.jpg)
 
@@ -76,19 +76,21 @@ Describe what you need in ordinary language. These examples lead to different ki
 | Check a completed change | “Check whether my change is ready to ship.” | [`sg-ship`](plugins/shipguard/skills/sg-ship/SKILL.md) |
 | Look for implementation bugs | “Audit this change for technical bugs.” | [`sg-code-audit`](plugins/shipguard/skills/sg-code-audit/SKILL.md) |
 | Check a workflow rule or invariant | “Check that this workflow still respects its rules.” | [`sg-logic-audit`](plugins/shipguard/skills/sg-logic-audit/SKILL.md) |
-| Find decisions the program makes for people | “Parcours tout le projet et montre-moi les règles qui empêchent une action autorisée.” | [`shipguard-audit-user-rules`](plugins/shipguard/skills/shipguard-audit-user-rules/SKILL.md) |
-| Apply specific corrections from a review | “Corrige R01 et R04. Montre-moi le résultat sur la bonne cible.” | [`sg-fix-user-rules`](plugins/shipguard/skills/sg-fix-user-rules/SKILL.md) |
+| Find passing tests that hide broken actions | “Find tests an AI made pass by adding a rule that blocks or skips a valid action.” | [`sg-test-audit`](plugins/shipguard/skills/sg-test-audit/SKILL.md) |
+| Apply specific corrections from a review | “Fix R01 and R04 and show the result on the intended target.” | [`sg-fix-user-rules`](plugins/shipguard/skills/sg-fix-user-rules/SKILL.md) |
 | Compare behavior before and after | “Compare this process before and after my change.” | [`sg-process-check`](plugins/shipguard/skills/sg-process-check/SKILL.md) |
 | Verify what changed on screen | “Test the affected screens.” | [`sg-visual-run`](plugins/shipguard/skills/sg-visual-run/SKILL.md) |
 | Capture a bug you can reproduce in the browser | “Record this browser flow as a test.” | [`sg-record`](plugins/shipguard/skills/sg-record/SKILL.md) |
 
 Each path reports the evidence it obtained and what remains unverified. You can ask for one path directly; checking a change does not require running every path.
 
-### Reviewing the choices a program makes
+### Audit tests that hide broken actions
 
-Run a full review when adopting ShipGuard and repeat it at the project’s existing review interval. Compare the reports to show which rules were added, removed or corrected. Between full reviews, `sg-ship` examines changes that affect what a person can do or see. In a project using ShipGuard, include the priority above in the project’s README and agent guidance when setting up or updating that guidance.
+AI coding assistants sometimes add a product rule just to make a failing test pass. They may skip a valid case, block an action, or return success before the work happens. The test goes green while the rule contradicts a requirement or breaks ordinary use. For example, an export test that checks only the exit code can pass even though the export file was never created.
 
-The read-only audit delivers `rapport-regles.md` in a new temporary directory outside the project. Each finding identifies the action, its destination, the source line, the rule’s origin when traceable, the concrete risk and a proposed alternative. For example, unchecking a test can inadvertently erase its notes. A proposed correction would keep the notes when the person unchecks and rechecks the test. Select the proposed corrections you want. The repair skill exercises both the reported case and the ordinary case and tells you what it observed.
+`sg-test-audit` follows the test and the normal workflow to see whether the intended action ran and produced the expected result. It traces when the test and the rule were added and records who requested or introduced the rule when there is evidence. The read-only audit writes `rapport-regles.md` outside the project. After you select a correction, the repair skill verifies the result in both the reported and ordinary cases.
+
+Run a full review when adopting ShipGuard and repeat it at the project’s existing review interval. Compare the reports to show which rules were added, removed or corrected. Between full reviews, `sg-ship` examines changes that affect what a person can do or see. For each refusal, ask what harm it prevents and how an authorized person can still complete the action. Include the priority above when setting up or updating a project’s README and agent guidance.
 
 The standalone CLI supports these steps:
 
@@ -101,7 +103,7 @@ node plugins/shipguard/cli/shipguard.mjs rules preview /tmp/plan.json --project=
 node plugins/shipguard/cli/shipguard.mjs rules apply /tmp/plan.json --project=/path/to/project --apply=R01,R04 --review=DIGEST
 ```
 
-Choose the source files to inspect from the inventory and save their project-relative names as a JSON array in `/tmp/reviewed-paths.json`. For a confirmed rule, send `history` one non-sensitive excerpt from its file. Review the earliest matching commit and its credits alongside the source and any explicit request. After tracing the actions, record the findings in `/tmp/review.json`. For a repair, preview the plan, explain the proposed changes to the person, and supply the digest from that preview with their selection. [Audit instructions](plugins/shipguard/skills/shipguard-audit-user-rules/SKILL.md) · [Repair instructions](plugins/shipguard/skills/sg-fix-user-rules/SKILL.md)
+Choose the source files to inspect from the inventory and save their project-relative names as a JSON array in `/tmp/reviewed-paths.json`. For a confirmed rule, send `history` one non-sensitive excerpt from its file. Review the earliest matching commit and its credits alongside the source and any explicit request. After tracing the actions, record the findings in `/tmp/review.json`. For a repair, preview the plan, explain the proposed changes to the person, and supply the digest from that preview with their selection. [Audit instructions](plugins/shipguard/skills/sg-test-audit/SKILL.md) · [Repair instructions](plugins/shipguard/skills/sg-fix-user-rules/SKILL.md)
 
 ## How it works
 
@@ -113,6 +115,12 @@ code audit → check contracts and invariants → simulate behavior → confirm 
 
 ShipGuard closes the loop between static analysis, intended behavior, and visual reality. Code audit finds implementation bugs. Logic Audit checks workflows, state machines, retries, transactions, and algorithms against declared contracts and invariants. Process Check compares before/after behavior. Visual tests verify what users see. You decide what ships.
 
+### Screenshot evidence for issues and pull requests
+
+Attach a screenshot of the observed problem or current behavior to every issue. A pull request links the issue and shows the same scenario on the baseline and the corrected revision. For changes without a UI, capture the actual command and its result or the actual document, and link the underlying evidence.
+
+Record the affected files, revisions, route or command, fixture, environment, capture time, and expected and observed results. If a capture is unavailable, say why and give the steps to obtain it. Use [`sg-change-report`](plugins/shipguard/skills/sg-change-report/SKILL.md) to keep the evidence with the change.
+
 ## Status
 
 | Module | Status | Notes |
@@ -123,7 +131,7 @@ ShipGuard closes the loop between static analysis, intended behavior, and visual
 | Macro Recorder | 🟢 Stable | record → replay via YAML manifests |
 | Self-Improving Engine | 🟡 Experimental | sg-improve + sg-scout, evolving |
 | Review Dashboard | 🟢 Stable | HTML generation, Findings tab, annotations, monitor |
-| Recette CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
+| Recipe CLI | 🟢 New in 2.5.0 | `shipguard init/serve/crawl/run/review` — deterministic, exit codes 0/1/2/3 |
 | Scope protection | 🟢 Updated in 2.14.0 | All models by default; three conversational protection modes |
 | CI/CD Integration | 🔴 Planned | the CLI's stable exit codes are the intended CI entry point |
 
@@ -163,7 +171,7 @@ exceptions, resource leaks.
 
 Check procedures and algorithms against their **declared contracts and invariants**. ShipGuard models paths, failure transitions, retries, ordering, termination, idempotency, atomicity, and algorithmic edge cases; then reports counterexamples with reasoned or measured evidence. **Report-only.**
 
-> « Vérifie si le nouveau workflow de remboursement respecte bien ses invariants. »
+> “Check whether the new refund workflow preserves its invariants.”
 
 </td>
 </tr>
@@ -205,7 +213,7 @@ Static **find** → semantic **logic check** when applicable → dynamic **proce
 confirm → **human** decides. Speak normally: ShipGuard inspects the change, proposes the perimeter
 and checks in one sentence, then asks once if anything is ambiguous.
 
-> « Vérifie avec ShipGuard si ce que je viens de modifier est prêt à livrer. »
+> “Use ShipGuard to check whether my changes are ready to ship.”
 
 </td>
 </tr>
@@ -271,7 +279,7 @@ Mark bugs directly on screenshots. The AI traces each annotation to source code 
 | `/sg-visual-run [what]` | Execute manifests — natural language or flags |
 | `/sg-visual-review` | Launch interactive screenshot review dashboard |
 | `/sg-visual-fix` | Auto-fix bugs annotated in the review dashboard |
-| `/sg-change-report` | Save before/after UI evidence as durable PR/client change reports |
+| `/sg-change-report` | Save before/after screenshot evidence as durable PR/client change reports |
 | `/sg-visual-review-stop` | Stop the review server |
 
 ### Client Validation Reports

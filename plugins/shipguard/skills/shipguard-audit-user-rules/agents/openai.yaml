@@ -1,7 +1,0 @@
-interface:
-  display_name: "ShipGuard · Audit des règles imposées"
-  short_description: "Repérer les règles qui empêchent une action autorisée"
-  default_prompt: "Utilise $shipguard-audit-user-rules pour auditer ce projet en lecture seule et produire rapport-regles.md en français simple."
-
-policy:
-  allow_implicit_invocation: true

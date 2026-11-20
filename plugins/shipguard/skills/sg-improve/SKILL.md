@@ -321,6 +321,8 @@ Issue and comment bodies must contain:
 
 Describe frictions generically — "a FastAPI project with a Celery queue", never repo names or paths.
 
+For each issue or new finding, include a screenshot of the observed friction or a safe reproduction, with its revision, conditions and observed result. Capture actual command output for non-UI evidence. Apply the same sanitization to the image, captions and linked results. Mark any unavailable capture as incomplete with the reason and reproduction steps. See [change evidence](../sg-change-report/SKILL.md#capture-and-trace-the-evidence).
+
 **Confirmation gate:** in real mode, render the full body and ask the user before **every** `gh issue create` and `gh issue comment` (`--dry-run` already previews without filing).
 
 ### Deduplication and cardinality
