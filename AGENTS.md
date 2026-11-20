@@ -112,7 +112,7 @@ node scripts/run-smoke-suite.mjs
 
 The launcher discovers every `*-smoke-test*.mjs` file dynamically, runs them serially, and reports each status and duration plus a final summary. Run the full suite after touching a skill's scripts or templates.
 
-For coding changes, do not use test-driven development. Define the intended outcome and applicable constraints from the user request, implement the behavior, then add or update regression tests for the observable result.
+Before writing code or the first test, define the intended outcome and applicable constraints from the user request. Test-driven development is allowed once those are defined. Review tests and the actual behavior before every push regardless of coding method.
 
 Before pushing, review the outgoing diff for added or changed tests and executable rules, including rules added without a new test. Trace the observation that prompted the change, whether it came from the user, another AI, or the coding agent itself. Verify that the intended action still completes in the reported and ordinary valid cases and that the test would fail if the action were skipped. Report gaps before pushing.
 

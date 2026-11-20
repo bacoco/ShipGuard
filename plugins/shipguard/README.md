@@ -25,7 +25,7 @@ tier-gated safe fixes in Claude Code; Codex `--fix` is not supported.
 
 ## Audit tests that hide broken actions
 
-ShipGuard instructs the coding agent to avoid test-driven development. Define the result from the user request, implement the behavior, then add or update regression tests that check the actual result.
+ShipGuard allows test-driven development (TDD) once you define the intended result and applicable constraints from the user request. Do this before writing code or the first test, then use tests to verify the observable result.
 
 Before a push, review new or changed tests and software rules. Trace rules prompted by user feedback, another AI's findings, or the coding agent's own findings, even when no test was added. Verify that the intended action still completes in the reported and ordinary valid cases and that skipping the action would fail the test.
 
