@@ -73,6 +73,7 @@ Describe what you need in ordinary language. These examples lead to different ki
 | You need to… | Say… | ShipGuard path |
 |-------------|------|----------------|
 | Understand existing interfaces before editing | “Review the existing interfaces before I change this.” | [`sg-pre-review`](plugins/shipguard/skills/sg-pre-review/SKILL.md) |
+| Find and improve skills for a project or task | “Review the skills we use, find useful alternatives, and learn from the last run.” | [`sg-skill-discovery`](plugins/shipguard/skills/sg-skill-discovery/SKILL.md) |
 | Check a completed change | “Check whether my change is ready to ship.” | [`sg-ship`](plugins/shipguard/skills/sg-ship/SKILL.md) |
 | Look for implementation bugs | “Audit this change for technical bugs.” | [`sg-code-audit`](plugins/shipguard/skills/sg-code-audit/SKILL.md) |
 | Check a workflow rule or invariant | “Check that this workflow still respects its rules.” | [`sg-logic-audit`](plugins/shipguard/skills/sg-logic-audit/SKILL.md) |
@@ -83,6 +84,12 @@ Describe what you need in ordinary language. These examples lead to different ki
 | Capture a bug you can reproduce in the browser | “Record this browser flow as a test.” | [`sg-record`](plugins/shipguard/skills/sg-record/SKILL.md) |
 
 Each path reports the evidence it obtained and what remains unverified. You can ask for one path directly; checking a change does not require running every path.
+
+### Review the skills a project uses
+
+Ask ShipGuard to review the skills for a project or a specific task, or give it the result of a previous run. It traces the workflow, identifies where a skill could improve the result, and compares existing skills with external candidates. It recommends what to keep, adapt, add, replace, or retire in order of expected impact.
+
+For example, ask it to review the skills behind a document export that lost the office template. The review lists the output formats, identifies where the template is applied, distinguishes what the skill did from what the renderer did, and proposes a representative check for the next run. [Skill Discovery instructions](plugins/shipguard/skills/sg-skill-discovery/SKILL.md)
 
 ### Audit tests that hide broken actions
 
