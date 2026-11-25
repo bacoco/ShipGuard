@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
-const skillsRoot = resolve(repositoryRoot, 'plugins/shipguard/skills');
+const pluginRoot = resolve(repositoryRoot, 'plugins/shipguard');
+const skillsRoot = resolve(pluginRoot, 'skills');
+const claudeManifestPath = 'plugins/shipguard/.claude-plugin/plugin.json';
+const codexManifestPath = 'plugins/shipguard/.codex-plugin/plugin.json';
 const errors = [];
 
 function read(relativePath) {
   return readFileSync(resolve(repositoryRoot, relativePath), 'utf8');
+}
+
+function readJson(relativePath) {
+  return JSON.parse(read(relativePath));
 }
 
 function captureVersion(relativePath, pattern, label) {
@@ -20,13 +27,53 @@ function captureVersion(relativePath, pattern, label) {
   return match[1];
 }
 
+const claudeManifest = readJson(claudeManifestPath);
+const codexManifest = readJson(codexManifestPath);
+
+const plainDirectory = (path) => existsSync(path) && lstatSync(path).isDirectory();
+if (!plainDirectory(pluginRoot) || !plainDirectory(skillsRoot)) {
+  errors.push('plugins/shipguard/skills: expected a directory in the shared plugin tree');
+}
+
+const claudeSkills = claudeManifest.skills === undefined
+  ? ['./skills/']
+  : [].concat(claudeManifest.skills);
+if (claudeSkills.length !== 1 || !['./skills', './skills/'].includes(claudeSkills[0])) {
+  errors.push(`${claudeManifestPath}: skills must resolve to the shared plugin skills directory`);
+}
+if (!['./skills', './skills/'].includes(codexManifest.skills)) {
+  errors.push(`${codexManifestPath}: skills must resolve to the shared plugin skills directory`);
+}
+
+const claudeMarketplacePath = '.claude-plugin/marketplace.json';
+const codexMarketplacePath = '.agents/plugins/marketplace.json';
+const claudeMarketplace = readJson(claudeMarketplacePath);
+const codexMarketplace = readJson(codexMarketplacePath);
+const shipguardEntries = (marketplace) => Array.isArray(marketplace.plugins)
+  ? marketplace.plugins.filter((entry) => entry?.name === 'shipguard')
+  : [];
+const claudeEntries = shipguardEntries(claudeMarketplace);
+const codexEntries = shipguardEntries(codexMarketplace);
+const [claudeEntry] = claudeEntries;
+const [codexEntry] = codexEntries;
+const sharedPluginPaths = ['./plugins/shipguard', './plugins/shipguard/'];
+if (claudeEntries.length !== 1 || !sharedPluginPaths.includes(claudeEntry?.source)
+  || claudeMarketplace.metadata?.pluginRoot !== undefined
+  || claudeEntry.skills !== undefined || claudeEntry.strict === false) {
+  errors.push(`${claudeMarketplacePath}: use one local ShipGuard entry without skill or path overrides`);
+}
+if (codexEntries.length !== 1 || codexEntry?.source?.source !== 'local'
+  || !sharedPluginPaths.includes(codexEntry.source.path)) {
+  errors.push(`${codexMarketplacePath}: use one local ShipGuard entry pointing to the shared plugin directory`);
+}
+
 const versions = new Map([
-  ['plugins/shipguard/.claude-plugin/plugin.json', JSON.parse(read('plugins/shipguard/.claude-plugin/plugin.json')).version],
-  ['plugins/shipguard/.codex-plugin/plugin.json', JSON.parse(read('plugins/shipguard/.codex-plugin/plugin.json')).version],
+  [claudeManifestPath, claudeManifest.version],
+  [codexManifestPath, codexManifest.version],
   ['README.md', captureVersion('README.md', /^## Version ([^\s]+)$/m, 'README.md')],
   ['docs/product-roadmap.md', captureVersion('docs/product-roadmap.md', /currently \*\*([^*]+)\*\*/, 'docs/product-roadmap.md')],
 ]);
-const expectedVersion = versions.get('plugins/shipguard/.claude-plugin/plugin.json');
+const expectedVersion = claudeManifest.version;
 
 for (const [source, version] of versions) {
   if (version !== null && version !== expectedVersion) {
