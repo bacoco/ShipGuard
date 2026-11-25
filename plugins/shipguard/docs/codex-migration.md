@@ -2,6 +2,11 @@
 
 Use this when a machine still has an older local Codex adapter such as `shipguard-codex@personal`, or when Claude and Codex point at different marketplace sources.
 
+Both ShipGuard marketplaces publish the same skill collection from `plugins/shipguard/skills/`.
+Use the same ShipGuard release in Claude Code and Codex. In projects using the plugin, select the ShipGuard plugin’s
+`grill-goal` entry so a separately installed personal variant cannot silently substitute different
+instructions. The repository consistency check verifies the marketplace and skill paths.
+
 ## 1. Inspect Current Installs
 
 ```bash
