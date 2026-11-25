@@ -1,0 +1,4 @@
+interface:
+  display_name: "ShipGuard Skill Discovery"
+  short_description: "Review and improve the skills a project uses"
+  default_prompt: "Use $sg-skill-discovery to trace this project's work, find the highest-impact workflow improvements, compare local and external skills, and propose what to keep, adapt, add, replace, or retire. Use supplied post-mortems as evidence and check the catalog for relevant alternatives."
