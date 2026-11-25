@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.18.5 — 2026-11-25
+
+Changes since [2.18.4](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.4),
+covering `v2.18.4..a633175b78f7b644b24b608a6a99ceeaea5f28d0`.
+
+### Changes
+
+- Add workflow-driven skill discovery and review (`571f9f9`)
+- Capture the TDD policy and README before and after (`1318729`)
+- Allow TDD with a defined outcome and before-push verification (`61608d8`)
+- Capture coding and audit instructions before and after (`75eba1b`)
+- Require outcome-first coding and audit rules from all three sources (`c4ede73`)
+- Record before and after pre-push hook output (`23ae23a`)
+- Audit review-driven rules and tests before pushing (`9989461`)
+- Record final screenshots and the passing verification suite (`e81fadf`)
+- Lead the test audit with test-driven software restrictions (`fba927c`)
+- Show issue evidence reaching an external project before and after (`1a01f35`)
+- Keep issue evidence separate from the Mission Lock hook group (`ebab287`)
+- Apply paired issue screenshots in projects using ShipGuard (`5c37a40`)
+- Record matched screenshots and verification evidence (`8233737`)
+- Rename the test audit and require traceable screenshot evidence (`90f99bd`)
+- Tidy review-effort report ending (`bc45b14`)
+- Document the review-effort study and link related decisions (`80576e8`)
+- Exclude additional credential file names identified in review (`7a7223c`)
+- Keep rule repairs tied to reviewed source and exclude credential variants (`1b7969b`)
+- Clarify recurring user-rule reviews and review prompts (`1b88e9b`)
+- Add read-only user-rule audits and approved, verifiable repairs (`59f6e19`)
+- docs: make AGENTS.md the single root instruction file (`7ef98f0`)
+
 ## 2.18.4 — 2026-11-06
 
 Changes since [2.18.3](https://github.com/bacoco/ShipGuard/releases/tag/v2.18.3),

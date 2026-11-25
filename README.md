@@ -46,10 +46,10 @@ You can also ask Claude or Codex to test one or several model/effort combination
 
 ShipGuard replies in the chat with `PASS`, `FAIL`, or `UNAVAILABLE` for each configuration.
 
-## Version 2.18.4
+## Version 2.18.5
 
-Prepared from 5 non-merge commits since 2.18.3,
-through `61f4ecbcd2f3`. See the [changelog](CHANGELOG.md#2184--2026-11-06)
+Prepared from 21 non-merge commits since 2.18.4,
+through `a633175b78f7`. See the [changelog](CHANGELOG.md#2185--2026-11-25)
 for the complete commit range.
 
 ## Consolidated release 2.16.0
