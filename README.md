@@ -266,6 +266,16 @@ A short production restart is sensitive; explaining what a restart means does no
 The hook can be turned off durably and back on in ordinary language.
 It reduces mission drift and overclaiming; it is not a guarantee of zero hallucinations.
 
+#### Optional Ponytail companion
+
+Ponytail helps the agent reuse existing code and choose the smallest complete implementation.
+ShipGuard helps keep the agreed scope and verify the resulting change. Both plugins can run in the
+same Claude Code or Codex session. Install Ponytail separately in each harness where you want to
+use it, including OpenCode or Pi. [Ponytail installation guide](https://github.com/DietrichGebert/ponytail/blob/main/INSTALL.md)
+
+Use `sg-skill-discovery` to evaluate whether Ponytail fits a particular project or workflow.
+[ShipGuard skill discovery](plugins/shipguard/skills/sg-skill-discovery/SKILL.md)
+
 ![Smart Annotations](docs/screenshots/smart-annotations.jpg) ![Code Audit Dashboard](docs/screenshots/code-audit-dark.jpg)
 
 > ⚠️ **Token Usage** — Code audits are token-intensive. `standard` (10 agents) ≈ 2M tokens. `deep` (15 agents, 2 rounds) ≈ 5M+. `paranoid` (20 agents, 3 rounds) can exceed 10M.
